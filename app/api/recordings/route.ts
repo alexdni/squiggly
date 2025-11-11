@@ -1,12 +1,8 @@
 import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { checkProjectPermission } from '@/lib/rbac';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
+import { validateEDFMontage } from '@/lib/edf-validator';
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
-
-const execAsync = promisify(exec);
 
 interface RecordingMetadata {
   duration_seconds: number;
@@ -98,142 +94,113 @@ export async function POST(request: Request) {
       );
     }
 
-    // Save temporarily for Python validation
-    const tempDir = '/tmp';
-    const tempFilePath = path.join(tempDir, `validate-${Date.now()}.edf`);
-
-    // Write file to temp location
-    const fs = require('fs').promises;
+    // Convert to buffer for validation
     const buffer = Buffer.from(await fileData.arrayBuffer());
-    await fs.writeFile(tempFilePath, buffer);
 
-    try {
-      // Run lightweight Python validation script (no MNE dependency)
-      const scriptPath = path.join(process.cwd(), 'api/workers/validate_montage_lite.py');
-      const { stdout, stderr } = await execAsync(`python3 ${scriptPath} ${tempFilePath}`);
+    // Validate EDF montage using TypeScript validator
+    const validationResult = await validateEDFMontage(buffer);
 
-      if (stderr) {
-        console.error('Validation stderr:', stderr);
-      }
+    if (!validationResult.valid) {
+      // Delete uploaded file from storage
+      await supabase.storage.from('recordings').remove([filePath]);
 
-      const validationResult: {
-        valid: boolean;
-        error?: string;
-        metadata?: RecordingMetadata;
-      } = JSON.parse(stdout);
-
-      // Clean up temp file
-      await fs.unlink(tempFilePath);
-
-      if (!validationResult.valid) {
-        // Delete uploaded file from storage
-        await supabase.storage.from('recordings').remove([filePath]);
-
-        return NextResponse.json(
-          {
-            error: 'Invalid EDF file',
-            message: validationResult.error,
-          },
-          { status: 400 }
-        );
-      }
-
-      const metadata = validationResult.metadata!;
-
-      // Auto-detect EO/EC from annotations if not manual
-      let finalEoStart = eoStart;
-      let finalEoEnd = eoEnd;
-      let finalEcStart = ecStart;
-      let finalEcEnd = ecEnd;
-      let finalEoLabel = eoLabel;
-      let finalEcLabel = ecLabel;
-
-      if (!useManual && metadata.annotations) {
-        // Try to find EO/EC annotations
-        const eoAnnotation = metadata.annotations.find((ann) =>
-          ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
-        );
-        const ecAnnotation = metadata.annotations.find((ann) =>
-          ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
-        );
-
-        if (eoAnnotation) {
-          finalEoStart = eoAnnotation.onset;
-          finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
-          finalEoLabel = eoAnnotation.description;
-        }
-
-        if (ecAnnotation) {
-          finalEcStart = ecAnnotation.onset;
-          finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
-          finalEcLabel = ecAnnotation.description;
-        }
-      }
-
-      // Create recording entry
-      const recordingData: any = {
-        project_id: projectId,
-        filename: filename,
-        file_path: filePath,
-        file_size: fileSize,
-        duration_seconds: metadata.duration_seconds,
-        sampling_rate: metadata.sampling_rate,
-        n_channels: metadata.n_channels,
-        montage: '10-20',
-        reference: 'LE',
-        eo_label: finalEoLabel || null,
-        ec_label: finalEcLabel || null,
-        eo_start: finalEoStart || null,
-        eo_end: finalEoEnd || null,
-        ec_start: finalEcStart || null,
-        ec_end: finalEcEnd || null,
-        uploaded_by: user.id,
-      };
-
-      const { data: recording, error: insertError } = await supabase
-        .from('recordings')
-        .insert(recordingData)
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Error inserting recording:', insertError);
-        throw insertError;
-      }
-
-      const recordingResult = recording as any;
-
-      // Create analysis job with default config
-      const analysisData: any = {
-        recording_id: recordingResult.id,
-        status: 'pending',
-        config: DEFAULT_ANALYSIS_CONFIG,
-      };
-
-      const { data: analysis, error: analysisError } = await supabase
-        .from('analyses')
-        .insert(analysisData)
-        .select()
-        .single();
-
-      if (analysisError) {
-        console.error('Error creating analysis:', analysisError);
-        // Don't fail the request, just log the error
-      }
-
-      return NextResponse.json({
-        recording,
-        analysis: analysis || null,
-        metadata,
-      });
-    } catch (error: any) {
-      // Clean up temp file on error
-      try {
-        await fs.unlink(tempFilePath);
-      } catch {}
-
-      throw error;
+      return NextResponse.json(
+        {
+          error: 'Invalid EDF file',
+          message: validationResult.error,
+        },
+        { status: 400 }
+      );
     }
+
+    const metadata = validationResult.metadata!;
+
+    // Auto-detect EO/EC from annotations if not manual
+    let finalEoStart = eoStart;
+    let finalEoEnd = eoEnd;
+    let finalEcStart = ecStart;
+    let finalEcEnd = ecEnd;
+    let finalEoLabel = eoLabel;
+    let finalEcLabel = ecLabel;
+
+    if (!useManual && metadata.annotations) {
+      // Try to find EO/EC annotations
+      const eoAnnotation = metadata.annotations.find((ann) =>
+        ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
+      );
+      const ecAnnotation = metadata.annotations.find((ann) =>
+        ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
+      );
+
+      if (eoAnnotation) {
+        finalEoStart = eoAnnotation.onset;
+        finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
+        finalEoLabel = eoAnnotation.description;
+      }
+
+      if (ecAnnotation) {
+        finalEcStart = ecAnnotation.onset;
+        finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
+        finalEcLabel = ecAnnotation.description;
+      }
+    }
+
+    // Create recording entry
+    const recordingData: any = {
+      project_id: projectId,
+      filename: filename,
+      file_path: filePath,
+      file_size: fileSize,
+      duration_seconds: metadata.duration_seconds,
+      sampling_rate: metadata.sampling_rate,
+      n_channels: metadata.n_channels,
+      montage: '10-20',
+      reference: 'LE',
+      eo_label: finalEoLabel || null,
+      ec_label: finalEcLabel || null,
+      eo_start: finalEoStart || null,
+      eo_end: finalEoEnd || null,
+      ec_start: finalEcStart || null,
+      ec_end: finalEcEnd || null,
+      uploaded_by: user.id,
+    };
+
+    const { data: recording, error: insertError } = await supabase
+      .from('recordings')
+      .insert(recordingData)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error inserting recording:', insertError);
+      throw insertError;
+    }
+
+    const recordingResult = recording as any;
+
+    // Create analysis job with default config
+    const analysisData: any = {
+      recording_id: recordingResult.id,
+      status: 'pending',
+      config: DEFAULT_ANALYSIS_CONFIG,
+    };
+
+    const { data: analysis, error: analysisError } = await supabase
+      .from('analyses')
+      .insert(analysisData)
+      .select()
+      .single();
+
+    if (analysisError) {
+      console.error('Error creating analysis:', analysisError);
+      // Don't fail the request, just log the error
+    }
+
+    return NextResponse.json({
+      recording,
+      analysis: analysis || null,
+      metadata,
+    });
   } catch (error) {
     console.error('Error creating recording:', error);
     return NextResponse.json(

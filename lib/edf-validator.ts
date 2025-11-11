@@ -1,0 +1,162 @@
+// Server-side EDF validation (TypeScript/Node.js)
+// Validates EDF header without external dependencies
+
+import { MONTAGE_10_20 } from './constants';
+
+interface ValidationResult {
+  valid: boolean;
+  error?: string;
+  metadata?: {
+    duration_seconds: number;
+    sampling_rate: number;
+    n_channels: number;
+    channels: string[];
+    annotations: Array<{
+      onset: number;
+      duration: number;
+      description: string;
+    }>;
+  };
+}
+
+// Channel name normalization
+const CHANNEL_ALIASES: Record<string, string> = {
+  'FP1': 'Fp1',
+  'FP2': 'Fp2',
+  'T3': 'T7',
+  'T4': 'T8',
+  'T5': 'P7',
+  'T6': 'P8',
+};
+
+function normalizeChannelName(ch: string): string {
+  const normalized = ch.trim().replace(/\s+/g, '');
+  return CHANNEL_ALIASES[normalized] || normalized;
+}
+
+/**
+ * Validate EDF file montage from buffer
+ * Parses EDF header structure without loading full signal data
+ */
+export async function validateEDFMontage(
+  buffer: Buffer
+): Promise<ValidationResult> {
+  try {
+    // Check minimum size (256 bytes for header)
+    if (buffer.length < 256) {
+      return {
+        valid: false,
+        error: 'File too small to be valid EDF',
+      };
+    }
+
+    // Parse fixed header (256 bytes)
+    const version = buffer.toString('ascii', 0, 8).trim();
+    if (!version.startsWith('0')) {
+      return {
+        valid: false,
+        error: 'Invalid EDF format: version field incorrect',
+      };
+    }
+
+    // Get number of channels (bytes 252-256)
+    const nChannels = parseInt(buffer.toString('ascii', 252, 256).trim());
+
+    if (isNaN(nChannels) || nChannels !== 19) {
+      return {
+        valid: false,
+        error: `Expected 19 channels, found ${nChannels}. This tool requires 19-channel 10-20 montage.`,
+      };
+    }
+
+    // Get recording info
+    const nRecords = parseInt(buffer.toString('ascii', 236, 244).trim());
+    const recordDuration = parseFloat(buffer.toString('ascii', 244, 252).trim());
+    const duration = nRecords * recordDuration;
+
+    // Calculate header size
+    const headerSize = 256 + nChannels * 256;
+    if (buffer.length < headerSize) {
+      return {
+        valid: false,
+        error: 'EDF file header incomplete',
+      };
+    }
+
+    // Read channel labels (16 bytes each, starting at byte 256)
+    const channelLabels: string[] = [];
+    let offset = 256;
+
+    for (let i = 0; i < nChannels; i++) {
+      const label = buffer.toString('ascii', offset, offset + 16).trim();
+      channelLabels.push(normalizeChannelName(label));
+      offset += 16;
+    }
+
+    // Check if all expected channels are present
+    const missingChannels = MONTAGE_10_20.filter(
+      (ch) => !channelLabels.includes(ch)
+    );
+
+    if (missingChannels.length > 0) {
+      return {
+        valid: false,
+        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 montage.`,
+      };
+    }
+
+    // Check for extra channels
+    const extraChannels = channelLabels.filter(
+      (ch) => !MONTAGE_10_20.includes(ch)
+    );
+
+    if (extraChannels.length > 0) {
+      return {
+        valid: false,
+        error: `Unexpected channels found: ${extraChannels.join(', ')}. Only 19-channel 10-20 montage is supported.`,
+      };
+    }
+
+    // Skip to samples per record (after several other fields)
+    // Each field is nChannels * field_size bytes
+    offset = 256 + nChannels * 16; // After labels
+    offset += nChannels * 80; // Skip transducer type
+    offset += nChannels * 8; // Skip physical dimension
+    offset += nChannels * 8; // Skip physical minimum
+    offset += nChannels * 8; // Skip physical maximum
+    offset += nChannels * 8; // Skip digital minimum
+    offset += nChannels * 8; // Skip digital maximum
+    offset += nChannels * 80; // Skip prefiltering
+
+    // Read samples per record (8 bytes each)
+    const samplesPerRecord: number[] = [];
+    for (let i = 0; i < nChannels; i++) {
+      const samples = parseInt(buffer.toString('ascii', offset, offset + 8).trim());
+      samplesPerRecord.push(samples);
+      offset += 8;
+    }
+
+    // Calculate sampling rate (assume all channels same rate)
+    const samplingRate =
+      recordDuration > 0 ? samplesPerRecord[0] / recordDuration : 0;
+
+    // Note: Annotation parsing is complex and not critical for initial validation
+    // Full annotation parsing can be done in preprocessing workers
+
+    return {
+      valid: true,
+      metadata: {
+        duration_seconds: duration,
+        sampling_rate: samplingRate,
+        n_channels: nChannels,
+        channels: channelLabels,
+        annotations: [], // Empty for now, parsed in workers
+      },
+    };
+  } catch (error: any) {
+    return {
+      valid: false,
+      error: `Failed to parse EDF file: ${error.message}`,
+    };
+  }
+}

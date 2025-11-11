@@ -16,16 +16,13 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.39.0",
     "next": "^14.2.0",
-    "plotly.js": "^2.29.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "react-plotly.js": "^2.6.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.41.0",
     "@types/node": "^20.11.0",
-    "@types/plotly.js": "^2.29.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.2.1",
