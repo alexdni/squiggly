@@ -108,8 +108,8 @@ export async function POST(request: Request) {
     await fs.writeFile(tempFilePath, buffer);
 
     try {
-      // Run Python validation script
-      const scriptPath = path.join(process.cwd(), 'api/workers/validate_montage.py');
+      // Run lightweight Python validation script (no MNE dependency)
+      const scriptPath = path.join(process.cwd(), 'api/workers/validate_montage_lite.py');
       const { stdout, stderr } = await execAsync(`python3 ${scriptPath} ${tempFilePath}`);
 
       if (stderr) {
