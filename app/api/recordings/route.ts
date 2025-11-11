@@ -201,14 +201,18 @@ export async function POST(request: Request) {
         throw insertError;
       }
 
+      const recordingResult = recording as any;
+
       // Create analysis job with default config
+      const analysisData: any = {
+        recording_id: recordingResult.id,
+        status: 'pending',
+        config: DEFAULT_ANALYSIS_CONFIG,
+      };
+
       const { data: analysis, error: analysisError } = await supabase
         .from('analyses')
-        .insert({
-          recording_id: recording.id,
-          status: 'pending',
-          config: DEFAULT_ANALYSIS_CONFIG,
-        })
+        .insert(analysisData)
         .select()
         .single();
 

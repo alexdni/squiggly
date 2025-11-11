@@ -215,7 +215,7 @@ export default function EOECLabelingForm({
                 <li>EC labels: {EC_LABELS.join(', ')}</li>
               </ul>
               <p className="mt-2 text-xs">
-                If no annotations are found, you'll be prompted to enter time ranges manually.
+                If no annotations are found, you&apos;ll be prompted to enter time ranges manually.
               </p>
             </div>
           </div>

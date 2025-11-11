@@ -35,6 +35,7 @@ export default function ProjectSharingModal({
     if (isOpen) {
       fetchMembers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, projectId]);
 
   const fetchMembers = async () => {
