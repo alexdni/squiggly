@@ -78,7 +78,8 @@ export async function getUserProjectRole(
     .eq('id', projectId)
     .single();
 
-  if (project?.owner_id === userId) {
+  const projectData = project as { owner_id: string } | null;
+  if (projectData && projectData.owner_id === userId) {
     return 'owner';
   }
 
@@ -90,7 +91,12 @@ export async function getUserProjectRole(
     .eq('user_id', userId)
     .single();
 
-  return membership?.role as ProjectRole | null;
+  const memberData = membership as { role: string } | null;
+  if (memberData) {
+    return memberData.role as ProjectRole;
+  }
+
+  return null;
 }
 
 /**
@@ -143,15 +149,16 @@ export async function getUserProjects(userId: string) {
     .select('project_id, role, projects(*)')
     .eq('user_id', userId);
 
-  const memberProjects = memberships?.map((m) => ({
+  const membershipsData = memberships as any[] | null;
+  const memberProjects = membershipsData?.filter(m => m.projects).map((m: any) => ({
     ...m.projects,
     role: m.role,
-  }));
+  })) ?? [];
 
   return {
     owned: ownedProjects ?? [],
-    member: memberProjects ?? [],
-    all: [...(ownedProjects ?? []), ...(memberProjects?.map(p => p.projects) ?? [])],
+    member: memberProjects,
+    all: [...(ownedProjects ?? []), ...memberProjects.map((p: any) => p)],
   };
 }
 
@@ -205,12 +212,13 @@ export async function canAccessRecording(
     .eq('id', recordingId)
     .single();
 
-  if (!recording) {
+  const recordingData = recording as { project_id: string } | null;
+  if (!recordingData) {
     return false;
   }
 
   return await checkProjectPermission(
-    recording.project_id,
+    recordingData.project_id,
     userId,
     'recording:read'
   );
@@ -231,12 +239,13 @@ export async function canAccessAnalysis(
     .eq('id', analysisId)
     .single();
 
-  if (!analysis?.recordings) {
+  const analysisData = analysis as { recordings: { project_id: string } } | null;
+  if (!analysisData || !analysisData.recordings) {
     return false;
   }
 
   return await checkProjectPermission(
-    (analysis.recordings as any).project_id,
+    analysisData.recordings.project_id,
     userId,
     'analysis:read'
   );

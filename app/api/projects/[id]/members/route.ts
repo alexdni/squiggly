@@ -32,13 +32,13 @@ export async function GET(
     }
 
     // Get project owner
-    const { data: project } = await supabase
+    const { data: project, error: projectError } = await supabase
       .from('projects')
       .select('owner_id')
       .eq('id', projectId)
       .single();
 
-    if (!project) {
+    if (projectError || !project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
@@ -52,13 +52,16 @@ export async function GET(
       throw error;
     }
 
+    // Type assertion for project data
+    const projectData = project as { owner_id: string };
+
     // Include owner in the list
     const allMembers = [
       {
         id: 'owner',
-        user_id: project.owner_id,
+        user_id: projectData.owner_id,
         role: 'owner' as ProjectRole,
-        created_at: null,
+        created_at: null as string | null,
       },
       ...(members || []),
     ];
@@ -130,14 +133,16 @@ export async function POST(
       );
     }
 
-    // Add member
+    // Add member - explicit type for insert
+    const insertData: any = {
+      project_id: projectId,
+      user_id: targetUserId,
+      role: role as ProjectRole,
+    };
+
     const { data: member, error } = await supabase
       .from('project_members')
-      .insert({
-        project_id: projectId,
-        user_id: targetUserId,
-        role: role as ProjectRole,
-      })
+      .insert(insertData)
       .select()
       .single();
 
