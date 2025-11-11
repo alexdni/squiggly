@@ -21,16 +21,16 @@
 - [x] 2.6 Write unit tests for RBAC logic (verify access control edge cases)
 
 ## 3. Upload System
-- [ ] 3.1 Create upload UI component with drag-and-drop and progress bar
-- [ ] 3.2 Implement client-side file validation (extension, size <50MB, basic EDF header check)
-- [ ] 3.3 Build API route `POST /api/upload/init` for signed URL generation
-- [ ] 3.4 Implement server-side montage validation (Python function: check 19 channels, 10-20 labels, LE reference)
-- [ ] 3.5 Create EO/EC labeling UI (annotation detection + manual range input fallback)
-- [ ] 3.6 Build API route `POST /api/recordings` to persist metadata and enqueue analysis job
-- [ ] 3.7 Implement duplicate detection logic (filename + size + timestamp heuristic)
-- [ ] 3.8 Add soft-delete lifecycle policy for deleted recordings (30-day retention)
-- [ ] 3.9 Write integration test: upload valid EDF → verify storage + DB entry
-- [ ] 3.10 Write integration test: upload invalid montage → verify rejection with correct error message
+- [x] 3.1 Create upload UI component with drag-and-drop and progress bar
+- [x] 3.2 Implement client-side file validation (extension, size <50MB, basic EDF header check)
+- [x] 3.3 Build API route `POST /api/upload/init` for signed URL generation
+- [x] 3.4 Implement server-side montage validation (Python function: check 19 channels, 10-20 labels, LE reference)
+- [x] 3.5 Create EO/EC labeling UI (annotation detection + manual range input fallback)
+- [x] 3.6 Build API route `POST /api/recordings` to persist metadata and enqueue analysis job
+- [x] 3.7 Implement duplicate detection logic (filename + size + timestamp heuristic)
+- [x] 3.8 Add soft-delete lifecycle policy for deleted recordings (30-day retention)
+- [x] 3.9 Write integration test: upload valid EDF → verify storage + DB entry
+- [x] 3.10 Write integration test: upload invalid montage → verify rejection with correct error message
 
 ## 4. Preprocessing Pipeline (Python Worker)
 - [ ] 4.1 Create Python worker entry point (`/api/workers/preprocess.py`) triggered by Supabase Queue
