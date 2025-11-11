@@ -1,4 +1,4 @@
-# Design: EEG EO/EC Diagnostics Platform
+# Design: Squiggly - The EEG EO/EC Assessment Platform
 
 ## Context
 

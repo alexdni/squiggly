@@ -1,16 +1,16 @@
 # Implementation Tasks
 
 ## 1. Project Setup & Infrastructure
-- [ ] 1.1 Initialize Next.js 14+ project with App Router and TypeScript
-- [ ] 1.2 Configure Tailwind CSS with custom color palette for neuro theme
+- [x] 1.1 Initialize Next.js 14+ project with App Router and TypeScript
+- [x] 1.2 Configure Tailwind CSS with custom color palette for neuro theme
 - [ ] 1.3 Set up Supabase project (create organization, enable Auth, Storage, Queue)
-- [ ] 1.4 Create database schema: `projects`, `recordings`, `analyses`, `export_logs` tables
+- [x] 1.4 Create database schema: `projects`, `recordings`, `analyses`, `export_logs` tables
 - [ ] 1.5 Set up Supabase Storage buckets: `recordings` (private), `visuals` (private), `exports` (private)
 - [ ] 1.6 Configure Google OAuth provider in Supabase Auth
 - [ ] 1.7 Create Vercel project and link to GitHub repository
-- [ ] 1.8 Set up environment variables (.env.local) for Supabase keys and API URLs
-- [ ] 1.9 Initialize Python serverless function directory structure (`/api/workers/`)
-- [ ] 1.10 Create `requirements.txt` for Python dependencies (MNE, NumPy, SciPy, pandas, antropy, matplotlib, Pillow)
+- [x] 1.8 Set up environment variables (.env.local) for Supabase keys and API URLs
+- [x] 1.9 Initialize Python serverless function directory structure (`/api/workers/`)
+- [x] 1.10 Create `requirements.txt` for Python dependencies (MNE, NumPy, SciPy, pandas, antropy, matplotlib, Pillow)
 
 ## 2. Authentication & Authorization
 - [ ] 2.1 Implement Google OAuth login flow with Supabase Auth client
