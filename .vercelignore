@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+*.log
+.env*.local
+api/workers/*.py
+api/workers/README.md
+SECTION_*.md
+SERVERLESS_SIZE_FIX.md
+OPENSPEC_*.md
+openspec/
+.cursor/
+.claude/
