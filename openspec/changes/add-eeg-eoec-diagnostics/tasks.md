@@ -13,12 +13,12 @@
 - [x] 1.10 Create `requirements.txt` for Python dependencies (MNE, NumPy, SciPy, pandas, antropy, matplotlib, Pillow)
 
 ## 2. Authentication & Authorization
-- [ ] 2.1 Implement Google OAuth login flow with Supabase Auth client
-- [ ] 2.2 Create protected route middleware for authenticated pages
-- [ ] 2.3 Build role-based access control (RBAC) utilities for Owner/Collaborator/Viewer roles
-- [ ] 2.4 Implement project membership table and API routes (`POST /api/projects/:id/members`)
-- [ ] 2.5 Create UI for project sharing and role management
-- [ ] 2.6 Write unit tests for RBAC logic (verify access control edge cases)
+- [x] 2.1 Implement Google OAuth login flow with Supabase Auth client
+- [x] 2.2 Create protected route middleware for authenticated pages
+- [x] 2.3 Build role-based access control (RBAC) utilities for Owner/Collaborator/Viewer roles
+- [x] 2.4 Implement project membership table and API routes (`POST /api/projects/:id/members`)
+- [x] 2.5 Create UI for project sharing and role management
+- [x] 2.6 Write unit tests for RBAC logic (verify access control edge cases)
 
 ## 3. Upload System
 - [ ] 3.1 Create upload UI component with drag-and-drop and progress bar
