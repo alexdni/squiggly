@@ -75,6 +75,18 @@ Railway automatically sets:
 
 ## Common Issues
 
+### Railway Uses Dockerfile Instead of Procfile ⚠️
+**Symptoms**: Deploy succeeds but shows CLI help message instead of web server
+**Check**: Deploy logs show `usage: analyze_eeg.py [-h] --file FILE...`
+**Cause**: Railway prioritizes Dockerfile over Procfile
+
+**Solution**: ✅ FIXED
+- Renamed `Dockerfile` to `Dockerfile.backup`
+- Railway now uses Procfile correctly
+- If you see this issue, remove/rename the Dockerfile
+
+---
+
 ### Build Fails
 **Symptoms**: Deployment fails during build
 **Check**: Build logs in Railway dashboard
