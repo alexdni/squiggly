@@ -15,20 +15,20 @@ export interface WorkerConfig {
 export interface AnalysisJobData {
   analysisId: string;
   filePath: string;
-  eoStart: number;
-  eoEnd: number;
-  ecStart: number;
-  ecEnd: number;
+  eoStart: number | null;
+  eoEnd: number | null;
+  ecStart: number | null;
+  ecEnd: number | null;
   config?: Record<string, any>;
 }
 
 export interface AnalysisJob {
   analysis_id: string;
   file_path: string;
-  eo_start: number;
-  eo_end: number;
-  ec_start: number;
-  ec_end: number;
+  eo_start: number | null;
+  eo_end: number | null;
+  ec_start: number | null;
+  ec_end: number | null;
   supabase_url: string;
   supabase_key: string;
   config?: Record<string, any>;
