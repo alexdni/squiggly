@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import type { User } from '@supabase/supabase-js';
@@ -41,15 +41,78 @@ interface AnalysisDetailsClientProps {
 }
 
 export default function AnalysisDetailsClient({
-  analysis,
+  analysis: initialAnalysis,
   user,
 }: AnalysisDetailsClientProps) {
   const router = useRouter();
   const supabase = createClient();
+  const [analysis, setAnalysis] = useState(initialAnalysis);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Auto-refresh when processing
+  useEffect(() => {
+    if (analysis.status === 'processing') {
+      const interval = setInterval(async () => {
+        const { data } = await (supabase as any)
+          .from('analyses')
+          .select(`
+            *,
+            recording:recordings (
+              id,
+              filename,
+              file_size,
+              duration_seconds,
+              sampling_rate,
+              n_channels,
+              montage,
+              reference,
+              eo_start,
+              eo_end,
+              ec_start,
+              ec_end,
+              project_id,
+              created_at
+            )
+          `)
+          .eq('id', analysis.id)
+          .single();
+
+        if (data) {
+          setAnalysis(data);
+          if (data.status !== 'processing') {
+            clearInterval(interval);
+          }
+        }
+      }, 2000); // Poll every 2 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [analysis.status, analysis.id, supabase]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/');
+  };
+
+  const handleStartAnalysis = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch(`/api/analyses/${analysis.id}/process`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start analysis');
+      }
+
+      // Update local state to show processing
+      setAnalysis({ ...analysis, status: 'processing' });
+    } catch (error) {
+      console.error('Error starting analysis:', error);
+      alert('Failed to start analysis. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -225,28 +288,37 @@ export default function AnalysisDetailsClient({
         {/* Analysis Results or Status Message */}
         {analysis.status === 'pending' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
-            <div className="flex items-center">
-              <svg
-                className="h-6 w-6 text-yellow-600 mr-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <div>
-                <h3 className="text-lg font-semibold text-yellow-900">
-                  Analysis Queued
-                </h3>
-                <p className="text-yellow-700">
-                  Your analysis is in the queue and will be processed shortly.
-                </p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <svg
+                  className="h-6 w-6 text-yellow-600 mr-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div>
+                  <h3 className="text-lg font-semibold text-yellow-900">
+                    Analysis Ready to Process
+                  </h3>
+                  <p className="text-yellow-700">
+                    Click the button to start analyzing your EEG recording.
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={handleStartAnalysis}
+                disabled={isProcessing}
+                className="bg-neuro-primary text-white px-6 py-3 rounded-lg hover:bg-neuro-accent transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessing ? 'Starting...' : 'Start Analysis'}
+              </button>
             </div>
           </div>
         )}
@@ -332,34 +404,100 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
-            {/* Power Spectral Density */}
-            {analysis.results.band_power && (
+            {/* Band Ratios */}
+            {analysis.results.band_ratios && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Band Power Analysis
+                  Band Ratios
                 </h2>
-                <p className="text-gray-600 mb-4">
-                  Absolute and relative power across different frequency bands
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-lg mb-3">
+                      Theta/Beta Ratio
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Frontal Average:</span>
+                        <span className="font-semibold">
+                          {analysis.results.band_ratios.theta_beta_ratio.frontal_avg.toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Central Average:</span>
+                        <span className="font-semibold">
+                          {analysis.results.band_ratios.theta_beta_ratio.central_avg.toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-lg mb-3">
+                      Alpha/Theta Ratio
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">
+                          Occipital Average:
+                        </span>
+                        <span className="font-semibold">
+                          {analysis.results.band_ratios.alpha_theta_ratio.occipital_avg.toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Parietal Average:</span>
+                        <span className="font-semibold">
+                          {analysis.results.band_ratios.alpha_theta_ratio.parietal_avg.toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Asymmetry */}
+            {analysis.results.asymmetry && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Hemispheric Asymmetry
+                </h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  Negative values indicate left hemisphere dominance, positive
+                  values indicate right hemisphere dominance
                 </p>
-                {/* Placeholder for visualization */}
-                <div className="bg-gray-100 rounded-lg p-8 text-center">
-                  <svg
-                    className="mx-auto h-16 w-16 text-gray-400 mb-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                    />
-                  </svg>
-                  <p className="text-gray-600">
-                    Power spectral density visualizations available in full
-                    report
-                  </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-sm text-gray-500 mb-1">
+                      Frontal Alpha
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {analysis.results.asymmetry.frontal_alpha.toFixed(3)}
+                    </div>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-sm text-gray-500 mb-1">
+                      Parietal Alpha
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {analysis.results.asymmetry.parietal_alpha.toFixed(3)}
+                    </div>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-sm text-gray-500 mb-1">
+                      Frontal Theta
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {analysis.results.asymmetry.frontal_theta.toFixed(3)}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
