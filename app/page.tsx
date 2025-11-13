@@ -8,11 +8,10 @@ export default function Home() {
           Squiggly
         </h1>
         <p className="text-2xl text-neuro-dark font-medium">
-          EEG EO/EC Diagnostics Platform
+          EEG Assessment Platform
         </p>
         <p className="text-lg text-gray-800 max-w-2xl mx-auto">
-          Rapid, transparent, open-source analysis of 19-channel EEG recordings comparing
-          Eyes-Open and Eyes-Closed states
+          Rapid, transparent, open-source analysis of 19-channel EEG recordings
         </p>
 
         <div className="flex gap-4 justify-center mt-8">

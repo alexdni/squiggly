@@ -44,7 +44,7 @@ export default function LoginPage() {
             Squiggly
           </h1>
           <p className="text-xl text-neuro-dark">
-            EEG EO/EC Diagnostics Platform
+            EEG Assessment Platform
           </p>
           <p className="mt-4 text-gray-800">
             Sign in to access your EEG analysis workspace

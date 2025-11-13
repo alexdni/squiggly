@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Squiggly - EEG EO/EC Diagnostics Platform",
-  description: "Rapid, transparent, open-source EEG analysis for Eyes-Open and Eyes-Closed states",
+  title: "Squiggly - EEG Assessment Platform",
+  description: "Rapid, transparent, open-source EEG analysis platform for 19-channel recordings",
 };
 
 export default function RootLayout({
