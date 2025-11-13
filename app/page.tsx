@@ -22,7 +22,7 @@ export default function Home() {
             Get Started
           </Link>
           <a
-            href="https://github.com/your-repo/squiggly"
+            href="https://github.com/alexdni/squiggly"
             target="_blank"
             rel="noopener noreferrer"
             className="bg-white border-2 border-neuro-primary text-neuro-primary px-8 py-3 rounded-lg text-lg font-medium hover:bg-neuro-light transition-colors shadow-lg"
@@ -53,6 +53,32 @@ export default function Home() {
               Project-level privacy with role-based access control
             </p>
           </div>
+        </div>
+
+        {/* Open Source Footer */}
+        <div className="mt-16 pt-8 border-t border-gray-200 text-center">
+          <p className="text-gray-800 mb-2">
+            Squiggly is free and open-source software released under the{' '}
+            <a
+              href="https://github.com/alexdni/squiggly/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-neuro-primary hover:text-neuro-accent font-medium underline"
+            >
+              MIT License
+            </a>
+          </p>
+          <p className="text-gray-700 text-sm">
+            Created by{' '}
+            <a
+              href="https://github.com/alexdni"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-neuro-primary hover:text-neuro-accent font-medium"
+            >
+              Alex Ni
+            </a>
+          </p>
         </div>
       </div>
     </main>
