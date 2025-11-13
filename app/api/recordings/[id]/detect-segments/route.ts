@@ -38,19 +38,11 @@ export async function POST(
 
     // Auto-detect from filename
     const filename = recording.filename as string;
-    const filenameLower = filename.toLowerCase();
     const duration = recording.duration_seconds as number;
 
-    const isEOFile = filenameLower.includes(' eo ') ||
-                     filenameLower.includes('_eo_') ||
-                     filenameLower.includes('-eo-') ||
-                     filenameLower.includes(' eo.') ||
-                     /\beo\b/i.test(filename);
-    const isECFile = filenameLower.includes(' ec ') ||
-                     filenameLower.includes('_ec_') ||
-                     filenameLower.includes('-ec-') ||
-                     filenameLower.includes(' ec.') ||
-                     /\bec\b/i.test(filename);
+    // Use word boundary regex to match EO/EC as standalone words
+    const isEOFile = /\beo\b/i.test(filename);
+    const isECFile = /\bec\b/i.test(filename);
 
     let updates: any = {};
     let detectedType = 'unknown';
