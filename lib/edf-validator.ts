@@ -1,7 +1,12 @@
 // Server-side EDF validation (TypeScript/Node.js)
 // Validates EDF header without external dependencies
 
-import { MONTAGE_10_20 } from './constants';
+import {
+  MONTAGE_10_20_19CH,
+  MONTAGE_10_20_21CH,
+  EXPECTED_CHANNELS_19,
+  EXPECTED_CHANNELS_21
+} from './constants';
 
 interface ValidationResult {
   valid: boolean;
@@ -27,6 +32,10 @@ const CHANNEL_ALIASES: Record<string, string> = {
   'T4': 'T8',
   'T5': 'P7',
   'T6': 'P8',
+  'M1': 'A1',  // Mastoid = Auricular
+  'M2': 'A2',
+  'TP9': 'A1', // Sometimes ear references are labeled as TP9/TP10
+  'TP10': 'A2',
 };
 
 function normalizeChannelName(ch: string): string {
@@ -62,10 +71,11 @@ export async function validateEDFMontage(
     // Get number of channels (bytes 252-256)
     const nChannels = parseInt(buffer.toString('ascii', 252, 256).trim());
 
-    if (isNaN(nChannels) || nChannels !== 19) {
+    // Support both 19-channel and 21-channel 10-20 montages
+    if (isNaN(nChannels) || (nChannels !== EXPECTED_CHANNELS_19 && nChannels !== EXPECTED_CHANNELS_21)) {
       return {
         valid: false,
-        error: `Expected 19 channels, found ${nChannels}. This tool requires 19-channel 10-20 montage.`,
+        error: `Expected ${EXPECTED_CHANNELS_19} or ${EXPECTED_CHANNELS_21} channels, found ${nChannels}. This tool requires 10-20 montage.`,
       };
     }
 
@@ -93,27 +103,32 @@ export async function validateEDFMontage(
       offset += 16;
     }
 
+    // Determine expected montage based on channel count
+    const expectedMontage = nChannels === EXPECTED_CHANNELS_21
+      ? MONTAGE_10_20_21CH
+      : MONTAGE_10_20_19CH;
+
     // Check if all expected channels are present
-    const missingChannels = MONTAGE_10_20.filter(
+    const missingChannels = expectedMontage.filter(
       (ch) => !channelLabels.includes(ch)
     );
 
     if (missingChannels.length > 0) {
       return {
         valid: false,
-        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 montage.`,
+        error: `Missing required channels: ${missingChannels.join(', ')}. Expected ${nChannels}-channel 10-20 montage.`,
       };
     }
 
-    // Check for extra channels
+    // Check for extra channels (allow annotation channels)
     const extraChannels = channelLabels.filter(
-      (ch) => !MONTAGE_10_20.includes(ch)
+      (ch) => !expectedMontage.includes(ch) && !ch.toLowerCase().includes('annotation')
     );
 
     if (extraChannels.length > 0) {
       return {
         valid: false,
-        error: `Unexpected channels found: ${extraChannels.join(', ')}. Only 19-channel 10-20 montage is supported.`,
+        error: `Unexpected channels found: ${extraChannels.join(', ')}. Only ${nChannels}-channel 10-20 montage is supported.`,
       };
     }
 

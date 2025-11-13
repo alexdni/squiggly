@@ -5,13 +5,25 @@ export const MAX_UPLOAD_SIZE = 52428800; // 50 MB in bytes
 export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF'];
 
 // EEG Configuration
-export const EXPECTED_CHANNELS = 19;
-export const MONTAGE_10_20 = [
+export const EXPECTED_CHANNELS_19 = 19;
+export const EXPECTED_CHANNELS_21 = 21;
+export const MONTAGE_10_20_19CH = [
   'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
   'T7', 'C3', 'Cz', 'C4', 'T8',
   'P7', 'P3', 'Pz', 'P4', 'P8',
   'O1', 'O2'
 ];
+
+export const MONTAGE_10_20_21CH = [
+  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+  'T7', 'C3', 'Cz', 'C4', 'T8',
+  'P7', 'P3', 'Pz', 'P4', 'P8',
+  'O1', 'O2',
+  'A1', 'A2'  // Ear references
+];
+
+// Legacy export for backwards compatibility
+export const MONTAGE_10_20 = MONTAGE_10_20_19CH;
 
 // EO/EC Annotation Labels
 export const EO_LABELS = ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'];
