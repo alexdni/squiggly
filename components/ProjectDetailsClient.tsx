@@ -77,6 +77,63 @@ export default function ProjectDetailsClient({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const handleViewAnalysis = async (recordingId: string) => {
+    try {
+      // First, check if an analysis already exists for this recording
+      const { data: existingAnalysis, error: fetchError } = await supabase
+        .from('analyses')
+        .select('id')
+        .eq('recording_id', recordingId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (existingAnalysis) {
+        // Navigate to existing analysis
+        router.push(`/analyses/${existingAnalysis.id}`);
+        return;
+      }
+
+      // If no analysis exists, create one
+      const { data: newAnalysis, error: createError } = await supabase
+        .from('analyses')
+        .insert({
+          recording_id: recordingId,
+          status: 'pending',
+          config: {
+            preprocessing: {
+              resample_freq: 250,
+              filter_low: 0.5,
+              filter_high: 45,
+              notch_freq: 60,
+            },
+            features: {
+              bands: [
+                { name: 'delta', low: 1, high: 4 },
+                { name: 'theta', low: 4, high: 8 },
+                { name: 'alpha1', low: 8, high: 10 },
+                { name: 'alpha2', low: 10, high: 12 },
+                { name: 'smr', low: 12, high: 15 },
+                { name: 'beta2', low: 15, high: 20 },
+                { name: 'hibeta', low: 20, high: 30 },
+                { name: 'lowgamma', low: 30, high: 45 },
+              ],
+            },
+          },
+        })
+        .select()
+        .single();
+
+      if (createError) throw createError;
+
+      // Navigate to newly created analysis
+      router.push(`/analyses/${(newAnalysis as any).id}`);
+    } catch (error) {
+      console.error('Error handling analysis:', error);
+      alert('Failed to load or create analysis. Please try again.');
+    }
+  };
+
   return (
     <main className="min-h-screen bg-neuro-light">
       {/* Navigation */}
@@ -238,10 +295,7 @@ export default function ProjectDetailsClient({
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           className="text-neuro-primary hover:text-neuro-accent font-medium"
-                          onClick={() => {
-                            // TODO: Navigate to analysis page
-                            console.log('View analysis', recording.id);
-                          }}
+                          onClick={() => handleViewAnalysis(recording.id)}
                         >
                           View Analysis
                         </button>
