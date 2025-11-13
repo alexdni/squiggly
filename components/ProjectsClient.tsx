@@ -195,7 +195,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
             </h3>
             <form onSubmit={handleCreateProject}>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-900 mb-2">
                   Project Name *
                 </label>
                 <input
@@ -204,14 +204,14 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neuro-primary focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neuro-primary focus:border-transparent text-gray-900"
                   placeholder="e.g., Participant 001 - Baseline"
                   required
                   autoFocus
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-900 mb-2">
                   Description (optional)
                 </label>
                 <textarea
@@ -219,7 +219,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neuro-primary focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neuro-primary focus:border-transparent text-gray-900"
                   placeholder="Add notes about this project..."
                   rows={3}
                 />
@@ -237,7 +237,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
                     setFormData({ name: '', description: '' });
                     setError(null);
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-900"
                   disabled={isCreating}
                 >
                   Cancel

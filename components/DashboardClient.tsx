@@ -198,8 +198,8 @@ export default function DashboardClient({ user }: DashboardClientProps) {
             <div className="ml-3">
               <p className="text-sm text-yellow-700">
                 <strong className="font-medium">Important Disclaimer:</strong>{' '}
-                This platform is for educational and research use only. It is NOT a diagnostic tool
-                and should NOT be used for clinical decision-making. All heuristic risk flags are
+                This EEG assessment platform is for educational and research use only. It is NOT for medical use
+                and should NOT be used for clinical decision-making. All heuristic flags are
                 based on within-subject analysis without normative comparison.
               </p>
             </div>
