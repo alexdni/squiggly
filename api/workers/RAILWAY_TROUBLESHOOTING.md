@@ -87,7 +87,20 @@ Railway automatically sets:
 
 ---
 
-### Build Fails
+### Build Fails - Fortran Compiler Error
+**Symptoms**: Build fails with "Unknown compiler(s): gfortran"
+**Error**: `ERROR: Unknown compiler(s): [['gfortran'], ['flang-new']...]`
+**Cause**: Old scipy/numpy versions require building from source, need Fortran compiler
+
+**Solution**: ✅ FIXED
+- Updated to newer package versions with pre-built wheels
+- Added `runtime.txt` to specify Python 3.11.9
+- Using version ranges (e.g., `scipy>=1.13.0`) to get latest wheels
+- Pre-built wheels install in seconds vs minutes of compilation
+
+---
+
+### Build Fails - General
 **Symptoms**: Deployment fails during build
 **Check**: Build logs in Railway dashboard
 **Common causes**:
