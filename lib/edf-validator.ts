@@ -39,8 +39,24 @@ const CHANNEL_ALIASES: Record<string, string> = {
 };
 
 function normalizeChannelName(ch: string): string {
-  const normalized = ch.trim().replace(/\s+/g, '');
-  return CHANNEL_ALIASES[normalized] || normalized;
+  let normalized = ch.trim().replace(/\s+/g, '');
+
+  // Remove common prefixes (EEG, ECG, EMG, etc.)
+  normalized = normalized.replace(/^(EEG|ECG|EMG|EOG)/i, '');
+
+  // Remove common suffixes (reference notations)
+  normalized = normalized.replace(/-(LE|REF|AVG|A1|A2|CZ|M1|M2)$/i, '');
+
+  // Handle A2-A1 reference channel (represents both ear references)
+  if (normalized.match(/^A2-A1$/i)) {
+    // This is the combined reference - we'll treat it as having both A1 and A2
+    return 'A1'; // We'll handle A2 separately
+  }
+
+  // Apply aliases
+  normalized = CHANNEL_ALIASES[normalized] || normalized;
+
+  return normalized;
 }
 
 /**
@@ -97,11 +113,21 @@ export async function validateEDFMontage(
     const channelLabels: string[] = [];
     const rawChannelLabels: string[] = [];
     let offset = 256;
+    let hasA2A1Reference = false;
 
     for (let i = 0; i < nChannels; i++) {
       const label = buffer.toString('ascii', offset, offset + 16).trim();
       rawChannelLabels.push(label);
-      channelLabels.push(normalizeChannelName(label));
+
+      // Check if this is A2-A1 reference channel
+      if (label.match(/A2-A1/i)) {
+        hasA2A1Reference = true;
+        // Add both A1 and A2 to the channel list (combined reference)
+        channelLabels.push('A1');
+        channelLabels.push('A2');
+      } else {
+        channelLabels.push(normalizeChannelName(label));
+      }
       offset += 16;
     }
 
@@ -110,12 +136,12 @@ export async function validateEDFMontage(
       count: nChannels,
       raw: rawChannelLabels,
       normalized: channelLabels,
+      hasA2A1Reference,
     });
 
     // Determine expected montage based on channel count
-    const expectedMontage = nChannels === EXPECTED_CHANNELS_21
-      ? MONTAGE_10_20_21CH
-      : MONTAGE_10_20_19CH;
+    // Use 19-channel montage as base, since LE-referenced files don't have separate A1/A2 channels
+    const expectedMontage = MONTAGE_10_20_19CH;
 
     // Check if all expected channels are present
     const missingChannels = expectedMontage.filter(
@@ -125,19 +151,23 @@ export async function validateEDFMontage(
     if (missingChannels.length > 0) {
       return {
         valid: false,
-        error: `Missing required channels: ${missingChannels.join(', ')}. Expected ${nChannels}-channel 10-20 montage. Found: ${channelLabels.join(', ')}`,
+        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 montage. Found: ${channelLabels.join(', ')}`,
       };
     }
 
-    // Check for extra channels (allow annotation channels)
+    // Check for extra channels (allow annotation channels and reference channels)
     const extraChannels = channelLabels.filter(
-      (ch) => !expectedMontage.includes(ch) && !ch.toLowerCase().includes('annotation')
+      (ch) =>
+        !expectedMontage.includes(ch) &&
+        !ch.toLowerCase().includes('annotation') &&
+        ch !== 'A1' &&
+        ch !== 'A2'
     );
 
     if (extraChannels.length > 0) {
       return {
         valid: false,
-        error: `Unexpected channels found: ${extraChannels.join(', ')}. Only ${nChannels}-channel 10-20 montage is supported.`,
+        error: `Unexpected channels found: ${extraChannels.join(', ')}. Only 10-20 montage is supported.`,
       };
     }
 
