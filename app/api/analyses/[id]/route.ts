@@ -137,7 +137,7 @@ export async function POST(
     }
 
     // Update status to processing
-    const { error: updateError } = await supabase
+    const { error: updateError } = await (supabase as any)
       .from('analyses')
       .update({
         status: 'processing',
