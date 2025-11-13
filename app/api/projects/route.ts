@@ -15,16 +15,11 @@ export async function GET() {
     }
 
     // Get projects where user is owner or member
+    // Note: RLS policies automatically filter to projects user has access to
+    // We don't need to JOIN project_members here as that causes RLS recursion
     const { data: projects, error } = await supabase
       .from('projects')
-      .select(`
-        *,
-        project_members!inner(
-          role,
-          user_id
-        )
-      `)
-      .eq('project_members.user_id', user.id)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
