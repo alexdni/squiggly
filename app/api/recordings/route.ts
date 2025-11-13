@@ -115,7 +115,7 @@ export async function POST(request: Request) {
 
     const metadata = validationResult.metadata!;
 
-    // Auto-detect EO/EC from annotations if not manual
+    // Auto-detect EO/EC from annotations or filename if not manual
     let finalEoStart = eoStart;
     let finalEoEnd = eoEnd;
     let finalEcStart = ecStart;
@@ -123,25 +123,53 @@ export async function POST(request: Request) {
     let finalEoLabel = eoLabel;
     let finalEcLabel = ecLabel;
 
-    if (!useManual && metadata.annotations) {
-      // Try to find EO/EC annotations
-      const eoAnnotation = metadata.annotations.find((ann) =>
-        ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
-      );
-      const ecAnnotation = metadata.annotations.find((ann) =>
-        ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
-      );
+    if (!useManual) {
+      // First, try to detect from filename
+      const filenameLower = filename.toLowerCase();
+      const isEOFile = filenameLower.includes(' eo ') ||
+                       filenameLower.includes('_eo_') ||
+                       filenameLower.includes('-eo-') ||
+                       filenameLower.includes(' eo.') ||
+                       /\beo\b/i.test(filename);
+      const isECFile = filenameLower.includes(' ec ') ||
+                       filenameLower.includes('_ec_') ||
+                       filenameLower.includes('-ec-') ||
+                       filenameLower.includes(' ec.') ||
+                       /\bec\b/i.test(filename);
 
-      if (eoAnnotation) {
-        finalEoStart = eoAnnotation.onset;
-        finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
-        finalEoLabel = eoAnnotation.description;
-      }
+      // If filename indicates entire file is EO or EC, set times accordingly
+      if (isEOFile && !isECFile) {
+        // Entire file is Eyes Open
+        finalEoStart = 0;
+        finalEoEnd = metadata.duration_seconds;
+        finalEoLabel = 'EO';
+        console.log(`Auto-detected EO file from filename: ${filename}`);
+      } else if (isECFile && !isEOFile) {
+        // Entire file is Eyes Closed
+        finalEcStart = 0;
+        finalEcEnd = metadata.duration_seconds;
+        finalEcLabel = 'EC';
+        console.log(`Auto-detected EC file from filename: ${filename}`);
+      } else if (metadata.annotations) {
+        // Try to find EO/EC annotations if filename detection failed
+        const eoAnnotation = metadata.annotations.find((ann) =>
+          ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
+        );
+        const ecAnnotation = metadata.annotations.find((ann) =>
+          ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
+        );
 
-      if (ecAnnotation) {
-        finalEcStart = ecAnnotation.onset;
-        finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
-        finalEcLabel = ecAnnotation.description;
+        if (eoAnnotation) {
+          finalEoStart = eoAnnotation.onset;
+          finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
+          finalEoLabel = eoAnnotation.description;
+        }
+
+        if (ecAnnotation) {
+          finalEcStart = ecAnnotation.onset;
+          finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
+          finalEcLabel = ecAnnotation.description;
+        }
       }
     }
 
