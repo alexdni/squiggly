@@ -330,8 +330,8 @@ class EEGPreprocessor:
         raw_clean: mne.io.Raw,
         bad_channels: List[str],
         ica_components_removed: int,
-        epochs_eo: mne.Epochs,
-        epochs_ec: mne.Epochs
+        epochs_eo: mne.Epochs = None,
+        epochs_ec: mne.Epochs = None
     ) -> Dict:
         """
         Generate quality control metrics
@@ -341,20 +341,35 @@ class EEGPreprocessor:
             raw_clean: Cleaned raw data
             bad_channels: List of bad channels
             ica_components_removed: Number of ICA components removed
-            epochs_eo: Eyes open epochs
-            epochs_ec: Eyes closed epochs
+            epochs_eo: Eyes open epochs (optional)
+            epochs_ec: Eyes closed epochs (optional)
 
         Returns:
             Dictionary of QC metrics
         """
-        # Calculate rejection rates
-        eo_dropped = len(epochs_eo.drop_log)
-        eo_total = len(epochs_eo) + eo_dropped
-        eo_rejection_rate = (eo_dropped / eo_total * 100) if eo_total > 0 else 0
+        # Calculate rejection rates for EO
+        if epochs_eo is not None:
+            eo_dropped = len(epochs_eo.drop_log)
+            eo_total = len(epochs_eo) + eo_dropped
+            eo_rejection_rate = (eo_dropped / eo_total * 100) if eo_total > 0 else 0
+            final_epochs_eo = len(epochs_eo)
+        else:
+            eo_dropped = 0
+            eo_total = 0
+            eo_rejection_rate = 0.0
+            final_epochs_eo = 0
 
-        ec_dropped = len(epochs_ec.drop_log)
-        ec_total = len(epochs_ec) + ec_dropped
-        ec_rejection_rate = (ec_dropped / ec_total * 100) if ec_total > 0 else 0
+        # Calculate rejection rates for EC
+        if epochs_ec is not None:
+            ec_dropped = len(epochs_ec.drop_log)
+            ec_total = len(epochs_ec) + ec_dropped
+            ec_rejection_rate = (ec_dropped / ec_total * 100) if ec_total > 0 else 0
+            final_epochs_ec = len(epochs_ec)
+        else:
+            ec_dropped = 0
+            ec_total = 0
+            ec_rejection_rate = 0.0
+            final_epochs_ec = 0
 
         overall_rejection_rate = ((eo_dropped + ec_dropped) / (eo_total + ec_total) * 100) if (eo_total + ec_total) > 0 else 0
 
@@ -362,8 +377,8 @@ class EEGPreprocessor:
             'artifact_rejection_rate': round(overall_rejection_rate, 2),
             'bad_channels': bad_channels,
             'ica_components_removed': ica_components_removed,
-            'final_epochs_eo': len(epochs_eo),
-            'final_epochs_ec': len(epochs_ec),
+            'final_epochs_eo': final_epochs_eo,
+            'final_epochs_ec': final_epochs_ec,
             'eo_rejection_rate': round(eo_rejection_rate, 2),
             'ec_rejection_rate': round(ec_rejection_rate, 2),
             'original_sfreq': raw_original.info['sfreq'],
