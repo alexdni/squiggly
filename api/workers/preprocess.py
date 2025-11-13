@@ -412,9 +412,21 @@ def preprocess_eeg(
     # Apply ICA
     raw_clean, ica_components = preprocessor.apply_ica(raw)
 
-    # Create epochs for EO and EC segments
-    epochs_eo = preprocessor.create_epochs(raw_clean, eo_start, eo_end, 'EO')
-    epochs_ec = preprocessor.create_epochs(raw_clean, ec_start, ec_end, 'EC')
+    # Create epochs only for conditions that have data
+    epochs_eo = None
+    epochs_ec = None
+
+    if eo_start is not None and eo_end is not None:
+        logger.info(f"Creating EO epochs from {eo_start}s to {eo_end}s")
+        epochs_eo = preprocessor.create_epochs(raw_clean, eo_start, eo_end, 'EO')
+    else:
+        logger.info("Skipping EO epochs (no EO segment defined)")
+
+    if ec_start is not None and ec_end is not None:
+        logger.info(f"Creating EC epochs from {ec_start}s to {ec_end}s")
+        epochs_ec = preprocessor.create_epochs(raw_clean, ec_start, ec_end, 'EC')
+    else:
+        logger.info("Skipping EC epochs (no EC segment defined)")
 
     # Get QC metrics
     qc_metrics = preprocessor.get_qc_metrics(

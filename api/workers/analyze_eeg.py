@@ -205,7 +205,9 @@ def analyze_eeg_file(
         epochs_ec = preprocess_result['epochs_ec']
         qc_metrics = preprocess_result['qc_metrics']
 
-        logger.info(f"Preprocessing complete: {len(epochs_eo)} EO epochs, {len(epochs_ec)} EC epochs")
+        n_eo = len(epochs_eo) if epochs_eo is not None else 0
+        n_ec = len(epochs_ec) if epochs_ec is not None else 0
+        logger.info(f"Preprocessing complete: {n_eo} EO epochs, {n_ec} EC epochs")
 
         # Step 2: Feature Extraction
         logger.info("")

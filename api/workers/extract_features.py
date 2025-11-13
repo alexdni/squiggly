@@ -346,34 +346,54 @@ class FeatureExtractor:
 
 
 def extract_features(
-    epochs_eo: mne.Epochs,
-    epochs_ec: mne.Epochs
+    epochs_eo: mne.Epochs = None,
+    epochs_ec: mne.Epochs = None
 ) -> Dict:
     """
     Main feature extraction function
 
     Args:
-        epochs_eo: Eyes open epochs
-        epochs_ec: Eyes closed epochs
+        epochs_eo: Eyes open epochs (optional)
+        epochs_ec: Eyes closed epochs (optional)
 
     Returns:
         Dictionary of extracted features
     """
-    extractor = FeatureExtractor(epochs_eo.info['sfreq'])
+    # Determine which epochs to use for sampling rate
+    if epochs_eo is not None:
+        extractor = FeatureExtractor(epochs_eo.info['sfreq'])
+    elif epochs_ec is not None:
+        extractor = FeatureExtractor(epochs_ec.info['sfreq'])
+    else:
+        raise ValueError("At least one of epochs_eo or epochs_ec must be provided")
 
-    # Extract features for both conditions
-    logger.info("Extracting features for Eyes Open condition")
-    band_power_eo = extractor.compute_band_power(epochs_eo)
-    coherence_eo = extractor.compute_coherence(epochs_eo)
+    # Extract features for EO condition if available
+    band_power_eo = None
+    coherence_eo = None
+    if epochs_eo is not None:
+        logger.info("Extracting features for Eyes Open condition")
+        band_power_eo = extractor.compute_band_power(epochs_eo)
+        coherence_eo = extractor.compute_coherence(epochs_eo)
+    else:
+        logger.info("Skipping Eyes Open feature extraction (no EO epochs)")
 
-    logger.info("Extracting features for Eyes Closed condition")
-    band_power_ec = extractor.compute_band_power(epochs_ec)
-    coherence_ec = extractor.compute_coherence(epochs_ec)
+    # Extract features for EC condition if available
+    band_power_ec = None
+    coherence_ec = None
+    if epochs_ec is not None:
+        logger.info("Extracting features for Eyes Closed condition")
+        band_power_ec = extractor.compute_band_power(epochs_ec)
+        coherence_ec = extractor.compute_coherence(epochs_ec)
+    else:
+        logger.info("Skipping Eyes Closed feature extraction (no EC epochs)")
 
-    # Compute derived metrics (use EC for clinical metrics as it's more stable)
-    band_ratios = extractor.compute_band_ratios(band_power_ec)
-    asymmetry = extractor.compute_asymmetry(band_power_ec)
-    risk_patterns = extractor.detect_risk_patterns(band_power_ec, band_ratios, asymmetry)
+    # Compute derived metrics (prefer EC if available, otherwise use EO)
+    # EC is more stable for clinical metrics, but we'll use what we have
+    primary_band_power = band_power_ec if band_power_ec is not None else band_power_eo
+
+    band_ratios = extractor.compute_band_ratios(primary_band_power)
+    asymmetry = extractor.compute_asymmetry(primary_band_power)
+    risk_patterns = extractor.detect_risk_patterns(primary_band_power, band_ratios, asymmetry)
 
     return {
         'band_power': {
