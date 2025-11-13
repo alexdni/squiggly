@@ -99,7 +99,7 @@ export default function RawEEGViewer({
 
     return (
       <div className="mb-4">
-        <h3 className="text-sm font-semibold mb-2">Select Channels to Display:</h3>
+        <h3 className="text-sm font-semibold mb-2 text-gray-900">Select Channels to Display:</h3>
         <div className="flex flex-wrap gap-2">
           {edfData.header.channels.map((channel, index) => (
             <button
@@ -108,7 +108,7 @@ export default function RawEEGViewer({
               className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                 selectedChannels.includes(index)
                   ? 'bg-neuro-primary text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  : 'bg-gray-200 text-gray-900 hover:bg-gray-300'
               }`}
             >
               {channel.label}
@@ -233,13 +233,15 @@ export default function RawEEGViewer({
 
     // Stack channels vertically with fixed amplitude range
     const datasets = selectedChannels.map((channelIndex, i) => {
-      // Calculate baseline offset for this channel (inverted so first channel is at top)
-      const baselineOffset = (selectedChannels.length - 1 - i) * amplitudePerChannel;
+      // Calculate baseline (center) for this channel (inverted so first channel is at top)
+      // Each channel gets 100μV of space (±50μV from baseline)
+      const channelSpacing = 100; // Space between channel centers
+      const baseline = (selectedChannels.length - 1 - i) * channelSpacing;
 
-      // Clamp signal to ±25μV and add baseline offset
+      // Clamp signal to ±50μV and add baseline offset
       const offsetData = selectedData[i].map((value) => {
-        const clampedValue = Math.max(-25, Math.min(25, value));
-        return clampedValue + baselineOffset;
+        const clampedValue = Math.max(-50, Math.min(50, value));
+        return clampedValue + baseline;
       });
 
       return {
@@ -247,7 +249,7 @@ export default function RawEEGViewer({
         data: offsetData,
         borderColor: colors[i % colors.length],
         backgroundColor: 'transparent',
-        borderWidth: 1,
+        borderWidth: 1.5,
         pointRadius: 0,
         tension: 0,
       };
@@ -259,8 +261,9 @@ export default function RawEEGViewer({
     };
 
     // Create Y-axis tick labels at each channel baseline
+    const channelSpacing = 100;
     const yTicks = selectedChannels.map((channelIndex, i) => ({
-      value: (selectedChannels.length - 1 - i) * amplitudePerChannel,
+      value: (selectedChannels.length - 1 - i) * channelSpacing,
       label: edfData.header.channels[channelIndex].label,
     }));
 
@@ -290,8 +293,8 @@ export default function RawEEGViewer({
               const datasetIndex = context.datasetIndex;
               const channelIndex = selectedChannels[datasetIndex];
               const channelLabel = edfData.header.channels[channelIndex].label;
-              const baselineOffset = (selectedChannels.length - 1 - datasetIndex) * amplitudePerChannel;
-              const actualValue = (context.parsed.y ?? 0) - baselineOffset;
+              const baseline = (selectedChannels.length - 1 - datasetIndex) * channelSpacing;
+              const actualValue = (context.parsed.y ?? 0) - baseline;
               return `${channelLabel}: ${actualValue.toFixed(2)} μV`;
             },
           },
@@ -332,22 +335,32 @@ export default function RawEEGViewer({
         },
         y: {
           display: true,
-          min: -amplitudePerChannel / 2,
-          max: selectedChannels.length * amplitudePerChannel - amplitudePerChannel / 2,
+          min: -channelSpacing / 2,
+          max: (selectedChannels.length - 0.5) * channelSpacing,
           ticks: {
             callback: function(value) {
               // Show channel labels at baseline positions
               const tick = yTicks.find(t => t.value === value);
               return tick ? tick.label : '';
             },
-            stepSize: amplitudePerChannel,
+            stepSize: channelSpacing,
+            color: '#1f2937', // gray-800 for better visibility
+            font: {
+              size: 12,
+              weight: 'bold',
+            },
           },
           grid: {
             color: (context) => {
               // Highlight grid lines at channel baselines
               const value = context.tick.value;
               const isBaseline = yTicks.some(t => t.value === value);
-              return isBaseline ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.1)';
+              return isBaseline ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.1)';
+            },
+            lineWidth: (context) => {
+              const value = context.tick.value;
+              const isBaseline = yTicks.some(t => t.value === value);
+              return isBaseline ? 2 : 1;
             },
           },
         },
