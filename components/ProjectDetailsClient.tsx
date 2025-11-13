@@ -80,7 +80,7 @@ export default function ProjectDetailsClient({
   const handleViewAnalysis = async (recordingId: string) => {
     try {
       // First, check if an analysis already exists for this recording
-      const { data: existingAnalysis, error: fetchError } = await supabase
+      const { data: existingAnalysis, error: fetchError } = await (supabase as any)
         .from('analyses')
         .select('id')
         .eq('recording_id', recordingId)
@@ -95,7 +95,7 @@ export default function ProjectDetailsClient({
       }
 
       // If no analysis exists, create one
-      const { data: newAnalysis, error: createError } = await supabase
+      const { data: newAnalysis, error: createError } = await (supabase as any)
         .from('analyses')
         .insert({
           recording_id: recordingId,
@@ -127,7 +127,7 @@ export default function ProjectDetailsClient({
       if (createError) throw createError;
 
       // Navigate to newly created analysis
-      router.push(`/analyses/${(newAnalysis as any).id}`);
+      router.push(`/analyses/${newAnalysis.id}`);
     } catch (error) {
       console.error('Error handling analysis:', error);
       alert('Failed to load or create analysis. Please try again.');
