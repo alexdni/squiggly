@@ -292,10 +292,14 @@ class EEGPreprocessor:
         Returns:
             MNE Epochs object
         """
-        logger.info(f"Creating {segment_name} epochs from {segment_start}s to {segment_end}s")
+        # Clamp segment_end to actual recording duration to avoid rounding errors
+        max_time = raw.times[-1]
+        segment_end_clamped = min(segment_end, max_time)
+
+        logger.info(f"Creating {segment_name} epochs from {segment_start}s to {segment_end_clamped}s")
 
         # Crop to segment
-        raw_segment = raw.copy().crop(tmin=segment_start, tmax=segment_end)
+        raw_segment = raw.copy().crop(tmin=segment_start, tmax=segment_end_clamped)
 
         # Create fixed-length events
         events = mne.make_fixed_length_events(
