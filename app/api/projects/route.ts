@@ -17,19 +17,22 @@ export async function GET() {
     // Get projects where user is owner or member
     // Note: RLS policies automatically filter to projects user has access to
     // We don't need to JOIN project_members here as that causes RLS recursion
+    console.log('[GET /api/projects] Fetching projects for user:', user.id);
+
     const { data: projects, error } = await supabase
       .from('projects')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching projects:', error);
+      console.error('[GET /api/projects] Error fetching projects:', error);
       return NextResponse.json(
-        { error: 'Failed to fetch projects' },
+        { error: 'Failed to fetch projects', details: error },
         { status: 500 }
       );
     }
 
+    console.log('[GET /api/projects] Successfully fetched', projects?.length || 0, 'projects');
     return NextResponse.json({ projects });
   } catch (error) {
     console.error('Error in GET /api/projects:', error);
