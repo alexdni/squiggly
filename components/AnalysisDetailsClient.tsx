@@ -4,10 +4,25 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import type { User } from '@supabase/supabase-js';
+import dynamic from 'next/dynamic';
+
+// Dynamically import RawEEGViewer to avoid SSR issues with Chart.js
+const RawEEGViewer = dynamic(() => import('./RawEEGViewer'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-center justify-center py-12">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-neuro-primary"></div>
+        <p className="ml-4 text-gray-600">Loading EEG viewer...</p>
+      </div>
+    </div>
+  ),
+});
 
 interface Recording {
   id: string;
   filename: string;
+  file_path: string;
   file_size: number;
   duration_seconds: number;
   sampling_rate: number;
@@ -60,6 +75,7 @@ export default function AnalysisDetailsClient({
             recording:recordings (
               id,
               filename,
+              file_path,
               file_size,
               duration_seconds,
               sampling_rate,
@@ -284,6 +300,12 @@ export default function AnalysisDetailsClient({
             </div>
           </div>
         </div>
+
+        {/* Raw EEG Visualization */}
+        <RawEEGViewer
+          recordingId={analysis.recording.id}
+          filePath={analysis.recording.file_path}
+        />
 
         {/* Analysis Results or Status Message */}
         {analysis.status === 'pending' && (

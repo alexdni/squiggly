@@ -27,6 +27,7 @@ export default async function AnalysisPage({ params }: AnalysisPageProps) {
       recording:recordings (
         id,
         filename,
+        file_path,
         file_size,
         duration_seconds,
         sampling_rate,
