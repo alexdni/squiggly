@@ -12,10 +12,26 @@ export interface WorkerConfig {
   queueUrl?: string;
 }
 
+export interface AnalysisJobData {
+  analysisId: string;
+  filePath: string;
+  eoStart: number;
+  eoEnd: number;
+  ecStart: number;
+  ecEnd: number;
+  config?: Record<string, any>;
+}
+
 export interface AnalysisJob {
   analysis_id: string;
+  file_path: string;
+  eo_start: number;
+  eo_end: number;
+  ec_start: number;
+  ec_end: number;
   supabase_url: string;
   supabase_key: string;
+  config?: Record<string, any>;
 }
 
 /**
@@ -36,17 +52,17 @@ export function getWorkerConfig(): WorkerConfig {
  * Submit analysis job to worker
  */
 export async function submitAnalysisJob(
-  analysisId: string,
+  jobData: AnalysisJobData,
   config?: WorkerConfig
 ): Promise<{ success: boolean; message: string }> {
   const workerConfig = config || getWorkerConfig();
 
   switch (workerConfig.mode) {
     case 'http':
-      return submitHttpJob(analysisId, workerConfig);
+      return submitHttpJob(jobData, workerConfig);
 
     case 'queue':
-      return submitQueueJob(analysisId, workerConfig);
+      return submitQueueJob(jobData, workerConfig);
 
     case 'mock':
     default:
@@ -61,7 +77,7 @@ export async function submitAnalysisJob(
  * Submit job via HTTP webhook to worker service
  */
 async function submitHttpJob(
-  analysisId: string,
+  jobData: AnalysisJobData,
   config: WorkerConfig
 ): Promise<{ success: boolean; message: string }> {
   if (!config.workerUrl) {
@@ -69,9 +85,15 @@ async function submitHttpJob(
   }
 
   const job: AnalysisJob = {
-    analysis_id: analysisId,
+    analysis_id: jobData.analysisId,
+    file_path: jobData.filePath,
+    eo_start: jobData.eoStart,
+    eo_end: jobData.eoEnd,
+    ec_start: jobData.ecStart,
+    ec_end: jobData.ecEnd,
     supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL!,
     supabase_key: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    config: jobData.config,
   };
 
   const headers: Record<string, string> = {
@@ -108,7 +130,7 @@ async function submitHttpJob(
  * Submit job to queue (Redis, Supabase Queue, etc.)
  */
 async function submitQueueJob(
-  analysisId: string,
+  jobData: AnalysisJobData,
   config: WorkerConfig
 ): Promise<{ success: boolean; message: string }> {
   // This would integrate with your queue system (Redis, SQS, etc.)
@@ -122,7 +144,7 @@ async function submitQueueJob(
   // const Redis = require('ioredis');
   // const redis = new Redis(config.queueUrl);
   // await redis.lpush('analysis_queue', JSON.stringify({
-  //   analysis_id: analysisId,
+  //   analysis_id: jobData.analysisId,
   //   timestamp: Date.now()
   // }));
 

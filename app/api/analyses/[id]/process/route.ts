@@ -34,6 +34,7 @@ export async function POST(
         recording:recordings (
           id,
           filename,
+          file_path,
           duration_seconds,
           sampling_rate,
           n_channels,
@@ -50,6 +51,25 @@ export async function POST(
       return NextResponse.json(
         { error: 'Analysis not found' },
         { status: 404 }
+      );
+    }
+
+    // Validate required recording data
+    const recording = analysis.recording;
+    if (!recording || !recording.file_path) {
+      return NextResponse.json(
+        { error: 'Recording file path not found' },
+        { status: 400 }
+      );
+    }
+
+    if (
+      recording.eo_start === null || recording.eo_end === null ||
+      recording.ec_start === null || recording.ec_end === null
+    ) {
+      return NextResponse.json(
+        { error: 'Recording segments not labeled (EO/EC times missing)' },
+        { status: 400 }
       );
     }
 
@@ -96,7 +116,17 @@ export async function POST(
       console.log(`[Production] Submitting to ${workerConfig.mode} worker`);
 
       try {
-        const result = await submitAnalysisJob(params.id, workerConfig);
+        const result = await submitAnalysisJob(
+          {
+            analysisId: params.id,
+            filePath: recording.file_path,
+            eoStart: recording.eo_start,
+            eoEnd: recording.eo_end,
+            ecStart: recording.ec_start,
+            ecEnd: recording.ec_end,
+          },
+          workerConfig
+        );
 
         return NextResponse.json({
           success: true,
