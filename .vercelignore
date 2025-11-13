@@ -1,13 +1,20 @@
-node_modules
-.next
-.git
-*.log
-.env*.local
-api/workers/*.py
-api/workers/README.md
-SECTION_*.md
-SERVERLESS_SIZE_FIX.md
-OPENSPEC_*.md
-openspec/
-.cursor/
-.claude/
+# Python workers - deployed separately
+api/workers/**/*.py
+api/workers/requirements.txt
+api/workers/Dockerfile
+api/workers/docker-compose.yml
+api/workers/Procfile
+api/workers/*.yaml
+api/workers/*.json
+api/workers/*.md
+api/workers/.env*
+
+# Supabase functions - deployed separately
+supabase/functions
+
+# Development files
+*.pyc
+__pycache__
+venv
+.env
+.DS_Store
