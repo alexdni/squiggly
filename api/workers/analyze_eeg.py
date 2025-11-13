@@ -77,6 +77,34 @@ def download_from_supabase(file_path: str, supabase_url: str, supabase_key: str)
         raise
 
 
+def convert_numpy_types(obj):
+    """
+    Recursively convert NumPy types to native Python types for JSON serialization
+
+    Args:
+        obj: Object to convert (can be dict, list, numpy type, etc.)
+
+    Returns:
+        Object with all NumPy types converted to native Python types
+    """
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return convert_numpy_types(obj.tolist())
+    else:
+        return obj
+
+
 def upload_results_to_supabase(
     analysis_id: str,
     results: Dict,
@@ -102,10 +130,13 @@ def upload_results_to_supabase(
 
         supabase: Client = create_client(supabase_url, supabase_key)
 
+        # Convert NumPy types to native Python types for JSON serialization
+        results_serializable = convert_numpy_types(results)
+
         # Update analysis record
         response = supabase.table('analyses').update({
             'status': 'completed',
-            'results': results,
+            'results': results_serializable,
             'completed_at': time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())
         }).eq('id', analysis_id).execute()
 
