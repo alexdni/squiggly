@@ -51,14 +51,12 @@ def download_from_supabase(file_path: str, supabase_url: str, supabase_key: str)
 
         supabase: Client = create_client(supabase_url, supabase_key)
 
-        # Extract bucket and path
-        # file_path format: 'bucket_name/path/to/file'
-        parts = file_path.split('/', 1)
-        if len(parts) < 2:
-            raise ValueError(f"Invalid file path format: {file_path}")
+        # File path is stored without bucket name (just projectId/filename)
+        # Bucket is always 'recordings'
+        bucket_name = 'recordings'
+        object_path = file_path
 
-        bucket_name = parts[0]
-        object_path = parts[1]
+        logger.info(f"Downloading from bucket '{bucket_name}', path: {object_path}")
 
         # Download file
         response = supabase.storage.from_(bucket_name).download(object_path)
