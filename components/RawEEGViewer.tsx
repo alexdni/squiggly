@@ -127,7 +127,7 @@ export default function RawEEGViewer({
     return (
       <div className="mb-4 space-y-2">
         <div className="flex items-center gap-4">
-          <label className="text-sm font-semibold">Time Window:</label>
+          <label className="text-sm font-semibold text-gray-900">Time Window:</label>
           <input
             type="number"
             min={0}
@@ -140,9 +140,9 @@ export default function RawEEGViewer({
                 start: parseFloat(e.target.value),
               }))
             }
-            className="border border-gray-300 rounded px-2 py-1 w-20"
+            className="border border-gray-300 rounded px-2 py-1 w-20 text-gray-900 bg-white"
           />
-          <span className="text-sm">Start (s)</span>
+          <span className="text-sm text-gray-900 font-medium">Start (s)</span>
 
           <input
             type="number"
@@ -156,9 +156,9 @@ export default function RawEEGViewer({
                 duration: parseFloat(e.target.value),
               }))
             }
-            className="border border-gray-300 rounded px-2 py-1 w-20"
+            className="border border-gray-300 rounded px-2 py-1 w-20 text-gray-900 bg-white"
           />
-          <span className="text-sm">Duration (s)</span>
+          <span className="text-sm text-gray-900 font-medium">Duration (s)</span>
         </div>
 
         <div className="flex gap-2">
@@ -334,48 +334,55 @@ export default function RawEEGViewer({
           },
         },
         y: {
+          type: 'linear' as const,
           display: true,
           min: -channelSpacing / 2,
           max: (selectedChannels.length - 0.5) * channelSpacing,
-          position: 'left',
+          position: 'left' as const,
           ticks: {
             callback: function(value) {
               // Show channel labels at baseline positions
-              const tick = yTicks.find(t => Math.abs(t.value - (value as number)) < 1);
+              const numValue = value as number;
+              const tick = yTicks.find(t => Math.abs(t.value - numValue) < 0.1);
               return tick ? tick.label : '';
             },
             stepSize: channelSpacing,
-            color: '#111827', // gray-900 for maximum visibility
+            color: '#000000', // pure black for maximum visibility
             font: {
-              size: 13,
+              size: 14,
               weight: 'bold' as const,
               family: 'system-ui, -apple-system, sans-serif',
             },
             autoSkip: false,
             maxRotation: 0,
-            padding: 8,
+            minRotation: 0,
+            padding: 10,
+            align: 'center' as const,
           },
           grid: {
+            display: true,
+            drawOnChartArea: true,
             color: (context) => {
               // Highlight grid lines at channel baselines
               const value = context.tick.value;
-              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 1);
-              return isBaseline ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.1)';
+              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 0.1);
+              return isBaseline ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)';
             },
             lineWidth: (context) => {
               const value = context.tick.value;
-              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 1);
+              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 0.1);
               return isBaseline ? 2 : 1;
             },
           },
           title: {
             display: true,
             text: 'Channels',
-            color: '#111827',
+            color: '#000000',
             font: {
-              size: 13,
+              size: 14,
               weight: 'bold' as const,
             },
+            padding: 10,
           },
         },
       },
