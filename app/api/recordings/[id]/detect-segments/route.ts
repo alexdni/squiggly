@@ -93,18 +93,35 @@ export async function POST(
       .from('recordings')
       .update(updates)
       .eq('id', params.id)
-      .select()
-      .single();
+      .select();
 
     if (updateError) {
       console.error('Error updating recording:', updateError);
-      throw updateError;
+      return NextResponse.json(
+        {
+          error: 'Failed to update recording',
+          details: updateError.message,
+          code: updateError.code
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!updated || updated.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'Recording not found or no permission to update',
+          recordingId: params.id,
+          message: 'This could be a permissions issue. Make sure you own this recording.'
+        },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({
       success: true,
       detectedType,
-      recording: updated,
+      recording: updated[0],
       message: `Auto-detected ${detectedType} from filename and set segments (0s to ${duration}s)`
     });
 
