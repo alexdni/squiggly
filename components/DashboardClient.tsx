@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase-client';
 import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
@@ -8,9 +9,55 @@ interface DashboardClientProps {
   user: User;
 }
 
+interface Stats {
+  projects: number;
+  recordings: number;
+  analyses: number;
+}
+
 export default function DashboardClient({ user }: DashboardClientProps) {
   const router = useRouter();
   const supabase = createClient();
+  const [stats, setStats] = useState<Stats>({
+    projects: 0,
+    recordings: 0,
+    analyses: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      // Fetch counts for projects, recordings, and analyses
+      const [projectsRes, recordingsRes, analysesRes] = await Promise.all([
+        supabase
+          .from('projects')
+          .select('id', { count: 'exact', head: true })
+          .eq('owner_id', user.id),
+        supabase
+          .from('recordings')
+          .select('id', { count: 'exact', head: true })
+          .eq('uploaded_by', user.id),
+        supabase
+          .from('analyses')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'completed'),
+      ]);
+
+      setStats({
+        projects: projectsRes.count || 0,
+        recordings: recordingsRes.count || 0,
+        analyses: analysesRes.count || 0,
+      });
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -59,14 +106,17 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 Projects
               </h3>
               <div className="bg-neuro-primary text-white rounded-full w-10 h-10 flex items-center justify-center">
-                0
+                {isLoading ? '...' : stats.projects}
               </div>
             </div>
             <p className="text-gray-600 text-sm">
               Create and manage your EEG analysis projects
             </p>
-            <button className="mt-4 w-full bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors">
-              Create Project
+            <button
+              onClick={() => router.push('/projects')}
+              className="mt-4 w-full bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors"
+            >
+              {stats.projects > 0 ? 'View Projects' : 'Create Project'}
             </button>
           </div>
 
@@ -76,15 +126,25 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 Recordings
               </h3>
               <div className="bg-neuro-secondary text-white rounded-full w-10 h-10 flex items-center justify-center">
-                0
+                {isLoading ? '...' : stats.recordings}
               </div>
             </div>
             <p className="text-gray-600 text-sm">
               Upload and analyze EEG recordings (19-channel EDF)
             </p>
             <button
-              className="mt-4 w-full bg-gray-300 text-gray-500 px-4 py-2 rounded-lg cursor-not-allowed"
-              disabled
+              onClick={() => router.push('/projects')}
+              className={`mt-4 w-full px-4 py-2 rounded-lg transition-colors ${
+                stats.projects > 0
+                  ? 'bg-neuro-secondary text-white hover:bg-neuro-primary'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              disabled={stats.projects === 0}
+              title={
+                stats.projects === 0
+                  ? 'Create a project first to upload recordings'
+                  : 'Upload recordings'
+              }
             >
               Upload Recording
             </button>
@@ -96,15 +156,24 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 Analyses
               </h3>
               <div className="bg-neuro-accent text-white rounded-full w-10 h-10 flex items-center justify-center">
-                0
+                {isLoading ? '...' : stats.analyses}
               </div>
             </div>
             <p className="text-gray-600 text-sm">
               View completed EO/EC analysis results
             </p>
             <button
-              className="mt-4 w-full bg-gray-300 text-gray-500 px-4 py-2 rounded-lg cursor-not-allowed"
-              disabled
+              className={`mt-4 w-full px-4 py-2 rounded-lg transition-colors ${
+                stats.analyses > 0
+                  ? 'bg-neuro-accent text-white hover:bg-neuro-primary'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              disabled={stats.analyses === 0}
+              title={
+                stats.analyses === 0
+                  ? 'No completed analyses yet'
+                  : 'View analyses'
+              }
             >
               View Analyses
             </button>
