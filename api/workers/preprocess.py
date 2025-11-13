@@ -246,17 +246,27 @@ class EEGPreprocessor:
         ica.fit(raw, verbose=False)
 
         # Detect artifacts automatically
-        # EOG artifacts (eye blinks/movements)
-        eog_indices, eog_scores = ica.find_bads_eog(raw, threshold=3.0, verbose=False)
+        # EOG artifacts (eye blinks/movements) - skip if no EOG channels
+        eog_indices = []
+        try:
+            eog_indices, eog_scores = ica.find_bads_eog(raw, threshold=3.0, verbose=False)
+            logger.info(f"Detected {len(eog_indices)} EOG artifact components")
+        except RuntimeError as e:
+            logger.warning(f"Skipping EOG detection: {e}")
 
         # Muscle artifacts (using high-frequency band)
-        muscle_indices, muscle_scores = ica.find_bads_muscle(raw, threshold=0.8, verbose=False)
+        muscle_indices = []
+        try:
+            muscle_indices, muscle_scores = ica.find_bads_muscle(raw, threshold=0.8, verbose=False)
+            logger.info(f"Detected {len(muscle_indices)} muscle artifact components")
+        except Exception as e:
+            logger.warning(f"Skipping muscle artifact detection: {e}")
 
         # Combine all bad components
         bad_components = list(set(eog_indices + muscle_indices))
         ica.exclude = bad_components
 
-        logger.info(f"Identified {len(bad_components)} artifact components: {bad_components}")
+        logger.info(f"Identified {len(bad_components)} total artifact components: {bad_components}")
 
         # Apply ICA to remove artifacts
         raw_clean = ica.apply(raw.copy(), verbose=False)
