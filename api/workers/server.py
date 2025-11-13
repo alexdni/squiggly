@@ -70,7 +70,6 @@ def analyze():
         # Validate required fields
         required_fields = [
             'analysis_id', 'file_path',
-            'eo_start', 'eo_end', 'ec_start', 'ec_end',
             'supabase_url', 'supabase_key'
         ]
 
@@ -80,12 +79,24 @@ def analyze():
 
         analysis_id = data['analysis_id']
         file_path = data['file_path']
-        eo_start = float(data['eo_start'])
-        eo_end = float(data['eo_end'])
-        ec_start = float(data['ec_start'])
-        ec_end = float(data['ec_end'])
         supabase_url = data['supabase_url']
         supabase_key = data['supabase_key']
+
+        # EO/EC times are optional (one or both can be provided)
+        eo_start = float(data['eo_start']) if data.get('eo_start') is not None else None
+        eo_end = float(data['eo_end']) if data.get('eo_end') is not None else None
+        ec_start = float(data['ec_start']) if data.get('ec_start') is not None else None
+        ec_end = float(data['ec_end']) if data.get('ec_end') is not None else None
+
+        # Validate that at least one condition is provided
+        has_eo = eo_start is not None and eo_end is not None
+        has_ec = ec_start is not None and ec_end is not None
+
+        if not has_eo and not has_ec:
+            return jsonify({
+                'error': 'Missing EO/EC segments',
+                'message': 'At least one condition (EO or EC) must be provided with start/end times'
+            }), 400
 
         logger.info(f"Starting analysis for: {analysis_id}")
 

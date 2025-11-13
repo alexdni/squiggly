@@ -63,14 +63,26 @@ export async function POST(
       );
     }
 
-    if (
-      recording.eo_start === null || recording.eo_end === null ||
-      recording.ec_start === null || recording.ec_end === null
-    ) {
+    // Check that we have at least ONE condition (EO or EC)
+    const hasEO = recording.eo_start !== null && recording.eo_end !== null;
+    const hasEC = recording.ec_start !== null && recording.ec_end !== null;
+
+    if (!hasEO && !hasEC) {
       return NextResponse.json(
-        { error: 'Recording segments not labeled (EO/EC times missing)' },
+        {
+          error: 'Recording segments not labeled (EO/EC times missing)',
+          message: 'Please label the segments or use the auto-detect feature',
+          recordingId: recording.id
+        },
         { status: 400 }
       );
+    }
+
+    // Log warning if only one condition is present
+    if (hasEO && !hasEC) {
+      console.log(`Warning: Recording ${recording.id} has only EO data, no EC data`);
+    } else if (hasEC && !hasEO) {
+      console.log(`Warning: Recording ${recording.id} has only EC data, no EO data`);
     }
 
     // Update status to processing
