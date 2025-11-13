@@ -102,7 +102,7 @@ class FeatureExtractor:
                 band_power[ch_name][band_name] = {'absolute': float(absolute)}
 
             # Compute total power for relative calculation
-            total_power = sum(bp[band]['absolute'] for band, bp in band_power[ch_name].items())
+            total_power = sum(bp['absolute'] for bp in band_power[ch_name].values())
 
             # Add relative power
             for band_name in BANDS.keys():
