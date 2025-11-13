@@ -75,7 +75,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               </h1>
             </div>
             <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-800">
                 {user.email}
               </div>
               <button
@@ -94,7 +94,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
           <h2 className="text-3xl font-bold text-neuro-dark mb-2">
             Dashboard
           </h2>
-          <p className="text-gray-600">
+          <p className="text-gray-800">
             Welcome to your EEG analysis workspace
           </p>
         </div>
@@ -109,7 +109,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 {isLoading ? '...' : stats.projects}
               </div>
             </div>
-            <p className="text-gray-600 text-sm">
+            <p className="text-gray-800 text-sm">
               Create and manage your EEG analysis projects
             </p>
             <button
@@ -129,7 +129,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 {isLoading ? '...' : stats.recordings}
               </div>
             </div>
-            <p className="text-gray-600 text-sm">
+            <p className="text-gray-800 text-sm">
               Upload and analyze EEG recordings (19-channel EDF)
             </p>
             <button
@@ -137,7 +137,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               className={`mt-4 w-full px-4 py-2 rounded-lg transition-colors ${
                 stats.projects > 0
                   ? 'bg-neuro-secondary text-white hover:bg-neuro-primary'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gray-300 text-gray-700 cursor-not-allowed'
               }`}
               disabled={stats.projects === 0}
               title={
@@ -159,14 +159,14 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 {isLoading ? '...' : stats.analyses}
               </div>
             </div>
-            <p className="text-gray-600 text-sm">
+            <p className="text-gray-800 text-sm">
               View completed EO/EC analysis results
             </p>
             <button
               className={`mt-4 w-full px-4 py-2 rounded-lg transition-colors ${
                 stats.analyses > 0
                   ? 'bg-neuro-accent text-white hover:bg-neuro-primary'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gray-300 text-gray-700 cursor-not-allowed'
               }`}
               disabled={stats.analyses === 0}
               title={

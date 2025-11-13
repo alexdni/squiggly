@@ -117,7 +117,7 @@ export default function FileUploadZone({
             <p className="text-lg font-medium text-gray-700">
               {selectedFile ? selectedFile.name : 'Drop your EDF file here'}
             </p>
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-gray-700 mt-2">
               {selectedFile
                 ? `${formatFileSize(selectedFile.size)} - Click to change`
                 : 'or click to browse'

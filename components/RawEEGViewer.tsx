@@ -356,7 +356,7 @@ export default function RawEEGViewer({
 
     return (
       <div>
-        <div className="mb-2 text-sm text-gray-600">
+        <div className="mb-2 text-sm text-gray-700">
           💡 Tip: Use mouse wheel to zoom, click and drag to pan horizontally
         </div>
         <div style={{ height: '500px' }}>
@@ -371,7 +371,7 @@ export default function RawEEGViewer({
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-neuro-primary"></div>
-          <p className="ml-4 text-gray-600">Loading EEG data...</p>
+          <p className="ml-4 text-gray-800">Loading EEG data...</p>
         </div>
       </div>
     );
@@ -397,7 +397,7 @@ export default function RawEEGViewer({
         renderChart()
       ) : (
         <div className="bg-gray-100 rounded-lg p-8 text-center">
-          <p className="text-gray-600">Select at least one channel to display</p>
+          <p className="text-gray-800">Select at least one channel to display</p>
         </div>
       )}
     </div>

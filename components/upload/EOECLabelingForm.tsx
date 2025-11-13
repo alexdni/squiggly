@@ -61,7 +61,7 @@ export default function EOECLabelingForm({
         <h3 className="text-lg font-semibold text-neuro-dark mb-2">
           EO/EC Segmentation
         </h3>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-gray-800">
           Specify which parts of the recording are Eyes-Open (EO) and Eyes-Closed (EC)
         </p>
       </div>
@@ -104,7 +104,7 @@ export default function EOECLabelingForm({
             </label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">
+                <label className="block text-xs text-gray-800 mb-1">
                   Start (seconds)
                 </label>
                 <input
@@ -122,7 +122,7 @@ export default function EOECLabelingForm({
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">
+                <label className="block text-xs text-gray-800 mb-1">
                   End (seconds)
                 </label>
                 <input
@@ -148,7 +148,7 @@ export default function EOECLabelingForm({
             </label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">
+                <label className="block text-xs text-gray-800 mb-1">
                   Start (seconds)
                 </label>
                 <input
@@ -166,7 +166,7 @@ export default function EOECLabelingForm({
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">
+                <label className="block text-xs text-gray-800 mb-1">
                   End (seconds)
                 </label>
                 <input
@@ -187,7 +187,7 @@ export default function EOECLabelingForm({
           </div>
 
           {recordingDuration && (
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-700">
               Recording duration: {recordingDuration.toFixed(1)} seconds
             </div>
           )}

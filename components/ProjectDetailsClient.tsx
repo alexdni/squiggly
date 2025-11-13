@@ -150,13 +150,13 @@ export default function ProjectDetailsClient({
               <span className="text-gray-400">/</span>
               <button
                 onClick={() => router.push('/projects')}
-                className="text-gray-600 hover:text-neuro-primary transition-colors"
+                className="text-gray-800 hover:text-neuro-primary transition-colors"
               >
                 Projects
               </button>
             </div>
             <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">{user.email}</div>
+              <div className="text-sm text-gray-800">{user.email}</div>
               <button
                 onClick={handleSignOut}
                 className="bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors"
@@ -178,9 +178,9 @@ export default function ProjectDetailsClient({
                 {project.name}
               </h1>
               {project.description && (
-                <p className="text-gray-600">{project.description}</p>
+                <p className="text-gray-800">{project.description}</p>
               )}
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-gray-700 mt-2">
                 Created {new Date(project.created_at).toLocaleDateString()}
               </p>
             </div>
@@ -202,7 +202,7 @@ export default function ProjectDetailsClient({
           {isLoading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-neuro-primary"></div>
-              <p className="mt-4 text-gray-600">Loading recordings...</p>
+              <p className="mt-4 text-gray-800">Loading recordings...</p>
             </div>
           ) : recordings.length === 0 ? (
             <div className="text-center py-12">
@@ -222,7 +222,7 @@ export default function ProjectDetailsClient({
               <h3 className="mt-4 text-lg font-medium text-gray-900">
                 No recordings yet
               </h3>
-              <p className="mt-2 text-gray-600">
+              <p className="mt-2 text-gray-800">
                 Upload your first EEG recording to get started
               </p>
               <button
@@ -237,22 +237,22 @@ export default function ProjectDetailsClient({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Filename
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Size
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Duration
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       EO/EC Labels
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Uploaded
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -266,17 +266,17 @@ export default function ProjectDetailsClient({
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-gray-800">
                           {formatFileSize(recording.file_size)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-gray-800">
                           {formatDuration(recording.duration_seconds)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-gray-800">
                           {recording.eo_start !== null &&
                           recording.ec_start !== null ? (
                             <span className="text-green-600">✓ Labeled</span>
@@ -288,7 +288,7 @@ export default function ProjectDetailsClient({
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-gray-800">
                           {new Date(recording.created_at).toLocaleDateString()}
                         </div>
                       </td>

@@ -43,7 +43,7 @@ export default function LoginPage() {
           <p className="text-xl text-neuro-dark">
             EEG EO/EC Diagnostics Platform
           </p>
-          <p className="mt-4 text-gray-600">
+          <p className="mt-4 text-gray-800">
             Sign in to access your EEG analysis workspace
           </p>
         </div>
@@ -81,7 +81,7 @@ export default function LoginPage() {
             {isLoading ? 'Signing in...' : 'Sign in with Google'}
           </button>
 
-          <div className="text-center text-sm text-gray-500 mt-6">
+          <div className="text-center text-sm text-gray-700 mt-6">
             <p className="font-semibold text-neuro-danger mb-2">
               Educational & Research Use Only
             </p>

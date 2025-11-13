@@ -145,7 +145,7 @@ export default function UploadPage() {
             Back to Project
           </button>
           <h1 className="text-3xl font-bold text-neuro-dark">Upload EEG Recording</h1>
-          <p className="text-gray-600 mt-2">
+          <p className="text-gray-800 mt-2">
             Upload a 19-channel EDF file for EO/EC analysis
           </p>
         </div>
@@ -168,7 +168,7 @@ export default function UploadPage() {
                           ? 'bg-green-500 text-white'
                           : isActive
                           ? 'bg-neuro-primary text-white'
-                          : 'bg-gray-200 text-gray-500'
+                          : 'bg-gray-200 text-gray-700'
                       }`}
                     >
                       {isComplete ? '✓' : idx + 1}
@@ -197,7 +197,7 @@ export default function UploadPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-neuro-dark">{state.file.name}</p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-800">
                       {(state.file.size / 1024 / 1024).toFixed(2)} MB
                     </p>
                   </div>
@@ -244,7 +244,7 @@ export default function UploadPage() {
                     style={{ width: `${state.progress}%` }}
                   />
                 </div>
-                <p className="text-sm text-gray-600 mt-2">{state.progress}%</p>
+                <p className="text-sm text-gray-800 mt-2">{state.progress}%</p>
               </div>
             </div>
           )}
@@ -264,7 +264,7 @@ export default function UploadPage() {
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-neuro-dark">Upload Successful!</h2>
-                <p className="text-gray-600 mt-2">
+                <p className="text-gray-800 mt-2">
                   Your EEG recording has been uploaded and validated. Analysis is now queued.
                 </p>
               </div>

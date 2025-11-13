@@ -126,7 +126,7 @@ export default function ProjectSharingModal({
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-800 transition-colors"
             >
               <svg
                 className="w-6 h-6"
@@ -182,7 +182,7 @@ export default function ProjectSharingModal({
                   {isLoading ? 'Adding...' : 'Add'}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-700 mt-2">
                 Note: Email-based invites will be implemented in future version
               </p>
             </form>

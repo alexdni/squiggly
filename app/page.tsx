@@ -10,7 +10,7 @@ export default function Home() {
         <p className="text-2xl text-neuro-dark font-medium">
           EEG EO/EC Diagnostics Platform
         </p>
-        <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+        <p className="text-lg text-gray-800 max-w-2xl mx-auto">
           Rapid, transparent, open-source analysis of 19-channel EEG recordings comparing
           Eyes-Open and Eyes-Closed states
         </p>
@@ -36,21 +36,21 @@ export default function Home() {
           <div className="bg-white p-6 rounded-lg shadow-md">
             <div className="text-3xl mb-3">🧠</div>
             <h3 className="font-semibold text-neuro-dark mb-2">Multi-Domain Analysis</h3>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-800">
               Power, coherence, complexity, and asymmetry metrics
             </p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-md">
             <div className="text-3xl mb-3">📊</div>
             <h3 className="font-semibold text-neuro-dark mb-2">Interactive Visualizations</h3>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-800">
               Topomaps, spectrograms, and coherence matrices
             </p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-md">
             <div className="text-3xl mb-3">🔒</div>
             <h3 className="font-semibold text-neuro-dark mb-2">Private & Secure</h3>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-800">
               Project-level privacy with role-based access control
             </p>
           </div>

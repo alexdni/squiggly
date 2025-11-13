@@ -13,7 +13,7 @@ const RawEEGViewer = dynamic(() => import('./RawEEGViewer'), {
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="flex items-center justify-center py-12">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-neuro-primary"></div>
-        <p className="ml-4 text-gray-600">Loading EEG viewer...</p>
+        <p className="ml-4 text-gray-800">Loading EEG viewer...</p>
       </div>
     </div>
   ),
@@ -184,7 +184,7 @@ export default function AnalysisDetailsClient({
               <span className="text-gray-400">/</span>
               <button
                 onClick={() => router.push('/projects')}
-                className="text-gray-600 hover:text-neuro-primary transition-colors"
+                className="text-gray-800 hover:text-neuro-primary transition-colors"
               >
                 Projects
               </button>
@@ -193,7 +193,7 @@ export default function AnalysisDetailsClient({
                 onClick={() =>
                   router.push(`/projects/${analysis.recording.project_id}`)
                 }
-                className="text-gray-600 hover:text-neuro-primary transition-colors"
+                className="text-gray-800 hover:text-neuro-primary transition-colors"
               >
                 Project
               </button>
@@ -201,7 +201,7 @@ export default function AnalysisDetailsClient({
               <span className="text-gray-900">Analysis</span>
             </div>
             <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">{user.email}</div>
+              <div className="text-sm text-gray-800">{user.email}</div>
               <button
                 onClick={handleSignOut}
                 className="bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors"
@@ -222,7 +222,7 @@ export default function AnalysisDetailsClient({
               <h1 className="text-3xl font-bold text-neuro-dark mb-2">
                 EEG Analysis
               </h1>
-              <p className="text-gray-600">{analysis.recording.filename}</p>
+              <p className="text-gray-800">{analysis.recording.filename}</p>
             </div>
             <div
               className={`px-4 py-2 rounded-lg font-medium ${getStatusColor(
@@ -241,43 +241,43 @@ export default function AnalysisDetailsClient({
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <div className="text-sm text-gray-500">Duration</div>
+              <div className="text-sm text-gray-700">Duration</div>
               <div className="text-lg font-semibold">
                 {formatDuration(analysis.recording.duration_seconds)}
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">File Size</div>
+              <div className="text-sm text-gray-700">File Size</div>
               <div className="text-lg font-semibold">
                 {formatFileSize(analysis.recording.file_size)}
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">Channels</div>
+              <div className="text-sm text-gray-700">Channels</div>
               <div className="text-lg font-semibold">
                 {analysis.recording.n_channels}
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">Sampling Rate</div>
+              <div className="text-sm text-gray-700">Sampling Rate</div>
               <div className="text-lg font-semibold">
                 {analysis.recording.sampling_rate} Hz
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">Montage</div>
+              <div className="text-sm text-gray-700">Montage</div>
               <div className="text-lg font-semibold">
                 {analysis.recording.montage}
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">Reference</div>
+              <div className="text-sm text-gray-700">Reference</div>
               <div className="text-lg font-semibold">
                 {analysis.recording.reference}
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">EO Segment</div>
+              <div className="text-sm text-gray-700">EO Segment</div>
               <div className="text-lg font-semibold">
                 {analysis.recording.eo_start !== null &&
                 analysis.recording.eo_end !== null
@@ -288,7 +288,7 @@ export default function AnalysisDetailsClient({
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-500">EC Segment</div>
+              <div className="text-sm text-gray-700">EC Segment</div>
               <div className="text-lg font-semibold">
                 {analysis.recording.ec_start !== null &&
                 analysis.recording.ec_end !== null
@@ -372,7 +372,7 @@ export default function AnalysisDetailsClient({
               </p>
               {analysis.error_log && (
                 <div className="bg-white border border-red-300 rounded p-3 mt-3">
-                  <div className="text-sm text-gray-500 mb-1">Error Details:</div>
+                  <div className="text-sm text-gray-700 mb-1">Error Details:</div>
                   <pre className="text-sm text-red-800 whitespace-pre-wrap">
                     {analysis.error_log}
                   </pre>
@@ -392,7 +392,7 @@ export default function AnalysisDetailsClient({
                 </h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-700">
                       Artifact Rejection
                     </div>
                     <div className="text-lg font-semibold">
@@ -400,13 +400,13 @@ export default function AnalysisDetailsClient({
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500">Bad Channels</div>
+                    <div className="text-sm text-gray-700">Bad Channels</div>
                     <div className="text-lg font-semibold">
                       {analysis.results.qc_report.bad_channels?.length || 0}
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-700">
                       ICA Components Removed
                     </div>
                     <div className="text-lg font-semibold">
@@ -414,7 +414,7 @@ export default function AnalysisDetailsClient({
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-700">
                       Final Epochs (EO/EC)
                     </div>
                     <div className="text-lg font-semibold">
@@ -439,7 +439,7 @@ export default function AnalysisDetailsClient({
                     </h3>
                     <div className="space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Frontal Average:</span>
+                        <span className="text-gray-800">Frontal Average:</span>
                         <span className="font-semibold">
                           {analysis.results.band_ratios.theta_beta_ratio.frontal_avg.toFixed(
                             2
@@ -447,7 +447,7 @@ export default function AnalysisDetailsClient({
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Central Average:</span>
+                        <span className="text-gray-800">Central Average:</span>
                         <span className="font-semibold">
                           {analysis.results.band_ratios.theta_beta_ratio.central_avg.toFixed(
                             2
@@ -462,7 +462,7 @@ export default function AnalysisDetailsClient({
                     </h3>
                     <div className="space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">
+                        <span className="text-gray-800">
                           Occipital Average:
                         </span>
                         <span className="font-semibold">
@@ -472,7 +472,7 @@ export default function AnalysisDetailsClient({
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Parietal Average:</span>
+                        <span className="text-gray-800">Parietal Average:</span>
                         <span className="font-semibold">
                           {analysis.results.band_ratios.alpha_theta_ratio.parietal_avg.toFixed(
                             2
@@ -491,13 +491,13 @@ export default function AnalysisDetailsClient({
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Hemispheric Asymmetry
                 </h2>
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm text-gray-800 mb-4">
                   Negative values indicate left hemisphere dominance, positive
                   values indicate right hemisphere dominance
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-500 mb-1">
+                    <div className="text-sm text-gray-700 mb-1">
                       Frontal Alpha
                     </div>
                     <div className="text-2xl font-bold">
@@ -505,7 +505,7 @@ export default function AnalysisDetailsClient({
                     </div>
                   </div>
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-500 mb-1">
+                    <div className="text-sm text-gray-700 mb-1">
                       Parietal Alpha
                     </div>
                     <div className="text-2xl font-bold">
@@ -513,7 +513,7 @@ export default function AnalysisDetailsClient({
                     </div>
                   </div>
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-500 mb-1">
+                    <div className="text-sm text-gray-700 mb-1">
                       Frontal Theta
                     </div>
                     <div className="text-2xl font-bold">
@@ -530,7 +530,7 @@ export default function AnalysisDetailsClient({
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Coherence Analysis
                 </h2>
-                <p className="text-gray-600 mb-4">
+                <p className="text-gray-800 mb-4">
                   Interhemispheric and long-range connectivity patterns
                 </p>
                 <div className="bg-gray-100 rounded-lg p-8 text-center">
@@ -547,7 +547,7 @@ export default function AnalysisDetailsClient({
                       d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
                     />
                   </svg>
-                  <p className="text-gray-600">
+                  <p className="text-gray-800">
                     Coherence matrix visualizations available in full report
                   </p>
                 </div>

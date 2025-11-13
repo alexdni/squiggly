@@ -98,7 +98,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
               </button>
             </div>
             <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">{user.email}</div>
+              <div className="text-sm text-gray-800">{user.email}</div>
               <button
                 onClick={handleSignOut}
                 className="bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors"
@@ -115,7 +115,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h2 className="text-3xl font-bold text-neuro-dark">Projects</h2>
-            <p className="text-gray-600 mt-1">
+            <p className="text-gray-800 mt-1">
               Manage your EEG analysis projects
             </p>
           </div>
@@ -131,7 +131,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
         {isLoading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-neuro-primary"></div>
-            <p className="mt-4 text-gray-600">Loading projects...</p>
+            <p className="mt-4 text-gray-800">Loading projects...</p>
           </div>
         ) : projects.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg shadow-md">
@@ -151,7 +151,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
             <h3 className="mt-4 text-lg font-medium text-gray-900">
               No projects yet
             </h3>
-            <p className="mt-2 text-gray-600">
+            <p className="mt-2 text-gray-800">
               Get started by creating your first EEG analysis project
             </p>
             <button
@@ -173,11 +173,11 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
                   {project.name}
                 </h3>
                 {project.description && (
-                  <p className="text-gray-600 text-sm mb-4">
+                  <p className="text-gray-800 text-sm mb-4">
                     {project.description}
                   </p>
                 )}
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-700">
                   Created {new Date(project.created_at).toLocaleDateString()}
                 </div>
               </div>
