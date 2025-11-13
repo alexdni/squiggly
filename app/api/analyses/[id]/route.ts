@@ -81,7 +81,7 @@ export async function PATCH(
 
     const { data: analysis, error } = await supabase
       .from('analyses')
-      .update(updateData)
+      .update(updateData as any)
       .eq('id', params.id)
       .select()
       .single();
