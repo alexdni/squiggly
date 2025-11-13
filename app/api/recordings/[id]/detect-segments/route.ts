@@ -23,7 +23,7 @@ export async function POST(
     }
 
     // Fetch the recording
-    const { data: recording, error: fetchError } = await supabase
+    const { data: recording, error: fetchError } = await (supabase as any)
       .from('recordings')
       .select('*')
       .eq('id', params.id)
@@ -37,9 +37,9 @@ export async function POST(
     }
 
     // Auto-detect from filename
-    const filename = recording.filename;
+    const filename = recording.filename as string;
     const filenameLower = filename.toLowerCase();
-    const duration = recording.duration_seconds;
+    const duration = recording.duration_seconds as number;
 
     const isEOFile = filenameLower.includes(' eo ') ||
                      filenameLower.includes('_eo_') ||
@@ -89,7 +89,7 @@ export async function POST(
     }
 
     // Update the recording
-    const { data: updated, error: updateError } = await supabase
+    const { data: updated, error: updateError } = await (supabase as any)
       .from('recordings')
       .update(updates)
       .eq('id', params.id)
