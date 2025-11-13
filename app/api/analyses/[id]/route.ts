@@ -67,7 +67,7 @@ export async function PATCH(
     const body = await request.json();
     const { status, results, error_log } = body;
 
-    const updateData: any = {};
+    const updateData: Record<string, any> = {};
     if (status) updateData.status = status;
     if (results) updateData.results = results;
     if (error_log) updateData.error_log = error_log;
@@ -79,12 +79,13 @@ export async function PATCH(
       updateData.completed_at = new Date().toISOString();
     }
 
-    const { data: analysis, error } = (await supabase
+    // Use type assertion on the supabase client to bypass strict typing
+    const { data: analysis, error } = await (supabase as any)
       .from('analyses')
       .update(updateData)
       .eq('id', params.id)
       .select()
-      .single()) as any;
+      .single();
 
     if (error) {
       return NextResponse.json(
