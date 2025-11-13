@@ -242,43 +242,43 @@ export default function AnalysisDetailsClient({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <div className="text-sm text-gray-700">Duration</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {formatDuration(analysis.recording.duration_seconds)}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">File Size</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {formatFileSize(analysis.recording.file_size)}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">Channels</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {analysis.recording.n_channels}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">Sampling Rate</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {analysis.recording.sampling_rate} Hz
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">Montage</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {analysis.recording.montage}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">Reference</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {analysis.recording.reference}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">EO Segment</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {analysis.recording.eo_start !== null &&
                 analysis.recording.eo_end !== null
                   ? `${formatDuration(
@@ -289,7 +289,7 @@ export default function AnalysisDetailsClient({
             </div>
             <div>
               <div className="text-sm text-gray-700">EC Segment</div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-gray-900">
                 {analysis.recording.ec_start !== null &&
                 analysis.recording.ec_end !== null
                   ? `${formatDuration(
@@ -395,13 +395,13 @@ export default function AnalysisDetailsClient({
                     <div className="text-sm text-gray-700">
                       Artifact Rejection
                     </div>
-                    <div className="text-lg font-semibold">
+                    <div className="text-lg font-semibold text-gray-900">
                       {analysis.results.qc_report.artifact_rejection_rate}%
                     </div>
                   </div>
                   <div>
                     <div className="text-sm text-gray-700">Bad Channels</div>
-                    <div className="text-lg font-semibold">
+                    <div className="text-lg font-semibold text-gray-900">
                       {analysis.results.qc_report.bad_channels?.length || 0}
                     </div>
                   </div>
@@ -409,7 +409,7 @@ export default function AnalysisDetailsClient({
                     <div className="text-sm text-gray-700">
                       ICA Components Removed
                     </div>
-                    <div className="text-lg font-semibold">
+                    <div className="text-lg font-semibold text-gray-900">
                       {analysis.results.qc_report.ica_components_removed}
                     </div>
                   </div>
@@ -417,7 +417,7 @@ export default function AnalysisDetailsClient({
                     <div className="text-sm text-gray-700">
                       Final Epochs (EO/EC)
                     </div>
-                    <div className="text-lg font-semibold">
+                    <div className="text-lg font-semibold text-gray-900">
                       {analysis.results.qc_report.final_epochs_eo} /{' '}
                       {analysis.results.qc_report.final_epochs_ec}
                     </div>
@@ -434,13 +434,13 @@ export default function AnalysisDetailsClient({
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="font-semibold text-lg mb-3">
+                    <h3 className="font-semibold text-lg mb-3 text-gray-900">
                       Theta/Beta Ratio
                     </h3>
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-gray-800">Frontal Average:</span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-gray-900">
                           {analysis.results.band_ratios.theta_beta_ratio.frontal_avg.toFixed(
                             2
                           )}
@@ -448,7 +448,7 @@ export default function AnalysisDetailsClient({
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-800">Central Average:</span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-gray-900">
                           {analysis.results.band_ratios.theta_beta_ratio.central_avg.toFixed(
                             2
                           )}
@@ -457,7 +457,7 @@ export default function AnalysisDetailsClient({
                     </div>
                   </div>
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="font-semibold text-lg mb-3">
+                    <h3 className="font-semibold text-lg mb-3 text-gray-900">
                       Alpha/Theta Ratio
                     </h3>
                     <div className="space-y-2">
@@ -465,7 +465,7 @@ export default function AnalysisDetailsClient({
                         <span className="text-gray-800">
                           Occipital Average:
                         </span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-gray-900">
                           {analysis.results.band_ratios.alpha_theta_ratio.occipital_avg.toFixed(
                             2
                           )}
@@ -473,7 +473,7 @@ export default function AnalysisDetailsClient({
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-800">Parietal Average:</span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-gray-900">
                           {analysis.results.band_ratios.alpha_theta_ratio.parietal_avg.toFixed(
                             2
                           )}
@@ -500,7 +500,7 @@ export default function AnalysisDetailsClient({
                     <div className="text-sm text-gray-700 mb-1">
                       Frontal Alpha
                     </div>
-                    <div className="text-2xl font-bold">
+                    <div className="text-2xl font-bold text-gray-900">
                       {analysis.results.asymmetry.frontal_alpha.toFixed(3)}
                     </div>
                   </div>
@@ -508,7 +508,7 @@ export default function AnalysisDetailsClient({
                     <div className="text-sm text-gray-700 mb-1">
                       Parietal Alpha
                     </div>
-                    <div className="text-2xl font-bold">
+                    <div className="text-2xl font-bold text-gray-900">
                       {analysis.results.asymmetry.parietal_alpha.toFixed(3)}
                     </div>
                   </div>
@@ -516,7 +516,7 @@ export default function AnalysisDetailsClient({
                     <div className="text-sm text-gray-700 mb-1">
                       Frontal Theta
                     </div>
-                    <div className="text-2xl font-bold">
+                    <div className="text-2xl font-bold text-gray-900">
                       {analysis.results.asymmetry.frontal_theta.toFixed(3)}
                     </div>
                   </div>
@@ -597,7 +597,7 @@ export default function AnalysisDetailsClient({
                               />
                             </svg>
                           )}
-                          <span className="font-medium capitalize">
+                          <span className="font-medium capitalize text-gray-900">
                             {pattern.replace(/_/g, ' ')}
                           </span>
                         </div>
