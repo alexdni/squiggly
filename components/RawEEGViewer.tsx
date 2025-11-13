@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,6 +13,7 @@ import {
   Legend,
   ChartOptions,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import {
   parseEDFFile,
   extractTimeWindow,
@@ -29,7 +30,8 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  zoomPlugin
 );
 
 interface RawEEGViewerProps {
@@ -206,7 +208,8 @@ export default function RawEEGViewer({
     // Downsample for visualization (max 1000 points per channel)
     const downsampled = downsampleSignals(windowSignals, 1000);
 
-    // Prepare chart data
+    // Prepare chart data with stacked montage display
+    const amplitudePerChannel = 50; // μV
     const selectedData = selectedChannels.map((channelIndex) => downsampled[channelIndex]);
     const labels = Array.from(
       { length: selectedData[0].length },
@@ -228,20 +231,38 @@ export default function RawEEGViewer({
       '#F97316',
     ];
 
-    const datasets = selectedChannels.map((channelIndex, i) => ({
-      label: edfData.header.channels[channelIndex].label,
-      data: selectedData[i],
-      borderColor: colors[i % colors.length],
-      backgroundColor: 'transparent',
-      borderWidth: 1,
-      pointRadius: 0,
-      tension: 0,
-    }));
+    // Stack channels vertically with fixed amplitude range
+    const datasets = selectedChannels.map((channelIndex, i) => {
+      // Calculate baseline offset for this channel (inverted so first channel is at top)
+      const baselineOffset = (selectedChannels.length - 1 - i) * amplitudePerChannel;
+
+      // Clamp signal to ±25μV and add baseline offset
+      const offsetData = selectedData[i].map((value) => {
+        const clampedValue = Math.max(-25, Math.min(25, value));
+        return clampedValue + baselineOffset;
+      });
+
+      return {
+        label: edfData.header.channels[channelIndex].label,
+        data: offsetData,
+        borderColor: colors[i % colors.length],
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        pointRadius: 0,
+        tension: 0,
+      };
+    });
 
     const chartData = {
       labels,
       datasets,
     };
+
+    // Create Y-axis tick labels at each channel baseline
+    const yTicks = selectedChannels.map((channelIndex, i) => ({
+      value: (selectedChannels.length - 1 - i) * amplitudePerChannel,
+      label: edfData.header.channels[channelIndex].label,
+    }));
 
     const options: ChartOptions<'line'> = {
       responsive: true,
@@ -252,7 +273,7 @@ export default function RawEEGViewer({
       },
       plugins: {
         legend: {
-          position: 'top' as const,
+          display: false, // Hide legend since we show labels on Y-axis
         },
         title: {
           display: true,
@@ -264,6 +285,38 @@ export default function RawEEGViewer({
           enabled: true,
           mode: 'index',
           intersect: false,
+          callbacks: {
+            label: (context) => {
+              const datasetIndex = context.datasetIndex;
+              const channelIndex = selectedChannels[datasetIndex];
+              const channelLabel = edfData.header.channels[channelIndex].label;
+              const baselineOffset = (selectedChannels.length - 1 - datasetIndex) * amplitudePerChannel;
+              const actualValue = (context.parsed.y ?? 0) - baselineOffset;
+              return `${channelLabel}: ${actualValue.toFixed(2)} μV`;
+            },
+          },
+        },
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: 'x',
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              speed: 0.05,
+            },
+            pinch: {
+              enabled: true,
+            },
+            mode: 'x',
+          },
+          limits: {
+            x: {
+              min: 'original',
+              max: 'original',
+            },
+          },
         },
       },
       scales: {
@@ -279,17 +332,36 @@ export default function RawEEGViewer({
         },
         y: {
           display: true,
-          title: {
-            display: true,
-            text: 'Amplitude (μV)',
+          min: -amplitudePerChannel / 2,
+          max: selectedChannels.length * amplitudePerChannel - amplitudePerChannel / 2,
+          ticks: {
+            callback: function(value) {
+              // Show channel labels at baseline positions
+              const tick = yTicks.find(t => t.value === value);
+              return tick ? tick.label : '';
+            },
+            stepSize: amplitudePerChannel,
+          },
+          grid: {
+            color: (context) => {
+              // Highlight grid lines at channel baselines
+              const value = context.tick.value;
+              const isBaseline = yTicks.some(t => t.value === value);
+              return isBaseline ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.1)';
+            },
           },
         },
       },
     };
 
     return (
-      <div style={{ height: '500px' }}>
-        <Line data={chartData} options={options} />
+      <div>
+        <div className="mb-2 text-sm text-gray-600">
+          💡 Tip: Use mouse wheel to zoom, click and drag to pan horizontally
+        </div>
+        <div style={{ height: '500px' }}>
+          <Line data={chartData} options={options} />
+        </div>
       </div>
     );
   };
