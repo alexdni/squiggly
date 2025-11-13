@@ -209,7 +209,7 @@ export default function RawEEGViewer({
     const downsampled = downsampleSignals(windowSignals, 1000);
 
     // Prepare chart data with stacked montage display
-    const amplitudePerChannel = 50; // μV
+    const amplitudePerChannel = 100; // μV (±100μV range per channel)
     const selectedData = selectedChannels.map((channelIndex) => downsampled[channelIndex]);
     const labels = Array.from(
       { length: selectedData[0].length },
@@ -234,13 +234,13 @@ export default function RawEEGViewer({
     // Stack channels vertically with fixed amplitude range
     const datasets = selectedChannels.map((channelIndex, i) => {
       // Calculate baseline (center) for this channel (inverted so first channel is at top)
-      // Each channel gets 100μV of space (±50μV from baseline)
-      const channelSpacing = 100; // Space between channel centers
+      // Each channel gets 200μV of space (±100μV from baseline)
+      const channelSpacing = 200; // Space between channel centers
       const baseline = (selectedChannels.length - 1 - i) * channelSpacing;
 
-      // Clamp signal to ±50μV and add baseline offset
+      // Clamp signal to ±100μV and add baseline offset
       const offsetData = selectedData[i].map((value) => {
-        const clampedValue = Math.max(-50, Math.min(50, value));
+        const clampedValue = Math.max(-100, Math.min(100, value));
         return clampedValue + baseline;
       });
 
@@ -261,7 +261,7 @@ export default function RawEEGViewer({
     };
 
     // Create Y-axis tick labels at each channel baseline
-    const channelSpacing = 100;
+    const channelSpacing = 200;
     const yTicks = selectedChannels.map((channelIndex, i) => ({
       value: (selectedChannels.length - 1 - i) * channelSpacing,
       label: edfData.header.channels[channelIndex].label,
@@ -337,30 +337,44 @@ export default function RawEEGViewer({
           display: true,
           min: -channelSpacing / 2,
           max: (selectedChannels.length - 0.5) * channelSpacing,
+          position: 'left',
           ticks: {
             callback: function(value) {
               // Show channel labels at baseline positions
-              const tick = yTicks.find(t => t.value === value);
+              const tick = yTicks.find(t => Math.abs(t.value - (value as number)) < 1);
               return tick ? tick.label : '';
             },
             stepSize: channelSpacing,
-            color: '#1f2937', // gray-800 for better visibility
+            color: '#111827', // gray-900 for maximum visibility
             font: {
-              size: 12,
-              weight: 'bold',
+              size: 13,
+              weight: 'bold' as const,
+              family: 'system-ui, -apple-system, sans-serif',
             },
+            autoSkip: false,
+            maxRotation: 0,
+            padding: 8,
           },
           grid: {
             color: (context) => {
               // Highlight grid lines at channel baselines
               const value = context.tick.value;
-              const isBaseline = yTicks.some(t => t.value === value);
+              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 1);
               return isBaseline ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.1)';
             },
             lineWidth: (context) => {
               const value = context.tick.value;
-              const isBaseline = yTicks.some(t => t.value === value);
+              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 1);
               return isBaseline ? 2 : 1;
+            },
+          },
+          title: {
+            display: true,
+            text: 'Channels',
+            color: '#111827',
+            font: {
+              size: 13,
+              weight: 'bold' as const,
             },
           },
         },
@@ -369,10 +383,10 @@ export default function RawEEGViewer({
 
     return (
       <div>
-        <div className="mb-2 text-sm text-gray-700">
+        <div className="mb-2 text-sm text-gray-900 font-medium">
           💡 Tip: Use mouse wheel to zoom, click and drag to pan horizontally
         </div>
-        <div style={{ height: '500px' }}>
+        <div style={{ height: '750px' }}>
           <Line data={chartData} options={options} />
         </div>
       </div>
