@@ -1,16 +1,16 @@
 # EEG Signal Processing
-mne==1.6.1
-numpy==1.26.3
-scipy==1.11.4
-pandas==2.1.4
+mne==1.8.0
+numpy>=1.26.0,<2.0.0
+scipy>=1.13.0
+pandas>=2.1.0
 
 # Artifact Detection & Complexity
-scikit-learn==1.4.0
+scikit-learn>=1.4.0
 antropy==0.1.6
 
 # Visualization
-matplotlib==3.8.2
-Pillow==10.2.0
+matplotlib>=3.8.0
+Pillow>=10.0.0
 
 # PDF Generation
 reportlab==4.0.9
