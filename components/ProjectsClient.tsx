@@ -69,8 +69,8 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
       setShowCreateModal(false);
       setFormData({ name: '', description: '' });
 
-      // Navigate to the new project's upload page
-      router.push(`/projects/${data.project.id}/upload`);
+      // Navigate to the new project details page
+      router.push(`/projects/${data.project.id}`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -167,7 +167,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
               <div
                 key={project.id}
                 className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => router.push(`/projects/${project.id}/upload`)}
+                onClick={() => router.push(`/projects/${project.id}`)}
               >
                 <h3 className="text-xl font-semibold text-neuro-dark mb-2">
                   {project.name}

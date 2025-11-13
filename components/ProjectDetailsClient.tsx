@@ -18,7 +18,7 @@ interface Recording {
   filename: string;
   file_size: number;
   duration_seconds: number | null;
-  uploaded_at: string;
+  created_at: string;
   eo_start: number | null;
   eo_end: number | null;
   ec_start: number | null;
@@ -49,7 +49,7 @@ export default function ProjectDetailsClient({
         .from('recordings')
         .select('*')
         .eq('project_id', project.id)
-        .order('uploaded_at', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setRecordings(data || []);
@@ -232,7 +232,7 @@ export default function ProjectDetailsClient({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-600">
-                          {new Date(recording.uploaded_at).toLocaleDateString()}
+                          {new Date(recording.created_at).toLocaleDateString()}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
