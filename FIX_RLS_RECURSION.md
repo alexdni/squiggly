@@ -9,32 +9,69 @@ Error fetching projects: {
 ```
 
 ## Cause
-The RLS policies on `project_members` and `projects` tables create a circular dependency:
+The RLS policies on `project_members` and `projects` tables create a circular dependency when using INNER JOINs:
 
 1. **projects SELECT policy** checks if user is in `project_members`
-2. **project_members SELECT policy** checks if user has access to `projects`
-3. This creates infinite recursion when querying with joins
+2. **API route** uses `project_members!inner()` JOIN
+3. **project_members SELECT policy** needs to evaluate the join
+4. This creates infinite recursion as both policies try to evaluate each other
+
+The key issue: **INNER JOINs force both tables' RLS policies to evaluate simultaneously**
 
 ## Solution
 
-Run the SQL migration in Supabase to fix the policies.
+**Two-part fix:**
+1. ✅ Simplify RLS policies (SQL migration) - Already done
+2. ✅ Remove INNER JOIN from API route - Fixed in latest commit
 
-### Steps to Fix
+### The Real Fix: Remove the INNER JOIN
 
-1. **Go to Supabase Dashboard**
-   - Navigate to your project
-   - Click on "SQL Editor" in the left sidebar
+The actual solution was **removing the INNER JOIN** from the API route. Since the RLS policy on `projects` already filters by project membership, we don't need to explicitly JOIN `project_members` in the query.
 
-2. **Run the migration**
-   - Click "New Query"
-   - Copy the contents of `supabase/fix_rls_recursion.sql`
-   - Paste into the SQL editor
-   - Click "Run"
+**Code Change (already deployed):**
+```typescript
+// BEFORE (caused recursion)
+const { data: projects } = await supabase
+  .from('projects')
+  .select(`
+    *,
+    project_members!inner(role, user_id)  // ⚠️ INNER JOIN triggers recursion
+  `)
+  .eq('project_members.user_id', user.id);
 
-3. **Verify the fix**
-   - Go back to your app
-   - Try creating a project again
-   - Should work without recursion error
+// AFTER (fixed)
+const { data: projects } = await supabase
+  .from('projects')
+  .select('*');  // ✅ RLS policy handles filtering automatically
+```
+
+### Why This Works
+
+The `projects` table RLS policy already does:
+```sql
+USING (
+  owner_id = auth.uid() OR
+  EXISTS (SELECT 1 FROM project_members WHERE ...)
+)
+```
+
+So when you query `projects`, RLS automatically:
+1. Filters to projects you own
+2. Filters to projects where you're a member
+3. **Without triggering the project_members RLS policy**
+
+Adding an INNER JOIN forces **both** RLS policies to evaluate, causing recursion.
+
+### Deploy Instructions
+
+**The fix is already deployed!** Just pull the latest code:
+
+```bash
+git pull origin main
+# Vercel will auto-deploy
+```
+
+No SQL migration needed - the code fix resolves the issue.
 
 ## What Changed
 
