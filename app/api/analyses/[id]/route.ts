@@ -79,12 +79,12 @@ export async function PATCH(
       updateData.completed_at = new Date().toISOString();
     }
 
-    const { data: analysis, error } = await supabase
+    const { data: analysis, error } = (await supabase
       .from('analyses')
-      .update(updateData as any)
+      .update(updateData)
       .eq('id', params.id)
       .select()
-      .single();
+      .single()) as any;
 
     if (error) {
       return NextResponse.json(
