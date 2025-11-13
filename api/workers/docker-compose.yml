@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  eeg-worker:
+    build: .
+    container_name: eeg-analysis-worker
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/data  # Optional: for local file testing
+    restart: unless-stopped
+    # For production, you'd add a queue listener here
+    # command: python worker_daemon.py

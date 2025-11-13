@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: eeg-worker
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn server:app --bind 0.0.0.0:$PORT --timeout 600 --workers 2"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: WORKER_AUTH_TOKEN
+        sync: false
+    healthCheckPath: /health

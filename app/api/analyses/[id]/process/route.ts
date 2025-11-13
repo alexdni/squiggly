@@ -1,8 +1,16 @@
 import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { submitAnalysisJob, getWorkerConfig } from '@/lib/worker-client';
 
-// Mock analysis processor - simulates EEG analysis
-// In production, this would enqueue a job to a Python worker
+/**
+ * Start EEG analysis processing
+ *
+ * Supports two modes:
+ * 1. Mock mode (development): Generates fake results immediately
+ * 2. Worker mode (production): Submits job to Python worker service
+ *
+ * Set WORKER_MODE=http and WORKER_SERVICE_URL in .env to use real workers
+ */
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -54,27 +62,67 @@ export async function POST(
       })
       .eq('id', params.id);
 
-    // Simulate processing time (in production, this would be async via worker)
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const workerConfig = getWorkerConfig();
 
-    // Generate mock analysis results
-    const mockResults = generateMockResults(analysis.recording);
+    // Check if we're in mock mode or real worker mode
+    if (workerConfig.mode === 'mock') {
+      // MOCK MODE: Generate fake results for development
+      console.log('[Development] Running in MOCK mode - generating fake results');
 
-    // Update analysis with results
-    await (supabase as any)
-      .from('analyses')
-      .update({
-        status: 'completed',
-        results: mockResults,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', params.id);
+      // Simulate processing time
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Analysis completed successfully',
-      analysis_id: params.id,
-    });
+      // Generate mock analysis results
+      const mockResults = generateMockResults(analysis.recording);
+
+      // Update analysis with results
+      await (supabase as any)
+        .from('analyses')
+        .update({
+          status: 'completed',
+          results: mockResults,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', params.id);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Analysis completed successfully (mock mode)',
+        analysis_id: params.id,
+        mode: 'mock',
+      });
+    } else {
+      // REAL WORKER MODE: Submit job to Python worker
+      console.log(`[Production] Submitting to ${workerConfig.mode} worker`);
+
+      try {
+        const result = await submitAnalysisJob(params.id, workerConfig);
+
+        return NextResponse.json({
+          success: true,
+          message: result.message,
+          analysis_id: params.id,
+          mode: workerConfig.mode,
+        });
+      } catch (workerError: any) {
+        console.error('Worker submission failed:', workerError);
+
+        // Mark as failed
+        await (supabase as any)
+          .from('analyses')
+          .update({
+            status: 'failed',
+            error_log: `Worker submission failed: ${workerError.message}`,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', params.id);
+
+        return NextResponse.json(
+          { error: 'Failed to submit job to worker', details: workerError.message },
+          { status: 500 }
+        );
+      }
+    }
   } catch (error: any) {
     console.error('Error processing analysis:', error);
 
