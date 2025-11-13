@@ -95,13 +95,22 @@ export async function validateEDFMontage(
 
     // Read channel labels (16 bytes each, starting at byte 256)
     const channelLabels: string[] = [];
+    const rawChannelLabels: string[] = [];
     let offset = 256;
 
     for (let i = 0; i < nChannels; i++) {
       const label = buffer.toString('ascii', offset, offset + 16).trim();
+      rawChannelLabels.push(label);
       channelLabels.push(normalizeChannelName(label));
       offset += 16;
     }
+
+    // Debug logging
+    console.log('[EDF Validator] Found channels:', {
+      count: nChannels,
+      raw: rawChannelLabels,
+      normalized: channelLabels,
+    });
 
     // Determine expected montage based on channel count
     const expectedMontage = nChannels === EXPECTED_CHANNELS_21
@@ -116,7 +125,7 @@ export async function validateEDFMontage(
     if (missingChannels.length > 0) {
       return {
         valid: false,
-        error: `Missing required channels: ${missingChannels.join(', ')}. Expected ${nChannels}-channel 10-20 montage.`,
+        error: `Missing required channels: ${missingChannels.join(', ')}. Expected ${nChannels}-channel 10-20 montage. Found: ${channelLabels.join(', ')}`,
       };
     }
 
