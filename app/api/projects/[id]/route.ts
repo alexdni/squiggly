@@ -42,26 +42,28 @@ export async function DELETE(
     if (recordings && recordings.length > 0) {
       // Delete all analyses and their visual assets
       for (const recording of recordings) {
+        const recordingId = recording.id as string;
         const { data: analyses } = await supabase
           .from('analyses')
           .select('id')
-          .eq('recording_id', recording.id);
+          .eq('recording_id', recordingId);
 
         if (analyses && analyses.length > 0) {
           // Delete visual assets from storage for each analysis
           for (const analysis of analyses) {
+            const analysisId = analysis.id as string;
             try {
               const { data: files } = await supabase
                 .storage
                 .from('visuals')
-                .list(analysis.id);
+                .list(analysisId);
 
               if (files && files.length > 0) {
-                const filePaths = files.map(f => `${analysis.id}/${f.name}`);
+                const filePaths = files.map(f => `${analysisId}/${f.name}`);
                 await supabase.storage.from('visuals').remove(filePaths);
               }
             } catch (storageError) {
-              console.error(`Error deleting visuals for analysis ${analysis.id}:`, storageError);
+              console.error(`Error deleting visuals for analysis ${analysisId}:`, storageError);
               // Continue anyway
             }
           }
@@ -70,18 +72,19 @@ export async function DELETE(
           await supabase
             .from('analyses')
             .delete()
-            .eq('recording_id', recording.id);
+            .eq('recording_id', recordingId);
         }
 
         // Delete EDF file from storage
-        if (recording.file_path) {
+        const filePath = recording.file_path as string | null;
+        if (filePath) {
           try {
             await supabase
               .storage
               .from('recordings')
-              .remove([recording.file_path]);
+              .remove([filePath]);
           } catch (storageError) {
-            console.error(`Error deleting file ${recording.file_path}:`, storageError);
+            console.error(`Error deleting file ${filePath}:`, storageError);
             // Continue anyway
           }
         }
