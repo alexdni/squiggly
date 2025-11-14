@@ -143,10 +143,18 @@ def upload_visual_to_supabase(
             file_options={"content-type": "image/png"}
         )
 
-        # Get public URL
-        url = supabase.storage.from_(bucket_name).get_public_url(object_path)
+        # Generate signed URL (valid for 1 year)
+        # Note: For permanent access, make bucket public in Supabase dashboard
+        url_response = supabase.storage.from_(bucket_name).create_signed_url(
+            object_path,
+            60 * 60 * 24 * 365  # 1 year in seconds
+        )
 
-        return url
+        if url_response and 'signedURL' in url_response:
+            return url_response['signedURL']
+
+        # Fallback to public URL if signed URL fails
+        return supabase.storage.from_(bucket_name).get_public_url(object_path)
 
     except Exception as e:
         logger.error(f"Failed to upload visual {file_name}: {e}")
