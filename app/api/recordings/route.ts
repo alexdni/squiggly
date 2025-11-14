@@ -209,10 +209,10 @@ export async function POST(request: Request) {
       reference: 'LE',
       eo_label: finalEoLabel || null,
       ec_label: finalEcLabel || null,
-      eo_start: finalEoStart || null,
-      eo_end: finalEoEnd || null,
-      ec_start: finalEcStart || null,
-      ec_end: finalEcEnd || null,
+      eo_start: finalEoStart ?? null,  // Use ?? to preserve 0 values
+      eo_end: finalEoEnd ?? null,
+      ec_start: finalEcStart ?? null,
+      ec_end: finalEcEnd ?? null,
       uploaded_by: user.id,
     };
 
