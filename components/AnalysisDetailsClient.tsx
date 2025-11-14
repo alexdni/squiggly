@@ -436,8 +436,8 @@ export default function AnalysisDetailsClient({
                   Spatial distribution of EEG band power across the scalp (blue = low amplitude, red = high amplitude)
                 </p>
 
-                {/* Frequency bands */}
-                <div className="space-y-8">
+                {/* Frequency bands in 2x4 grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'].map((band) => {
                     // Find visuals for this band
                     const bandVisuals = Object.entries(analysis.results.visuals)
@@ -447,10 +447,10 @@ export default function AnalysisDetailsClient({
                     if (bandVisuals.length === 0) return null;
 
                     return (
-                      <div key={band} className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0">
-                        <h3 className="text-xl font-semibold text-gray-900 mb-4 capitalize">
+                      <div key={band} className="border border-gray-200 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3 capitalize">
                           {band.replace(/([a-z])([0-9])/g, '$1 $2')} Band
-                          <span className="text-sm font-normal text-gray-700 ml-2">
+                          <span className="text-xs font-normal text-gray-700 ml-2">
                             {band === 'delta' && '(1-4 Hz)'}
                             {band === 'theta' && '(4-8 Hz)'}
                             {band === 'alpha1' && '(8-10 Hz)'}
@@ -461,12 +461,12 @@ export default function AnalysisDetailsClient({
                             {band === 'lowgamma' && '(30-45 Hz)'}
                           </span>
                         </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-2 gap-3">
                           {bandVisuals.map(([name, url]) => {
-                            const condition = name.includes('_EO') ? 'Eyes Open' : 'Eyes Closed';
+                            const condition = name.includes('_EO') ? 'EO' : 'EC';
                             return (
-                              <div key={name} className="bg-gray-50 rounded-lg p-4">
-                                <div className="text-sm font-medium text-gray-900 mb-3">
+                              <div key={name} className="bg-gray-50 rounded p-2">
+                                <div className="text-xs font-medium text-gray-900 mb-2 text-center">
                                   {condition}
                                 </div>
                                 <div className="bg-white rounded border border-gray-200 overflow-hidden">
@@ -483,6 +483,73 @@ export default function AnalysisDetailsClient({
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Complexity & Connectivity Analysis */}
+            {analysis.results.visuals && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Complexity & Connectivity Analysis
+                </h2>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* LZC Topomaps */}
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                      Lempel-Ziv Complexity (LZC)
+                      <span className="text-xs font-normal text-gray-700 ml-2">
+                        Signal complexity measure
+                      </span>
+                    </h3>
+                    <div className="bg-gray-100 rounded-lg p-8 text-center">
+                      <svg
+                        className="mx-auto h-12 w-12 text-gray-400 mb-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                        />
+                      </svg>
+                      <p className="text-sm text-gray-700">
+                        LZC visualization coming soon
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Coherence Matrix */}
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                      Coherence Matrix
+                      <span className="text-xs font-normal text-gray-700 ml-2">
+                        Inter-channel connectivity
+                      </span>
+                    </h3>
+                    <div className="bg-gray-100 rounded-lg p-8 text-center">
+                      <svg
+                        className="mx-auto h-12 w-12 text-gray-400 mb-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z"
+                        />
+                      </svg>
+                      <p className="text-sm text-gray-700">
+                        Coherence matrix visualization coming soon
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
