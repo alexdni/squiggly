@@ -41,7 +41,8 @@ export async function DELETE(
 
     if (recordings && recordings.length > 0) {
       // Delete all analyses and their visual assets
-      for (const recording of recordings) {
+      for (let i = 0; i < recordings.length; i++) {
+        const recording = recordings[i];
         const recordingId = recording.id as string;
         const { data: analyses } = await supabase
           .from('analyses')
