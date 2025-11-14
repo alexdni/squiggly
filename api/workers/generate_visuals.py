@@ -103,8 +103,7 @@ def generate_topomap(
         info,
         axes=ax,
         show=False,
-        vmin=vmin,
-        vmax=vmax,
+        vlim=(vmin, vmax),  # Use vlim tuple instead of separate vmin/vmax
         cmap=create_blue_red_cmap(),
         contours=6,
         res=128,  # Resolution
