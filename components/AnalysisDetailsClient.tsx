@@ -426,6 +426,67 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
+            {/* Topographic Brain Maps */}
+            {analysis.results.visuals && Object.keys(analysis.results.visuals).length > 0 && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Topographic Brain Maps
+                </h2>
+                <p className="text-sm text-gray-800 mb-6">
+                  Spatial distribution of EEG band power across the scalp (blue = low amplitude, red = high amplitude)
+                </p>
+
+                {/* Frequency bands */}
+                <div className="space-y-8">
+                  {['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'].map((band) => {
+                    // Find visuals for this band
+                    const bandVisuals = Object.entries(analysis.results.visuals)
+                      .filter(([name]) => name.startsWith(`topomap_${band}_`))
+                      .sort((a, b) => a[0].localeCompare(b[0]));
+
+                    if (bandVisuals.length === 0) return null;
+
+                    return (
+                      <div key={band} className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0">
+                        <h3 className="text-xl font-semibold text-gray-900 mb-4 capitalize">
+                          {band.replace(/([a-z])([0-9])/g, '$1 $2')} Band
+                          <span className="text-sm font-normal text-gray-700 ml-2">
+                            {band === 'delta' && '(1-4 Hz)'}
+                            {band === 'theta' && '(4-8 Hz)'}
+                            {band === 'alpha1' && '(8-10 Hz)'}
+                            {band === 'alpha2' && '(10-12 Hz)'}
+                            {band === 'smr' && '(12-15 Hz)'}
+                            {band === 'beta2' && '(15-20 Hz)'}
+                            {band === 'hibeta' && '(20-30 Hz)'}
+                            {band === 'lowgamma' && '(30-45 Hz)'}
+                          </span>
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {bandVisuals.map(([name, url]) => {
+                            const condition = name.includes('_EO') ? 'Eyes Open' : 'Eyes Closed';
+                            return (
+                              <div key={name} className="bg-gray-50 rounded-lg p-4">
+                                <div className="text-sm font-medium text-gray-900 mb-3">
+                                  {condition}
+                                </div>
+                                <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                  <img
+                                    src={url as string}
+                                    alt={`${band} band ${condition} topomap`}
+                                    className="w-full h-auto"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Band Ratios */}
             {analysis.results.band_ratios && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
