@@ -134,6 +134,30 @@ export default function ProjectDetailsClient({
     }
   };
 
+  const handleDeleteRecording = async (recordingId: string, filename: string) => {
+    if (!confirm(`Are you sure you want to delete "${filename}"? This will also delete all associated analyses and cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/recordings/${recordingId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete recording');
+      }
+
+      // Refresh recordings list
+      await fetchRecordings();
+      alert('Recording deleted successfully');
+    } catch (error) {
+      console.error('Error deleting recording:', error);
+      alert('Failed to delete recording. Please try again.');
+    }
+  };
+
   return (
     <main className="min-h-screen bg-neuro-light">
       {/* Navigation */}
@@ -293,12 +317,20 @@ export default function ProjectDetailsClient({
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          className="text-neuro-primary hover:text-neuro-accent font-medium"
-                          onClick={() => handleViewAnalysis(recording.id)}
-                        >
-                          View Analysis
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            className="text-neuro-primary hover:text-neuro-accent font-medium"
+                            onClick={() => handleViewAnalysis(recording.id)}
+                          >
+                            View Analysis
+                          </button>
+                          <button
+                            className="text-red-600 hover:text-red-800 font-medium"
+                            onClick={() => handleDeleteRecording(recording.id, recording.filename)}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -3,11 +3,11 @@
 ## 1. Project Setup & Infrastructure
 - [x] 1.1 Initialize Next.js 14+ project with App Router and TypeScript
 - [x] 1.2 Configure Tailwind CSS with custom color palette for neuro theme
-- [ ] 1.3 Set up Supabase project (create organization, enable Auth, Storage, Queue)
+- [x] 1.3 Set up Supabase project (create organization, enable Auth, Storage, Queue)
 - [x] 1.4 Create database schema: `projects`, `recordings`, `analyses`, `export_logs` tables
-- [ ] 1.5 Set up Supabase Storage buckets: `recordings` (private), `visuals` (private), `exports` (private)
-- [ ] 1.6 Configure Google OAuth provider in Supabase Auth
-- [ ] 1.7 Create Vercel project and link to GitHub repository
+- [x] 1.5 Set up Supabase Storage buckets: `recordings` (private), `visuals` (private), `exports` (private)
+- [x] 1.6 Configure Google OAuth provider in Supabase Auth
+- [x] 1.7 Create Vercel project and link to GitHub repository
 - [x] 1.8 Set up environment variables (.env.local) for Supabase keys and API URLs
 - [x] 1.9 Initialize Python serverless function directory structure (`/api/workers/`)
 - [x] 1.10 Create `requirements.txt` for Python dependencies (MNE, NumPy, SciPy, pandas, antropy, matplotlib, Pillow)
@@ -33,8 +33,8 @@
 - [x] 3.10 Write integration test: upload invalid montage → verify rejection with correct error message
 
 ## 4. Preprocessing Pipeline (Python Worker)
-- [ ] 4.1 Create Python worker entry point (`/api/workers/preprocess.py`) triggered by Supabase Queue
-- [ ] 4.2 Implement EDF loading with MNE (`mne.io.read_raw_edf`)
+- [x] 4.1 Create Python worker entry point (`/api/workers/preprocess.py`) triggered by Supabase Queue
+- [x] 4.2 Implement EDF loading with MNE (`mne.io.read_raw_edf`)
 - [ ] 4.3 Build resampling function (target 250 Hz with anti-aliasing)
 - [ ] 4.4 Implement configurable filtering (high-pass, low-pass, notch using `mne.filter`)
 - [ ] 4.5 Create bad channel detection module (flatline, variance, correlation checks)

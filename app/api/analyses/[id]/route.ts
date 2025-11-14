@@ -166,3 +166,74 @@ export async function POST(
     );
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const analysisId = params.id;
+
+    // Fetch analysis to check permissions
+    const { data: analysis, error: fetchError } = await supabase
+      .from('analyses')
+      .select('*, recording:recordings(project_id)')
+      .eq('id', analysisId)
+      .single();
+
+    if (fetchError || !analysis) {
+      return NextResponse.json(
+        { error: 'Analysis not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete visual assets from storage
+    try {
+      const { data: files } = await supabase
+        .storage
+        .from('visuals')
+        .list(analysisId);
+
+      if (files && files.length > 0) {
+        const filePaths = files.map(f => `${analysisId}/${f.name}`);
+        await supabase.storage.from('visuals').remove(filePaths);
+      }
+    } catch (storageError) {
+      console.error(`Error deleting visuals for analysis ${analysisId}:`, storageError);
+      // Continue anyway
+    }
+
+    // Delete analysis from database
+    const { error: deleteError } = await supabase
+      .from('analyses')
+      .delete()
+      .eq('id', analysisId);
+
+    if (deleteError) {
+      console.error('Error deleting analysis:', deleteError);
+      return NextResponse.json(
+        { error: 'Failed to delete analysis' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Error in DELETE /api/analyses/[id]:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
