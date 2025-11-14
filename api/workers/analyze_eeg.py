@@ -24,7 +24,15 @@ import argparse
 # Import our modules
 from preprocess import preprocess_eeg
 from extract_features import extract_features
-from generate_visuals import generate_all_topomaps, generate_psd_plot, generate_apf_plot, generate_spectrogram
+from generate_visuals import (
+    generate_all_topomaps,
+    generate_psd_plot,
+    generate_apf_plot,
+    generate_spectrogram,
+    generate_lzc_topomap,
+    generate_coherence_matrix,
+    compress_png
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -380,6 +388,58 @@ def analyze_eeg_file(
                 visuals.update(topomap_visuals)
                 logger.info(f"Generated {len(topomap_visuals)} topomaps")
 
+            # Generate LZC topomaps for each condition
+            lzc_eo = features.get('lzc', {}).get('eo')
+            lzc_ec = features.get('lzc', {}).get('ec')
+
+            if lzc_eo and ch_names:
+                lzc_topomap_eo = generate_lzc_topomap(
+                    lzc_values=lzc_eo,
+                    ch_names=ch_names,
+                    condition='EO',
+                    use_normalized=True
+                )
+                visuals['lzc_topomap_EO'] = compress_png(lzc_topomap_eo)
+                logger.info("Generated LZC topomap for EO")
+
+            if lzc_ec and ch_names:
+                lzc_topomap_ec = generate_lzc_topomap(
+                    lzc_values=lzc_ec,
+                    ch_names=ch_names,
+                    condition='EC',
+                    use_normalized=True
+                )
+                visuals['lzc_topomap_EC'] = compress_png(lzc_topomap_ec)
+                logger.info("Generated LZC topomap for EC")
+
+            # Generate coherence matrices for key bands and conditions
+            coherence_eo = features.get('coherence', {}).get('eo')
+            coherence_ec = features.get('coherence', {}).get('ec')
+
+            # Generate coherence matrices for alpha1 and theta (most clinically relevant)
+            key_bands = ['alpha1', 'theta']
+
+            for band in key_bands:
+                if coherence_eo and ch_names:
+                    coh_matrix_eo = generate_coherence_matrix(
+                        coherence_data=coherence_eo,
+                        band_name=band,
+                        condition='EO',
+                        ch_names=ch_names
+                    )
+                    visuals[f'coherence_{band}_EO'] = compress_png(coh_matrix_eo)
+                    logger.info(f"Generated coherence matrix for {band} - EO")
+
+                if coherence_ec and ch_names:
+                    coh_matrix_ec = generate_coherence_matrix(
+                        coherence_data=coherence_ec,
+                        band_name=band,
+                        condition='EC',
+                        ch_names=ch_names
+                    )
+                    visuals[f'coherence_{band}_EC'] = compress_png(coh_matrix_ec)
+                    logger.info(f"Generated coherence matrix for {band} - EC")
+
             logger.info("Visualization generation complete")
 
         except Exception as e:
@@ -397,6 +457,7 @@ def analyze_eeg_file(
             'qc_report': qc_metrics,
             'band_power': features['band_power'],
             'coherence': features['coherence'],
+            'lzc': features['lzc'],
             'band_ratios': features['band_ratios'],
             'asymmetry': features['asymmetry'],
             'risk_patterns': features['risk_patterns'],

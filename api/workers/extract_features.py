@@ -281,6 +281,98 @@ class FeatureExtractor:
 
         return coherence_results
 
+    def compute_lzc(self, epochs: mne.Epochs) -> Dict[str, Dict[str, float]]:
+        """
+        Compute Lempel-Ziv Complexity (LZC) for each channel
+
+        LZC measures signal complexity by counting the number of distinct patterns
+        in the binary representation of the signal. Higher values indicate more
+        complex, less predictable signals.
+
+        Args:
+            epochs: Preprocessed epochs
+
+        Returns:
+            Dictionary: {channel: {'lzc': value, 'normalized_lzc': value}}
+        """
+        logger.info("Computing Lempel-Ziv Complexity")
+
+        data = epochs.get_data()  # Shape: (n_epochs, n_channels, n_times)
+        ch_names = epochs.ch_names
+        n_epochs, n_channels, n_times = data.shape
+
+        lzc_results = {}
+
+        for ch_idx, ch_name in enumerate(ch_names):
+            epoch_lzc_values = []
+
+            for epoch_idx in range(n_epochs):
+                # Get signal for this epoch and channel
+                signal_data = data[epoch_idx, ch_idx, :]
+
+                # Calculate LZC
+                lzc = self._lempel_ziv_complexity(signal_data)
+                epoch_lzc_values.append(lzc)
+
+            # Average LZC across epochs
+            mean_lzc = np.mean(epoch_lzc_values)
+
+            # Normalize by theoretical maximum (log2(n))
+            # Maximum complexity occurs for random sequences
+            max_complexity = np.log2(n_times) if n_times > 1 else 1.0
+            normalized_lzc = mean_lzc / max_complexity if max_complexity > 0 else 0.0
+
+            lzc_results[ch_name] = {
+                'lzc': float(mean_lzc),
+                'normalized_lzc': float(normalized_lzc)
+            }
+
+        logger.info(f"Computed LZC for {len(lzc_results)} channels")
+        return lzc_results
+
+    def _lempel_ziv_complexity(self, signal_data: np.ndarray) -> float:
+        """
+        Calculate Lempel-Ziv Complexity using the LZ76 algorithm
+
+        The signal is first binarized using the median as threshold,
+        then the number of distinct subsequences is counted.
+
+        Args:
+            signal_data: 1D array of signal values
+
+        Returns:
+            LZC value (number of distinct patterns)
+        """
+        # Binarize signal using median threshold
+        median = np.median(signal_data)
+        binary_string = ''.join(['1' if x > median else '0' for x in signal_data])
+
+        # LZ76 algorithm: count number of distinct subsequences
+        n = len(binary_string)
+        complexity = 0
+        ind = 0
+        inc = 1
+
+        while ind + inc <= n:
+            # Check if current subsequence is new
+            subsequence = binary_string[ind:ind + inc]
+
+            # Look for this pattern in the prefix
+            if subsequence in binary_string[0:ind + inc - 1]:
+                # Pattern exists, extend the window
+                inc += 1
+            else:
+                # New pattern found, increment complexity
+                complexity += 1
+                ind += inc
+                inc = 1
+
+        # Account for the last incomplete pattern
+        if ind < n:
+            complexity += 1
+
+        return float(complexity)
+
     def detect_risk_patterns(
         self,
         band_power: Dict,
@@ -370,20 +462,24 @@ def extract_features(
     # Extract features for EO condition if available
     band_power_eo = None
     coherence_eo = None
+    lzc_eo = None
     if epochs_eo is not None:
         logger.info("Extracting features for Eyes Open condition")
         band_power_eo = extractor.compute_band_power(epochs_eo)
         coherence_eo = extractor.compute_coherence(epochs_eo)
+        lzc_eo = extractor.compute_lzc(epochs_eo)
     else:
         logger.info("Skipping Eyes Open feature extraction (no EO epochs)")
 
     # Extract features for EC condition if available
     band_power_ec = None
     coherence_ec = None
+    lzc_ec = None
     if epochs_ec is not None:
         logger.info("Extracting features for Eyes Closed condition")
         band_power_ec = extractor.compute_band_power(epochs_ec)
         coherence_ec = extractor.compute_coherence(epochs_ec)
+        lzc_ec = extractor.compute_lzc(epochs_ec)
     else:
         logger.info("Skipping Eyes Closed feature extraction (no EC epochs)")
 
@@ -403,6 +499,10 @@ def extract_features(
         'coherence': {
             'eo': coherence_eo,
             'ec': coherence_ec,
+        },
+        'lzc': {
+            'eo': lzc_eo,
+            'ec': lzc_ec,
         },
         'band_ratios': band_ratios,
         'asymmetry': asymmetry,

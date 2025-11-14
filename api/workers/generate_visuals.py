@@ -350,6 +350,184 @@ def generate_apf_plot(
     return buf.read()
 
 
+def generate_lzc_topomap(
+    lzc_values: Dict[str, Dict[str, float]],
+    ch_names: List[str],
+    condition: str,
+    use_normalized: bool = True,
+    title: Optional[str] = None,
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a topographic brainmap for Lempel-Ziv Complexity (LZC).
+
+    Args:
+        lzc_values: Dict mapping channel -> {'lzc': value, 'normalized_lzc': value}
+        ch_names: List of channel names (must match standard 10-20)
+        condition: Condition label (e.g., 'EO', 'EC')
+        use_normalized: If True, use normalized LZC values (0-1 range)
+        title: Custom title (if None, auto-generated)
+        dpi: Resolution in DPI (default 300 for print quality)
+
+    Returns:
+        PNG image as bytes
+    """
+    logger.info(f"Generating LZC topomap for {condition}")
+
+    # Extract LZC values in channel order
+    key = 'normalized_lzc' if use_normalized else 'lzc'
+    complexity_values = np.array([
+        lzc_values[ch][key] if ch in lzc_values else 0.0
+        for ch in ch_names
+    ])
+
+    # Create MNE Info object with standard montage
+    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    montage = mne.channels.make_standard_montage('standard_1020')
+    info.set_montage(montage)
+
+    # Set color scale
+    vmin = np.percentile(complexity_values, 2)
+    vmax = np.percentile(complexity_values, 98)
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=dpi)
+
+    # Generate topomap with diverging colormap (RdYlBu_r: red = high complexity)
+    im, _ = mne.viz.plot_topomap(
+        complexity_values,
+        info,
+        axes=ax,
+        show=False,
+        vlim=(vmin, vmax),
+        cmap='RdYlBu_r',  # Red-Yellow-Blue reversed (red = high)
+        contours=6,
+        res=128,
+        sensors=True,
+        names=ch_names if len(ch_names) < 20 else None,
+    )
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    if use_normalized:
+        cbar.set_label('Normalized LZC', rotation=270, labelpad=20)
+    else:
+        cbar.set_label('LZC', rotation=270, labelpad=20)
+
+    # Set title
+    if title is None:
+        title = f'Lempel-Ziv Complexity - {condition}'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read()
+
+
+def generate_coherence_matrix(
+    coherence_data: List[Dict],
+    band_name: str,
+    condition: str,
+    ch_names: List[str] = None,
+    title: Optional[str] = None,
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a coherence matrix heatmap for a specific band and condition.
+
+    Args:
+        coherence_data: List of coherence dicts from extract_features
+                       Each dict has: {ch1, ch2, type, delta, theta, ...}
+        band_name: Frequency band (e.g., 'alpha1')
+        condition: Condition label (e.g., 'EO', 'EC')
+        ch_names: List of channel names (if None, uses standard 19 channels)
+        title: Custom title (if None, auto-generated)
+        dpi: Resolution in DPI
+
+    Returns:
+        PNG image as bytes
+    """
+    logger.info(f"Generating coherence matrix for {band_name} - {condition}")
+
+    if ch_names is None:
+        ch_names = CHANNEL_NAMES
+
+    n_channels = len(ch_names)
+
+    # Initialize matrix with NaN (for missing pairs)
+    coherence_matrix = np.full((n_channels, n_channels), np.nan)
+
+    # Set diagonal to 1.0 (perfect self-coherence)
+    np.fill_diagonal(coherence_matrix, 1.0)
+
+    # Fill matrix from coherence data
+    for coh_pair in coherence_data:
+        ch1 = coh_pair['ch1']
+        ch2 = coh_pair['ch2']
+
+        if ch1 not in ch_names or ch2 not in ch_names:
+            continue
+
+        if band_name not in coh_pair:
+            continue
+
+        idx1 = ch_names.index(ch1)
+        idx2 = ch_names.index(ch2)
+        coh_value = coh_pair[band_name]
+
+        # Fill both symmetric positions
+        coherence_matrix[idx1, idx2] = coh_value
+        coherence_matrix[idx2, idx1] = coh_value
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 8), dpi=dpi)
+
+    # Plot heatmap
+    im = ax.imshow(
+        coherence_matrix,
+        cmap='plasma',  # Sequential colormap (purple to yellow)
+        vmin=0.0,
+        vmax=1.0,
+        aspect='auto',
+        interpolation='nearest'
+    )
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Coherence', rotation=270, labelpad=20)
+
+    # Set ticks and labels
+    ax.set_xticks(np.arange(n_channels))
+    ax.set_yticks(np.arange(n_channels))
+    ax.set_xticklabels(ch_names, fontsize=8, rotation=45, ha='right')
+    ax.set_yticklabels(ch_names, fontsize=8)
+
+    # Add grid
+    ax.set_xticks(np.arange(n_channels) - 0.5, minor=True)
+    ax.set_yticks(np.arange(n_channels) - 0.5, minor=True)
+    ax.grid(which='minor', color='white', linestyle='-', linewidth=0.5)
+
+    # Set title
+    if title is None:
+        band_display = band_name.replace('alpha', 'Alpha ').replace('beta', 'Beta ')
+        title = f'Coherence Matrix - {band_display.capitalize()} ({condition})'
+    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read()
+
+
 def compress_png(png_bytes: bytes, quality: int = 85) -> bytes:
     """
     Compress PNG image to reduce file size.

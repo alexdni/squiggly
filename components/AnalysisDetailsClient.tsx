@@ -503,24 +503,45 @@ export default function AnalysisDetailsClient({
                         Signal complexity measure
                       </span>
                     </h3>
-                    <div className="bg-gray-100 rounded-lg p-8 text-center">
-                      <svg
-                        className="mx-auto h-12 w-12 text-gray-400 mb-2"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                        />
-                      </svg>
-                      <p className="text-sm text-gray-700">
-                        LZC visualization coming soon
-                      </p>
-                    </div>
+                    <p className="text-xs text-gray-700 mb-3">
+                      Higher LZC (red) indicates more complex, less predictable signals. Lower LZC (blue) indicates simpler, more regular patterns.
+                    </p>
+
+                    {(() => {
+                      const lzcVisuals = Object.entries(analysis.results.visuals)
+                        .filter(([name]) => name.startsWith('lzc_topomap_'))
+                        .sort((a, b) => a[0].localeCompare(b[0]));
+
+                      if (lzcVisuals.length === 0) {
+                        return (
+                          <div className="bg-gray-100 rounded-lg p-8 text-center">
+                            <p className="text-sm text-gray-700">LZC visualization not available</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="grid grid-cols-2 gap-3">
+                          {lzcVisuals.map(([name, url]) => {
+                            const condition = name.includes('_EO') ? 'EO' : 'EC';
+                            return (
+                              <div key={name} className="bg-gray-50 rounded p-2">
+                                <div className="text-xs font-medium text-gray-900 mb-2 text-center">
+                                  {condition}
+                                </div>
+                                <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                  <img
+                                    src={url as string}
+                                    alt={`LZC ${condition}`}
+                                    className="w-full h-auto"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Coherence Matrix */}
@@ -531,24 +552,50 @@ export default function AnalysisDetailsClient({
                         Inter-channel connectivity
                       </span>
                     </h3>
-                    <div className="bg-gray-100 rounded-lg p-8 text-center">
-                      <svg
-                        className="mx-auto h-12 w-12 text-gray-400 mb-2"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z"
-                        />
-                      </svg>
-                      <p className="text-sm text-gray-700">
-                        Coherence matrix visualization coming soon
-                      </p>
-                    </div>
+                    <p className="text-xs text-gray-700 mb-3">
+                      Inter-channel coherence (0-1) showing connectivity patterns. Shown for Alpha 1 and Theta bands.
+                    </p>
+
+                    {(() => {
+                      const coherenceVisuals = Object.entries(analysis.results.visuals)
+                        .filter(([name]) => name.startsWith('coherence_'))
+                        .sort((a, b) => a[0].localeCompare(b[0]));
+
+                      if (coherenceVisuals.length === 0) {
+                        return (
+                          <div className="bg-gray-100 rounded-lg p-8 text-center">
+                            <p className="text-sm text-gray-700">Coherence visualization not available</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-4">
+                          {coherenceVisuals.map(([name, url]) => {
+                            // Extract band and condition from name like "coherence_alpha1_EO"
+                            const parts = name.replace('coherence_', '').split('_');
+                            const band = parts[0];
+                            const condition = parts[1];
+                            const bandDisplay = band.replace(/([a-z])([0-9])/g, '$1 $2').toUpperCase();
+
+                            return (
+                              <div key={name} className="bg-gray-50 rounded p-2">
+                                <div className="text-xs font-medium text-gray-900 mb-2 text-center">
+                                  {bandDisplay} - {condition}
+                                </div>
+                                <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                  <img
+                                    src={url as string}
+                                    alt={`Coherence ${bandDisplay} ${condition}`}
+                                    className="w-full h-auto"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
