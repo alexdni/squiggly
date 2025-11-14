@@ -2,6 +2,15 @@ import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { checkProjectPermission } from '@/lib/rbac';
 
+interface RecordingData {
+  id: string;
+  file_path: string | null;
+}
+
+interface AnalysisData {
+  id: string;
+}
+
 // DELETE /api/projects/[id] - Delete a project and all its data
 export async function DELETE(
   request: Request,
@@ -39,20 +48,23 @@ export async function DELETE(
       .select('id, file_path')
       .eq('project_id', projectId);
 
-    if (recordings && recordings.length > 0) {
+    const typedRecordings = recordings as RecordingData[] | null;
+
+    if (typedRecordings && typedRecordings.length > 0) {
       // Delete all analyses and their visual assets
-      for (let i = 0; i < recordings.length; i++) {
-        const recording = recordings[i];
-        const recordingId = recording.id as string;
+      for (const recording of typedRecordings) {
+        const recordingId = recording.id;
         const { data: analyses } = await supabase
           .from('analyses')
           .select('id')
           .eq('recording_id', recordingId);
 
-        if (analyses && analyses.length > 0) {
+        const typedAnalyses = analyses as AnalysisData[] | null;
+
+        if (typedAnalyses && typedAnalyses.length > 0) {
           // Delete visual assets from storage for each analysis
-          for (const analysis of analyses) {
-            const analysisId = analysis.id as string;
+          for (const analysis of typedAnalyses) {
+            const analysisId = analysis.id;
             try {
               const { data: files } = await supabase
                 .storage
@@ -77,15 +89,14 @@ export async function DELETE(
         }
 
         // Delete EDF file from storage
-        const filePath = recording.file_path as string | null;
-        if (filePath) {
+        if (recording.file_path) {
           try {
             await supabase
               .storage
               .from('recordings')
-              .remove([filePath]);
+              .remove([recording.file_path]);
           } catch (storageError) {
-            console.error(`Error deleting file ${filePath}:`, storageError);
+            console.error(`Error deleting file ${recording.file_path}:`, storageError);
             // Continue anyway
           }
         }
