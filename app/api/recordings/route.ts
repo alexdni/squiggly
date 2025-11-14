@@ -124,10 +124,15 @@ export async function POST(request: Request) {
     let finalEcLabel = ecLabel;
 
     if (!useManual) {
+      console.log(`[Auto-detect] Attempting auto-detection for file: ${filename}`);
+      console.log(`[Auto-detect] useManual flag: ${useManual}`);
+
       // First, try to detect from filename
       // Use word boundary regex to match EO/EC as standalone words
       const isEOFile = /\beo\b/i.test(filename);
       const isECFile = /\bec\b/i.test(filename);
+
+      console.log(`[Auto-detect] Filename check - isEOFile: ${isEOFile}, isECFile: ${isECFile}`);
 
       // If filename indicates entire file is EO or EC, set times accordingly
       if (isEOFile && !isECFile) {
@@ -135,34 +140,60 @@ export async function POST(request: Request) {
         finalEoStart = 0;
         finalEoEnd = metadata.duration_seconds;
         finalEoLabel = 'EO';
-        console.log(`Auto-detected EO file from filename: ${filename}`);
+        console.log(`[Auto-detect] ✓ Auto-detected EO file from filename: ${filename}, duration: ${metadata.duration_seconds}s`);
       } else if (isECFile && !isEOFile) {
         // Entire file is Eyes Closed
         finalEcStart = 0;
         finalEcEnd = metadata.duration_seconds;
         finalEcLabel = 'EC';
-        console.log(`Auto-detected EC file from filename: ${filename}`);
-      } else if (metadata.annotations) {
-        // Try to find EO/EC annotations if filename detection failed
-        const eoAnnotation = metadata.annotations.find((ann) =>
-          ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
-        );
-        const ecAnnotation = metadata.annotations.find((ann) =>
-          ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
-        );
+        console.log(`[Auto-detect] ✓ Auto-detected EC file from filename: ${filename}, duration: ${metadata.duration_seconds}s`);
+      } else {
+        // Filename detection failed, try EDF annotations
+        console.log(`[Auto-detect] Filename detection failed (both or neither matched), checking annotations...`);
+        console.log(`[Auto-detect] Number of annotations: ${metadata.annotations?.length || 0}`);
 
-        if (eoAnnotation) {
-          finalEoStart = eoAnnotation.onset;
-          finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
-          finalEoLabel = eoAnnotation.description;
-        }
+        if (metadata.annotations && metadata.annotations.length > 0) {
+          console.log(`[Auto-detect] Available annotations:`, metadata.annotations.map(a => a.description));
 
-        if (ecAnnotation) {
-          finalEcStart = ecAnnotation.onset;
-          finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
-          finalEcLabel = ecAnnotation.description;
+          const eoAnnotation = metadata.annotations.find((ann) =>
+            ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
+          );
+          const ecAnnotation = metadata.annotations.find((ann) =>
+            ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
+          );
+
+          if (eoAnnotation) {
+            finalEoStart = eoAnnotation.onset;
+            finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
+            finalEoLabel = eoAnnotation.description;
+            console.log(`[Auto-detect] ✓ Found EO annotation: onset=${eoAnnotation.onset}s, duration=${eoAnnotation.duration}s`);
+          }
+
+          if (ecAnnotation) {
+            finalEcStart = ecAnnotation.onset;
+            finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
+            finalEcLabel = ecAnnotation.description;
+            console.log(`[Auto-detect] ✓ Found EC annotation: onset=${ecAnnotation.onset}s, duration=${ecAnnotation.duration}s`);
+          }
+
+          if (!eoAnnotation && !ecAnnotation) {
+            console.log(`[Auto-detect] ✗ No matching EO/EC annotations found`);
+          }
+        } else {
+          console.log(`[Auto-detect] ✗ No annotations in EDF file`);
         }
       }
+
+      // Final check
+      const hasEO = finalEoStart !== undefined && finalEoEnd !== undefined;
+      const hasEC = finalEcStart !== undefined && finalEcEnd !== undefined;
+      console.log(`[Auto-detect] Final result - hasEO: ${hasEO}, hasEC: ${hasEC}`);
+
+      if (!hasEO && !hasEC) {
+        console.log(`[Auto-detect] ✗ Auto-detection completely failed - no segments labeled`);
+      }
+    } else {
+      console.log(`[Auto-detect] Manual mode enabled, skipping auto-detection`);
     }
 
     // Create recording entry
@@ -184,6 +215,15 @@ export async function POST(request: Request) {
       ec_end: finalEcEnd || null,
       uploaded_by: user.id,
     };
+
+    console.log(`[Recording] Saving to database with EO/EC times:`, {
+      eo_label: recordingData.eo_label,
+      eo_start: recordingData.eo_start,
+      eo_end: recordingData.eo_end,
+      ec_label: recordingData.ec_label,
+      ec_start: recordingData.ec_start,
+      ec_end: recordingData.ec_end,
+    });
 
     const { data: recording, error: insertError } = await supabase
       .from('recordings')
