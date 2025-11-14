@@ -24,6 +24,7 @@ import argparse
 # Import our modules
 from preprocess import preprocess_eeg
 from extract_features import extract_features
+from generate_visuals import generate_all_topomaps, generate_psd_plot, generate_apf_plot, generate_spectrogram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -103,6 +104,53 @@ def convert_numpy_types(obj):
         return convert_numpy_types(obj.tolist())
     else:
         return obj
+
+
+def upload_visual_to_supabase(
+    png_bytes: bytes,
+    file_name: str,
+    analysis_id: str,
+    supabase_url: str,
+    supabase_key: str
+) -> Optional[str]:
+    """
+    Upload a visual asset (PNG) to Supabase Storage
+
+    Args:
+        png_bytes: PNG image as bytes
+        file_name: Name for the file (e.g., 'topomap_alpha1_EO.png')
+        analysis_id: Analysis UUID
+        supabase_url: Supabase project URL
+        supabase_key: Supabase service role key
+
+    Returns:
+        Public URL of uploaded file, or None if failed
+    """
+    try:
+        from supabase import create_client, Client
+
+        supabase: Client = create_client(supabase_url, supabase_key)
+
+        # Upload to visuals bucket
+        bucket_name = 'visuals'
+        object_path = f'{analysis_id}/{file_name}'
+
+        logger.info(f"Uploading visual: {object_path}")
+
+        supabase.storage.from_(bucket_name).upload(
+            object_path,
+            png_bytes,
+            file_options={"content-type": "image/png"}
+        )
+
+        # Get public URL
+        url = supabase.storage.from_(bucket_name).get_public_url(object_path)
+
+        return url
+
+    except Exception as e:
+        logger.error(f"Failed to upload visual {file_name}: {e}")
+        return None
 
 
 def upload_results_to_supabase(
@@ -249,9 +297,90 @@ def analyze_eeg_file(
 
         logger.info("Feature extraction complete")
 
-        # Step 3: Compile Results
+        # Step 3: Generate Visualizations
         logger.info("")
-        logger.info("STEP 3: Compiling Results")
+        logger.info("STEP 3: Generating Visualizations")
+        logger.info("-"*80)
+
+        visuals = {}
+
+        try:
+            import numpy as np
+
+            # Get channel names from epochs
+            if epochs_eo is not None:
+                ch_names = epochs_eo.ch_names
+            elif epochs_ec is not None:
+                ch_names = epochs_ec.ch_names
+            else:
+                ch_names = []
+
+            # Prepare band power data for topomaps
+            # Note: extract_features returns 'eo' and 'ec' as keys
+            band_power_eo_dict = features['band_power'].get('eo', {})
+            band_power_ec_dict = features['band_power'].get('ec', {})
+
+            # Restructure data by band instead of by condition
+            band_power_data = {}
+
+            # Get all bands from whichever condition is available
+            all_bands = set()
+            if band_power_eo_dict:
+                # Get bands from first channel
+                first_ch = next(iter(band_power_eo_dict.keys()), None)
+                if first_ch:
+                    all_bands.update(band_power_eo_dict[first_ch].keys())
+            if band_power_ec_dict:
+                first_ch = next(iter(band_power_ec_dict.keys()), None)
+                if first_ch:
+                    all_bands.update(band_power_ec_dict[first_ch].keys())
+
+            for band in all_bands:
+                band_power_data[band] = {}
+
+                # EO condition
+                if band_power_eo_dict:
+                    band_power_eo = []
+                    for ch in ch_names:
+                        if ch in band_power_eo_dict and band in band_power_eo_dict[ch]:
+                            band_power_eo.append(band_power_eo_dict[ch][band]['absolute'])
+                    if len(band_power_eo) == len(ch_names):
+                        band_power_data[band]['EO'] = np.array(band_power_eo)
+
+                # EC condition
+                if band_power_ec_dict:
+                    band_power_ec = []
+                    for ch in ch_names:
+                        if ch in band_power_ec_dict and band in band_power_ec_dict[ch]:
+                            band_power_ec.append(band_power_ec_dict[ch][band]['absolute'])
+                    if len(band_power_ec) == len(ch_names):
+                        band_power_data[band]['EC'] = np.array(band_power_ec)
+
+            # Generate all topomaps
+            conditions = []
+            if epochs_eo is not None:
+                conditions.append('EO')
+            if epochs_ec is not None:
+                conditions.append('EC')
+
+            if conditions and band_power_data:
+                topomap_visuals = generate_all_topomaps(
+                    band_power_data=band_power_data,
+                    ch_names=ch_names,
+                    conditions=conditions
+                )
+                visuals.update(topomap_visuals)
+                logger.info(f"Generated {len(topomap_visuals)} topomaps")
+
+            logger.info("Visualization generation complete")
+
+        except Exception as e:
+            logger.warning(f"Failed to generate some visualizations: {e}")
+            # Continue anyway - visuals are optional
+
+        # Step 4: Compile Results
+        logger.info("")
+        logger.info("STEP 4: Compiling Results")
         logger.info("-"*80)
 
         processing_time = time.time() - start_time
@@ -263,6 +392,7 @@ def analyze_eeg_file(
             'band_ratios': features['band_ratios'],
             'asymmetry': features['asymmetry'],
             'risk_patterns': features['risk_patterns'],
+            'visuals': visuals,  # Add visuals to results
             'processing_metadata': {
                 'preprocessing_config': preprocess_config,
                 'processing_time_seconds': round(processing_time, 2),
@@ -344,6 +474,27 @@ def main():
                 recording['ec_end'],
                 analysis.get('config', {})
             )
+
+            # Upload visualizations to Supabase Storage
+            if 'visuals' in results and results['visuals']:
+                logger.info("Uploading visualization assets to Supabase Storage")
+                visual_urls = {}
+
+                for visual_name, png_bytes in results['visuals'].items():
+                    file_name = f'{visual_name}.png'
+                    url = upload_visual_to_supabase(
+                        png_bytes,
+                        file_name,
+                        args.analysis_id,
+                        args.supabase_url,
+                        args.supabase_key
+                    )
+                    if url:
+                        visual_urls[visual_name] = url
+
+                # Replace PNG bytes with URLs in results
+                results['visuals'] = visual_urls
+                logger.info(f"Uploaded {len(visual_urls)} visualization assets")
 
             # Upload results
             upload_results_to_supabase(

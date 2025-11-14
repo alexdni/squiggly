@@ -50,40 +50,40 @@
 - [ ] 4.15 Write integration test: full preprocessing pipeline on synthetic EDF with injected artifacts
 
 ## 5. Feature Extraction (Python Worker)
-- [ ] 5.1 Create feature extraction worker (`/api/workers/extract_features.py`)
-- [ ] 5.2 Implement PSD computation (Welch method) for absolute and relative power per channel/band/condition
-- [ ] 5.3 Build regional aggregation function (mean power per F/C/P/O/T regions)
-- [ ] 5.4 Implement band ratio calculations (θ/β, θ/α, slowing index at specified sites)
+- [x] 5.1 Create feature extraction worker (`/api/workers/extract_features.py`)
+- [x] 5.2 Implement PSD computation (Welch method) for absolute and relative power per channel/band/condition
+- [x] 5.3 Build regional aggregation function (mean power per F/C/P/O/T regions)
+- [x] 5.4 Implement band ratio calculations (θ/β, θ/α, slowing index at specified sites)
 - [ ] 5.5 Create APF detection function (center-of-gravity method in 8-12 Hz range for posterior channels)
 - [ ] 5.6 Implement alpha blocking calculation (EC→EO suppression percentage)
-- [ ] 5.7 Build SMR power extraction (12-15 Hz at C3/C4/Cz)
+- [x] 5.7 Build SMR power extraction (12-15 Hz at C3/C4/Cz) - via band power extraction
 - [ ] 5.8 Implement reactivity metrics (absolute delta and percent change EC→EO per band/site)
-- [ ] 5.9 Create coherence computation function (magnitude-squared coherence for predefined 12 pairs per band)
+- [x] 5.9 Create coherence computation function (magnitude-squared coherence for predefined 12 pairs per band)
 - [ ] 5.10 Implement hyper/hypo coherence flagging (p90/p10 thresholds)
 - [ ] 5.11 Build LZC computation wrapper (antropy library, binary median-threshold per channel)
 - [ ] 5.12 Implement LZC delta and anterior-posterior gradient calculations
-- [ ] 5.13 Create PAI calculation function (Left-Right asymmetry for homologous pairs)
-- [ ] 5.14 Implement FAA calculation (log(alpha_F4) - log(alpha_F3) for EC)
+- [x] 5.13 Create PAI calculation function (Left-Right asymmetry for homologous pairs)
+- [x] 5.14 Implement FAA calculation (log(alpha_F4) - log(alpha_F3) for EC)
 - [ ] 5.15 Build anterior-posterior alpha gradient function
-- [ ] 5.16 Persist all features to `analyses.results` JSONB column
+- [x] 5.16 Persist all features to `analyses.results` JSONB column
 - [ ] 5.17 Write unit tests: PSD sum validation, APF detection stability, coherence symmetry
 - [ ] 5.18 Write integration test: extract features from preprocessed synthetic data, validate output schema
 
 ## 6. Visualization Generation (Python Worker)
-- [ ] 6.1 Create visualization worker (`/api/workers/generate_visuals.py`)
-- [ ] 6.2 Implement topomap rendering using MNE (`mne.viz.plot_topomap`) for each band × condition (EO/EC/Delta)
-- [ ] 6.3 Build consistent color scale logic (global min/max across EO+EC for same band)
+- [x] 6.1 Create visualization worker (`/api/workers/generate_visuals.py`)
+- [x] 6.2 Implement topomap rendering using MNE (`mne.viz.plot_topomap`) for each band × condition (EO/EC/Delta)
+- [x] 6.3 Build consistent color scale logic (global min/max across EO+EC for same band)
 - [ ] 6.4 Generate LZC and PAI topomaps with appropriate color maps (diverging for PAI)
-- [ ] 6.5 Implement spectrogram generation (per-channel and regional using `scipy.signal.spectrogram` or CWT)
+- [x] 6.5 Implement spectrogram generation (per-channel and regional using `scipy.signal.spectrogram` or CWT)
 - [ ] 6.6 Create coherence matrix visualization (12×12 heatmap with colorbar)
 - [ ] 6.7 Build interhemispheric coherence bar chart with EO/EC grouped bars
 - [ ] 6.8 Add hyper/hypo badge annotations to coherence visuals
 - [ ] 6.9 Implement theta/beta ratio bar chart (Fz/Cz/F3/F4 with p90 reference line)
 - [ ] 6.10 Create alpha blocking circular gauge visualization
-- [ ] 6.11 Build APF scatter plot (per channel, EO vs EC with connecting lines)
+- [x] 6.11 Build APF scatter plot (per channel, EO vs EC with connecting lines)
 - [ ] 6.12 Generate QC dashboard visuals (pie chart for artifact %, table for ICA components, pre/post-ICA line chart)
-- [ ] 6.13 Compress all PNGs with pngquant (reduce file size while maintaining quality)
-- [ ] 6.14 Upload visual assets to Supabase Storage and persist URLs to `analyses.results.visuals`
+- [x] 6.13 Compress all PNGs with pngquant (reduce file size while maintaining quality)
+- [x] 6.14 Upload visual assets to Supabase Storage and persist URLs to `analyses.results.visuals`
 - [ ] 6.15 Write integration test: generate visuals from sample features, verify PNG file sizes <500KB each
 
 ## 7. Rule Engine
