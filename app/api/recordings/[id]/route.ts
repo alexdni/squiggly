@@ -2,6 +2,16 @@ import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { checkProjectPermission } from '@/lib/rbac';
 
+interface RecordingData {
+  id: string;
+  project_id: string;
+  file_path: string | null;
+}
+
+interface AnalysisData {
+  id: string;
+}
+
 // DELETE /api/recordings/[id] - Delete a recording
 export async function DELETE(
   request: Request,
@@ -26,7 +36,9 @@ export async function DELETE(
       .eq('id', recordingId)
       .single();
 
-    if (fetchError || !recording) {
+    const typedRecording = recording as RecordingData | null;
+
+    if (fetchError || !typedRecording) {
       return NextResponse.json(
         { error: 'Recording not found' },
         { status: 404 }
@@ -35,7 +47,7 @@ export async function DELETE(
 
     // Check permission
     const hasPermission = await checkProjectPermission(
-      recording.project_id,
+      typedRecording.project_id,
       user.id,
       'recording:delete'
     );
@@ -50,21 +62,24 @@ export async function DELETE(
       .select('id')
       .eq('recording_id', recordingId);
 
-    if (analyses && analyses.length > 0) {
+    const typedAnalyses = analyses as AnalysisData[] | null;
+
+    if (typedAnalyses && typedAnalyses.length > 0) {
       // Delete visual assets from storage for each analysis
-      for (const analysis of analyses) {
+      for (const analysis of typedAnalyses) {
+        const analysisId = analysis.id;
         try {
           const { data: files } = await supabase
             .storage
             .from('visuals')
-            .list(analysis.id);
+            .list(analysisId);
 
           if (files && files.length > 0) {
-            const filePaths = files.map(f => `${analysis.id}/${f.name}`);
+            const filePaths = files.map(f => `${analysisId}/${f.name}`);
             await supabase.storage.from('visuals').remove(filePaths);
           }
         } catch (storageError) {
-          console.error(`Error deleting visuals for analysis ${analysis.id}:`, storageError);
+          console.error(`Error deleting visuals for analysis ${analysisId}:`, storageError);
           // Continue anyway
         }
       }
@@ -77,12 +92,12 @@ export async function DELETE(
     }
 
     // Delete EDF file from storage
-    if (recording.file_path) {
+    if (typedRecording.file_path) {
       try {
         const { error: storageError } = await supabase
           .storage
           .from('recordings')
-          .remove([recording.file_path]);
+          .remove([typedRecording.file_path]);
 
         if (storageError) {
           console.error('Error deleting file from storage:', storageError);
