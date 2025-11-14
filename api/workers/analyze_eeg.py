@@ -491,10 +491,15 @@ def main():
                     )
                     if url:
                         visual_urls[visual_name] = url
+                    else:
+                        logger.warning(f"Failed to upload {visual_name}, skipping")
 
-                # Replace PNG bytes with URLs in results
+                # Replace PNG bytes with URLs in results (always replace, even if empty)
                 results['visuals'] = visual_urls
                 logger.info(f"Uploaded {len(visual_urls)} visualization assets")
+            else:
+                # Ensure visuals is not present or is empty dict if no visuals generated
+                results['visuals'] = {}
 
             # Upload results
             upload_results_to_supabase(

@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify
 import os
 import logging
 import tempfile
-from analyze_eeg import analyze_eeg_file, download_from_supabase, upload_results_to_supabase, mark_analysis_failed
+from analyze_eeg import analyze_eeg_file, download_from_supabase, upload_results_to_supabase, upload_visual_to_supabase, mark_analysis_failed
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -113,6 +113,32 @@ def analyze():
                 ec_end,
                 config=data.get('config', {})
             )
+
+            # Upload visualizations to Supabase Storage
+            if 'visuals' in results and results['visuals']:
+                logger.info("Uploading visualization assets to Supabase Storage")
+                visual_urls = {}
+
+                for visual_name, png_bytes in results['visuals'].items():
+                    file_name = f'{visual_name}.png'
+                    url = upload_visual_to_supabase(
+                        png_bytes,
+                        file_name,
+                        analysis_id,
+                        supabase_url,
+                        supabase_key
+                    )
+                    if url:
+                        visual_urls[visual_name] = url
+                    else:
+                        logger.warning(f"Failed to upload {visual_name}, skipping")
+
+                # Replace PNG bytes with URLs in results (always replace, even if empty)
+                results['visuals'] = visual_urls
+                logger.info(f"Uploaded {len(visual_urls)} visualization assets")
+            else:
+                # Ensure visuals is not present or is empty dict if no visuals generated
+                results['visuals'] = {}
 
             # Upload results
             upload_results_to_supabase(
