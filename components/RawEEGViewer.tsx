@@ -339,13 +339,6 @@ export default function RawEEGViewer({
           min: -channelSpacing / 2,
           max: (selectedChannels.length - 0.5) * channelSpacing,
           position: 'left' as const,
-          afterBuildTicks: function(axis: any) {
-            // Override ticks to show only channel baselines
-            axis.ticks = yTicks.map(t => ({
-              value: t.value,
-              label: t.label
-            }));
-          },
           ticks: {
             color: '#000000', // pure black for maximum visibility
             font: {
@@ -357,6 +350,11 @@ export default function RawEEGViewer({
             maxRotation: 0,
             minRotation: 0,
             padding: 10,
+            callback: function(value: any, index: number) {
+              // Show only channel labels at baseline positions
+              const tick = yTicks.find(t => Math.abs(t.value - value) < 0.1);
+              return tick ? tick.label : '';
+            },
           },
           grid: {
             display: true,

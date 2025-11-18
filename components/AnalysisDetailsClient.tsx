@@ -444,30 +444,49 @@ export default function AnalysisDetailsClient({
                     const bands = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'];
                     const averages: Record<string, number> = {};
 
+                    // Debug: log the structure
+                    console.log(`Band power structure for ${condition}:`, bandPower);
+
                     bands.forEach((band) => {
                       let sum = 0;
                       let count = 0;
-                      Object.values(bandPower).forEach((channelData: any) => {
-                        if (channelData[band]?.absolute) {
-                          sum += channelData[band].absolute;
-                          count++;
+
+                      // Iterate over channels
+                      Object.keys(bandPower).forEach((channelName) => {
+                        const channelData = bandPower[channelName];
+
+                        // Check if this band exists for this channel
+                        if (channelData && typeof channelData === 'object' && band in channelData) {
+                          const bandData = channelData[band];
+
+                          // Handle both direct number and object with 'absolute' property
+                          const absoluteValue = typeof bandData === 'number'
+                            ? bandData
+                            : (bandData?.absolute || 0);
+
+                          if (absoluteValue > 0) {
+                            sum += absoluteValue;
+                            count++;
+                          }
                         }
                       });
+
                       averages[band] = count > 0 ? sum / count : 0;
+                      console.log(`${condition} ${band}: sum=${sum}, count=${count}, avg=${averages[band]}`);
                     });
 
                     return (
-                      <div key={condition} className="border border-gray-200 rounded-lg p-4">
+                      <div key={condition} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                         <h3 className="text-lg font-semibold text-gray-900 mb-3">
                           {condition === 'eo' ? 'Eyes Open' : 'Eyes Closed'}
                         </h3>
                         <div className="space-y-2">
                           {bands.map((band) => (
                             <div key={band} className="flex justify-between items-center text-sm">
-                              <span className="font-medium capitalize">
+                              <span className="font-medium text-gray-800 capitalize">
                                 {band.replace(/([a-z])([0-9])/g, '$1 $2')}
                               </span>
-                              <span className="text-gray-900 font-mono">
+                              <span className="text-gray-900 font-mono font-semibold" style={{ color: '#111827' }}>
                                 {averages[band].toFixed(2)} μV²/Hz
                               </span>
                             </div>
