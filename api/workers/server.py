@@ -36,10 +36,12 @@ def verify_auth():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
+    from datetime import datetime
     return jsonify({
         'status': 'healthy',
         'service': 'eeg-analysis-worker',
-        'version': '1.0.0'
+        'version': '1.0.0',
+        'timestamp': datetime.utcnow().isoformat()
     })
 
 
