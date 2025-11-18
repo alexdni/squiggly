@@ -25,12 +25,10 @@ import argparse
 from preprocess import preprocess_eeg
 from extract_features import extract_features
 from generate_visuals import (
-    generate_all_topomaps,
-    generate_psd_plot,
-    generate_apf_plot,
-    generate_spectrogram,
+    generate_topomap_grid,
+    generate_coherence_grid,
+    generate_spectrogram_grid,
     generate_lzc_topomap,
-    generate_coherence_matrix,
     compress_png
 )
 
@@ -372,23 +370,25 @@ def analyze_eeg_file(
                     if len(band_power_ec) == len(ch_names):
                         band_power_data[band]['EC'] = np.array(band_power_ec)
 
-            # Generate all topomaps
+            # Determine available conditions
             conditions = []
             if epochs_eo is not None:
                 conditions.append('EO')
             if epochs_ec is not None:
                 conditions.append('EC')
 
+            # 1. Generate combined topomap grid (all bands in one image)
             if conditions and band_power_data:
-                topomap_visuals = generate_all_topomaps(
+                topomap_grid = generate_topomap_grid(
                     band_power_data=band_power_data,
                     ch_names=ch_names,
-                    conditions=conditions
+                    conditions=conditions,
+                    dpi=200  # Lower DPI for grid view
                 )
-                visuals.update(topomap_visuals)
-                logger.info(f"Generated {len(topomap_visuals)} topomaps")
+                visuals['topomap_grid'] = compress_png(topomap_grid)
+                logger.info("Generated combined topomap grid")
 
-            # Generate LZC topomaps for each condition
+            # 2. Generate combined LZC topomaps (EO and EC side-by-side)
             lzc_eo = features.get('lzc', {}).get('eo')
             lzc_ec = features.get('lzc', {}).get('ec')
 
@@ -397,50 +397,62 @@ def analyze_eeg_file(
                     lzc_values=lzc_eo,
                     ch_names=ch_names,
                     condition='EO',
-                    use_normalized=True
+                    use_normalized=True,
+                    dpi=200
                 )
                 visuals['lzc_topomap_EO'] = compress_png(lzc_topomap_eo)
-                logger.info("Generated LZC topomap for EO")
 
             if lzc_ec and ch_names:
                 lzc_topomap_ec = generate_lzc_topomap(
                     lzc_values=lzc_ec,
                     ch_names=ch_names,
                     condition='EC',
-                    use_normalized=True
+                    use_normalized=True,
+                    dpi=200
                 )
                 visuals['lzc_topomap_EC'] = compress_png(lzc_topomap_ec)
-                logger.info("Generated LZC topomap for EC")
 
-            # Generate coherence matrices for key bands and conditions
+            if lzc_eo or lzc_ec:
+                logger.info("Generated LZC topomaps")
+
+            # 3. Generate combined coherence matrix grid (all bands in one image)
             coherence_eo = features.get('coherence', {}).get('eo')
             coherence_ec = features.get('coherence', {}).get('ec')
 
-            # Generate coherence matrices for alpha1 and theta (most clinically relevant)
-            key_bands = ['alpha1', 'theta']
+            if coherence_eo or coherence_ec:
+                coherence_grid = generate_coherence_grid(
+                    coherence_eo=coherence_eo,
+                    coherence_ec=coherence_ec,
+                    ch_names=ch_names,
+                    dpi=200
+                )
+                visuals['coherence_grid'] = compress_png(coherence_grid)
+                logger.info("Generated combined coherence grid")
 
-            for band in key_bands:
-                if coherence_eo and ch_names:
-                    coh_matrix_eo = generate_coherence_matrix(
-                        coherence_data=coherence_eo,
-                        band_name=band,
-                        condition='EO',
-                        ch_names=ch_names
-                    )
-                    visuals[f'coherence_{band}_EO'] = compress_png(coh_matrix_eo)
-                    logger.info(f"Generated coherence matrix for {band} - EO")
+            # 4. Generate spectrograms for key channels
+            if epochs_eo is not None:
+                spectrogram_eo = generate_spectrogram_grid(
+                    epochs=epochs_eo,
+                    condition='EO',
+                    key_channels=['Fp1', 'Fz', 'Cz', 'Pz', 'O1'],
+                    dpi=150
+                )
+                if spectrogram_eo:
+                    visuals['spectrogram_EO'] = compress_png(spectrogram_eo)
+                    logger.info("Generated spectrogram grid for EO")
 
-                if coherence_ec and ch_names:
-                    coh_matrix_ec = generate_coherence_matrix(
-                        coherence_data=coherence_ec,
-                        band_name=band,
-                        condition='EC',
-                        ch_names=ch_names
-                    )
-                    visuals[f'coherence_{band}_EC'] = compress_png(coh_matrix_ec)
-                    logger.info(f"Generated coherence matrix for {band} - EC")
+            if epochs_ec is not None:
+                spectrogram_ec = generate_spectrogram_grid(
+                    epochs=epochs_ec,
+                    condition='EC',
+                    key_channels=['Fp1', 'Fz', 'Cz', 'Pz', 'O1'],
+                    dpi=150
+                )
+                if spectrogram_ec:
+                    visuals['spectrogram_EC'] = compress_png(spectrogram_ec)
+                    logger.info("Generated spectrogram grid for EC")
 
-            logger.info("Visualization generation complete")
+            logger.info(f"Visualization generation complete - {len(visuals)} images created")
 
         except Exception as e:
             logger.warning(f"Failed to generate some visualizations: {e}")

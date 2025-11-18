@@ -202,6 +202,106 @@ def generate_spectrogram(
     return buf.read()
 
 
+def generate_spectrogram_grid(
+    epochs: mne.Epochs,
+    condition: str,
+    key_channels: List[str] = None,
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a grid of spectrograms for key channels.
+
+    Args:
+        epochs: MNE Epochs object
+        condition: Condition label (e.g., 'EO', 'EC')
+        key_channels: List of channels to plot (default: ['Fp1', 'Fz', 'Cz', 'Pz', 'O1'])
+        dpi: Resolution in DPI
+
+    Returns:
+        PNG image as bytes containing spectrograms in a grid
+    """
+    logger.info(f"Generating spectrogram grid for {condition}")
+
+    if key_channels is None:
+        key_channels = ['Fp1', 'Fz', 'Cz', 'Pz', 'O1']
+
+    # Filter to only channels that exist
+    available_channels = [ch for ch in key_channels if ch in epochs.ch_names]
+    n_channels = len(available_channels)
+
+    if n_channels == 0:
+        logger.warning("No key channels available for spectrogram")
+        return b''
+
+    sfreq = epochs.info['sfreq']
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(
+        n_channels, 1,
+        figsize=(12, n_channels * 2),
+        dpi=dpi
+    )
+
+    # Ensure axes is iterable
+    if n_channels == 1:
+        axes = [axes]
+
+    for idx, ch_name in enumerate(available_channels):
+        ch_idx = epochs.ch_names.index(ch_name)
+        epochs_data = epochs.get_data()[:, ch_idx, :]  # (n_epochs, n_times)
+
+        # Concatenate epochs
+        continuous_data = epochs_data.ravel()
+
+        # Compute spectrogram
+        f, t, Sxx = signal.spectrogram(
+            continuous_data,
+            fs=sfreq,
+            nperseg=int(2 * sfreq),
+            noverlap=int(1.5 * sfreq),
+            scaling='density'
+        )
+
+        # Limit frequency range
+        freq_mask = (f >= 0.5) & (f <= 45)
+        f = f[freq_mask]
+        Sxx = Sxx[freq_mask, :]
+
+        # Convert to dB
+        Sxx_db = 10 * np.log10(Sxx + 1e-12)
+
+        # Plot
+        ax = axes[idx]
+        im = ax.pcolormesh(
+            t, f, Sxx_db,
+            shading='gouraud',
+            cmap='jet',
+            vmin=np.percentile(Sxx_db, 5),
+            vmax=np.percentile(Sxx_db, 95)
+        )
+
+        ax.set_ylabel('Frequency (Hz)', fontsize=10)
+        if idx == n_channels - 1:
+            ax.set_xlabel('Time (s)', fontsize=10)
+        ax.set_title(f'{ch_name}', fontsize=11, fontweight='bold', loc='left')
+
+        # Add colorbar to right
+        cbar = plt.colorbar(im, ax=ax, pad=0.01)
+        cbar.set_label('dB', rotation=0, labelpad=10, fontsize=8)
+
+    # Add overall title
+    fig.suptitle(f'Spectrograms - {condition}', fontsize=14, fontweight='bold', y=0.995)
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read()
+
+
 def generate_psd_plot(
     psd_data: Dict[str, np.ndarray],
     freqs: np.ndarray,
@@ -528,6 +628,121 @@ def generate_coherence_matrix(
     return buf.read()
 
 
+def generate_coherence_grid(
+    coherence_eo: List[Dict],
+    coherence_ec: List[Dict],
+    ch_names: List[str] = None,
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a grid of coherence matrices for all bands and conditions.
+
+    Layout: 2 rows (EO and EC), 8 columns (all bands)
+
+    Args:
+        coherence_eo: List of coherence dicts for EO condition
+        coherence_ec: List of coherence dicts for EC condition
+        ch_names: List of channel names (if None, uses standard 19 channels)
+        dpi: Resolution in DPI
+
+    Returns:
+        PNG image as bytes containing all coherence matrices in a grid
+    """
+    logger.info("Generating combined coherence grid for all bands")
+
+    if ch_names is None:
+        ch_names = CHANNEL_NAMES
+
+    # Bands ordered by frequency
+    band_order = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma']
+    n_bands = len(band_order)
+    n_channels = len(ch_names)
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(
+        2, n_bands,
+        figsize=(n_bands * 2.5, 2 * 2.5),
+        dpi=dpi
+    )
+
+    # Plot each band and condition
+    for cond_idx, (coherence_data, condition) in enumerate([(coherence_eo, 'EO'), (coherence_ec, 'EC')]):
+        for band_idx, band_name in enumerate(band_order):
+            ax = axes[cond_idx, band_idx]
+
+            if coherence_data is None:
+                ax.axis('off')
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes, fontsize=8)
+                continue
+
+            # Initialize matrix with NaN
+            coherence_matrix = np.full((n_channels, n_channels), np.nan)
+            np.fill_diagonal(coherence_matrix, 1.0)
+
+            # Fill matrix from coherence data
+            for coh_pair in coherence_data:
+                ch1 = coh_pair['ch1']
+                ch2 = coh_pair['ch2']
+
+                if ch1 not in ch_names or ch2 not in ch_names:
+                    continue
+                if band_name not in coh_pair:
+                    continue
+
+                idx1 = ch_names.index(ch1)
+                idx2 = ch_names.index(ch2)
+                coh_value = coh_pair[band_name]
+
+                coherence_matrix[idx1, idx2] = coh_value
+                coherence_matrix[idx2, idx1] = coh_value
+
+            # Plot heatmap
+            im = ax.imshow(
+                coherence_matrix,
+                cmap='plasma',
+                vmin=0.0,
+                vmax=1.0,
+                aspect='auto',
+                interpolation='nearest'
+            )
+
+            # Minimal tick labels (only show every 3rd channel)
+            tick_indices = list(range(0, n_channels, 3))
+            ax.set_xticks(tick_indices)
+            ax.set_yticks(tick_indices)
+            ax.set_xticklabels([ch_names[i] for i in tick_indices], fontsize=6, rotation=45, ha='right')
+            ax.set_yticklabels([ch_names[i] for i in tick_indices], fontsize=6)
+
+            # Add title for top row (band names)
+            if cond_idx == 0:
+                band_display = band_name.replace('alpha', 'α').replace('beta', 'β').replace('theta', 'θ').replace('delta', 'δ').replace('gamma', 'γ')
+                freq_range = BANDS[band_name]
+                ax.set_title(f'{band_display.upper()}\n{freq_range[0]}-{freq_range[1]} Hz',
+                           fontsize=8, fontweight='bold', pad=3)
+
+            # Add condition label on left side
+            if band_idx == 0:
+                ax.text(-0.15, 0.5, condition, transform=ax.transAxes,
+                       fontsize=10, fontweight='bold', rotation=90,
+                       ha='center', va='center')
+
+    # Add overall title
+    fig.suptitle('Inter-Channel Coherence Matrices', fontsize=14, fontweight='bold', y=0.98)
+
+    # Add colorbar
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
+    plt.colorbar(im, cax=cbar_ax, label='Coherence')
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout(rect=[0, 0, 0.91, 0.96])
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read()
+
+
 def compress_png(png_bytes: bytes, quality: int = 85) -> bytes:
     """
     Compress PNG image to reduce file size.
@@ -545,6 +760,115 @@ def compress_png(png_bytes: bytes, quality: int = 85) -> bytes:
     # Save with optimization
     buf = io.BytesIO()
     img.save(buf, format='PNG', optimize=True, quality=quality)
+    buf.seek(0)
+
+    return buf.read()
+
+
+def generate_topomap_grid(
+    band_power_data: Dict[str, Dict[str, np.ndarray]],
+    ch_names: List[str],
+    conditions: List[str] = ['EO', 'EC'],
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a grid of topomaps for all bands and conditions in a single image.
+
+    Layout: 2 rows (EO and EC), 8 columns (bands ordered by frequency)
+
+    Args:
+        band_power_data: Dict with structure {band: {condition: power_array}}
+        ch_names: List of channel names
+        conditions: List of conditions to generate
+        dpi: Resolution in DPI
+
+    Returns:
+        PNG image as bytes containing all topomaps in a grid
+    """
+    logger.info("Generating combined topomap grid for all bands")
+
+    # Bands ordered by frequency (low to high)
+    band_order = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma']
+    n_bands = len(band_order)
+    n_conditions = len(conditions)
+
+    # Create MNE Info object
+    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    montage = mne.channels.make_standard_montage('standard_1020')
+    info.set_montage(montage)
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(
+        n_conditions, n_bands,
+        figsize=(n_bands * 3, n_conditions * 2.5),
+        dpi=dpi
+    )
+
+    # Ensure axes is 2D even if only one condition
+    if n_conditions == 1:
+        axes = axes.reshape(1, -1)
+
+    # Plot each band and condition
+    for cond_idx, condition in enumerate(conditions):
+        for band_idx, band_name in enumerate(band_order):
+            ax = axes[cond_idx, band_idx]
+
+            # Check if data exists for this band/condition
+            if band_name not in band_power_data or condition not in band_power_data[band_name]:
+                ax.axis('off')
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
+                continue
+
+            power_values = band_power_data[band_name][condition]
+
+            # Get global vmin/vmax for this band across all conditions
+            all_values = []
+            for cond in conditions:
+                if condition in band_power_data.get(band_name, {}):
+                    all_values.extend(band_power_data[band_name][cond])
+
+            vmin = np.percentile(all_values, 2) if all_values else None
+            vmax = np.percentile(all_values, 98) if all_values else None
+
+            # Generate topomap
+            im, _ = mne.viz.plot_topomap(
+                power_values,
+                info,
+                axes=ax,
+                show=False,
+                vlim=(vmin, vmax) if vmin and vmax else None,
+                cmap=create_blue_red_cmap(),
+                contours=4,
+                res=64,  # Lower res for grid view
+                sensors=False,  # Hide sensors for cleaner look
+                names=None,  # No channel labels
+            )
+
+            # Add title for top row (band names)
+            if cond_idx == 0:
+                band_display = band_name.replace('alpha', 'α').replace('beta', 'β').replace('theta', 'θ').replace('delta', 'δ').replace('gamma', 'γ')
+                freq_range = BANDS[band_name]
+                ax.set_title(f'{band_display.upper()}\n{freq_range[0]}-{freq_range[1]} Hz',
+                           fontsize=9, fontweight='bold', pad=5)
+
+            # Add condition label on left side
+            if band_idx == 0:
+                ax.text(-0.3, 0.5, condition, transform=ax.transAxes,
+                       fontsize=12, fontweight='bold', rotation=90,
+                       ha='center', va='center')
+
+    # Add overall title
+    fig.suptitle('Band Power Topographic Maps', fontsize=16, fontweight='bold', y=0.98)
+
+    # Add colorbar
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
+    plt.colorbar(im, cax=cbar_ax, label='Power (μV²/Hz)')
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout(rect=[0, 0, 0.91, 0.96])
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
     buf.seek(0)
 
     return buf.read()

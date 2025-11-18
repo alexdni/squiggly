@@ -426,59 +426,52 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
-            {/* Topographic Brain Maps */}
-            {analysis.results.visuals && Object.keys(analysis.results.visuals).length > 0 && (
+            {/* Raw Band Power Values */}
+            {analysis.results.band_power && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Topographic Brain Maps
+                  Band Power Summary
                 </h2>
-                <p className="text-sm text-gray-800 mb-6">
-                  Spatial distribution of EEG band power across the scalp (blue = low amplitude, red = high amplitude)
+                <p className="text-sm text-gray-800 mb-4">
+                  Average absolute power across all channels (μV²/Hz)
                 </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {['eo', 'ec'].map((condition) => {
+                    const bandPower = analysis.results.band_power[condition];
+                    if (!bandPower) return null;
 
-                {/* Frequency bands in 2x4 grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'].map((band) => {
-                    // Find visuals for this band
-                    const bandVisuals = Object.entries(analysis.results.visuals)
-                      .filter(([name]) => name.startsWith(`topomap_${band}_`))
-                      .sort((a, b) => a[0].localeCompare(b[0]));
+                    // Calculate average power for each band
+                    const bands = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'];
+                    const averages: Record<string, number> = {};
 
-                    if (bandVisuals.length === 0) return null;
+                    bands.forEach((band) => {
+                      let sum = 0;
+                      let count = 0;
+                      Object.values(bandPower).forEach((channelData: any) => {
+                        if (channelData[band]?.absolute) {
+                          sum += channelData[band].absolute;
+                          count++;
+                        }
+                      });
+                      averages[band] = count > 0 ? sum / count : 0;
+                    });
 
                     return (
-                      <div key={band} className="border border-gray-200 rounded-lg p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3 capitalize">
-                          {band.replace(/([a-z])([0-9])/g, '$1 $2')} Band
-                          <span className="text-xs font-normal text-gray-700 ml-2">
-                            {band === 'delta' && '(1-4 Hz)'}
-                            {band === 'theta' && '(4-8 Hz)'}
-                            {band === 'alpha1' && '(8-10 Hz)'}
-                            {band === 'alpha2' && '(10-12 Hz)'}
-                            {band === 'smr' && '(12-15 Hz)'}
-                            {band === 'beta2' && '(15-20 Hz)'}
-                            {band === 'hibeta' && '(20-30 Hz)'}
-                            {band === 'lowgamma' && '(30-45 Hz)'}
-                          </span>
+                      <div key={condition} className="border border-gray-200 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                          {condition === 'eo' ? 'Eyes Open' : 'Eyes Closed'}
                         </h3>
-                        <div className="grid grid-cols-2 gap-3">
-                          {bandVisuals.map(([name, url]) => {
-                            const condition = name.includes('_EO') ? 'EO' : 'EC';
-                            return (
-                              <div key={name} className="bg-gray-50 rounded p-2">
-                                <div className="text-xs font-medium text-gray-900 mb-2 text-center">
-                                  {condition}
-                                </div>
-                                <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                  <img
-                                    src={url as string}
-                                    alt={`${band} band ${condition} topomap`}
-                                    className="w-full h-auto"
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
+                        <div className="space-y-2">
+                          {bands.map((band) => (
+                            <div key={band} className="flex justify-between items-center text-sm">
+                              <span className="font-medium capitalize">
+                                {band.replace(/([a-z])([0-9])/g, '$1 $2')}
+                              </span>
+                              <span className="text-gray-900 font-mono">
+                                {averages[band].toFixed(2)} μV²/Hz
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     );
@@ -487,116 +480,124 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
-            {/* Complexity & Connectivity Analysis */}
-            {analysis.results.visuals && (
+            {/* Topographic Brain Maps Grid */}
+            {analysis.results.visuals?.topomap_grid && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Complexity & Connectivity Analysis
+                  Band Power Topographic Maps
                 </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Spatial distribution of EEG band power across the scalp for all frequency bands (blue = low, red = high)
+                </p>
+                <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                  <img
+                    src={analysis.results.visuals.topomap_grid as string}
+                    alt="Band power topographic maps"
+                    className="w-full h-auto"
+                  />
+                </div>
+              </div>
+            )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* LZC Topomaps */}
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                      Lempel-Ziv Complexity (LZC)
-                      <span className="text-xs font-normal text-gray-700 ml-2">
-                        Signal complexity measure
-                      </span>
-                    </h3>
-                    <p className="text-xs text-gray-700 mb-3">
-                      Higher LZC (red) indicates more complex, less predictable signals. Lower LZC (blue) indicates simpler, more regular patterns.
-                    </p>
+            {/* Complexity & Connectivity Analysis */}
+            {(analysis.results.visuals?.lzc_topomap_EO || analysis.results.visuals?.lzc_topomap_EC) && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Signal Complexity (Lempel-Ziv Complexity)
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Higher LZC (red) indicates more complex, less predictable signals. Lower LZC (blue) indicates simpler, more regular patterns.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {analysis.results.visuals.lzc_topomap_EO && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3 text-center">
+                        Eyes Open
+                      </h3>
+                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                        <img
+                          src={analysis.results.visuals.lzc_topomap_EO as string}
+                          alt="LZC Eyes Open"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {analysis.results.visuals.lzc_topomap_EC && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3 text-center">
+                        Eyes Closed
+                      </h3>
+                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                        <img
+                          src={analysis.results.visuals.lzc_topomap_EC as string}
+                          alt="LZC Eyes Closed"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-                    {(() => {
-                      const lzcVisuals = Object.entries(analysis.results.visuals)
-                        .filter(([name]) => name.startsWith('lzc_topomap_'))
-                        .sort((a, b) => a[0].localeCompare(b[0]));
+            {/* Coherence Matrix Grid */}
+            {analysis.results.visuals?.coherence_grid && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Inter-Channel Coherence Matrices
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Coherence (0-1) showing connectivity patterns between brain regions across all frequency bands
+                </p>
+                <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                  <img
+                    src={analysis.results.visuals.coherence_grid as string}
+                    alt="Coherence matrices"
+                    className="w-full h-auto"
+                  />
+                </div>
+              </div>
+            )}
 
-                      if (lzcVisuals.length === 0) {
-                        return (
-                          <div className="bg-gray-100 rounded-lg p-8 text-center">
-                            <p className="text-sm text-gray-700">LZC visualization not available</p>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="grid grid-cols-2 gap-3">
-                          {lzcVisuals.map(([name, url]) => {
-                            const condition = name.includes('_EO') ? 'EO' : 'EC';
-                            return (
-                              <div key={name} className="bg-gray-50 rounded p-2">
-                                <div className="text-xs font-medium text-gray-900 mb-2 text-center">
-                                  {condition}
-                                </div>
-                                <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                  <img
-                                    src={url as string}
-                                    alt={`LZC ${condition}`}
-                                    className="w-full h-auto"
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Coherence Matrix */}
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                      Coherence Matrix
-                      <span className="text-xs font-normal text-gray-700 ml-2">
-                        Inter-channel connectivity
-                      </span>
-                    </h3>
-                    <p className="text-xs text-gray-700 mb-3">
-                      Inter-channel coherence (0-1) showing connectivity patterns. Shown for Alpha 1 and Theta bands.
-                    </p>
-
-                    {(() => {
-                      const coherenceVisuals = Object.entries(analysis.results.visuals)
-                        .filter(([name]) => name.startsWith('coherence_'))
-                        .sort((a, b) => a[0].localeCompare(b[0]));
-
-                      if (coherenceVisuals.length === 0) {
-                        return (
-                          <div className="bg-gray-100 rounded-lg p-8 text-center">
-                            <p className="text-sm text-gray-700">Coherence visualization not available</p>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="space-y-4">
-                          {coherenceVisuals.map(([name, url]) => {
-                            // Extract band and condition from name like "coherence_alpha1_EO"
-                            const parts = name.replace('coherence_', '').split('_');
-                            const band = parts[0];
-                            const condition = parts[1];
-                            const bandDisplay = band.replace(/([a-z])([0-9])/g, '$1 $2').toUpperCase();
-
-                            return (
-                              <div key={name} className="bg-gray-50 rounded p-2">
-                                <div className="text-xs font-medium text-gray-900 mb-2 text-center">
-                                  {bandDisplay} - {condition}
-                                </div>
-                                <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                  <img
-                                    src={url as string}
-                                    alt={`Coherence ${bandDisplay} ${condition}`}
-                                    className="w-full h-auto"
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
+            {/* Spectrograms */}
+            {(analysis.results.visuals?.spectrogram_EO || analysis.results.visuals?.spectrogram_EC) && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Spectrograms
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Time-frequency analysis showing how signal power changes over time for key electrode sites
+                </p>
+                <div className="grid grid-cols-1 gap-6">
+                  {analysis.results.visuals.spectrogram_EO && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                        Eyes Open
+                      </h3>
+                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                        <img
+                          src={analysis.results.visuals.spectrogram_EO as string}
+                          alt="Spectrogram Eyes Open"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {analysis.results.visuals.spectrogram_EC && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                        Eyes Closed
+                      </h3>
+                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                        <img
+                          src={analysis.results.visuals.spectrogram_EC as string}
+                          alt="Spectrogram Eyes Closed"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -699,35 +700,6 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
-            {/* Coherence Analysis */}
-            {analysis.results.coherence && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Coherence Analysis
-                </h2>
-                <p className="text-gray-800 mb-4">
-                  Interhemispheric and long-range connectivity patterns
-                </p>
-                <div className="bg-gray-100 rounded-lg p-8 text-center">
-                  <svg
-                    className="mx-auto h-16 w-16 text-gray-400 mb-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-                    />
-                  </svg>
-                  <p className="text-gray-800">
-                    Coherence matrix visualizations available in full report
-                  </p>
-                </div>
-              </div>
-            )}
 
             {/* Risk Patterns */}
             {analysis.results.risk_patterns && (
