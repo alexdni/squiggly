@@ -79,27 +79,59 @@ class FeatureExtractor:
         data = epochs.get_data()  # Shape: (n_epochs, n_channels, n_times)
         n_epochs, n_channels, n_times = data.shape
 
+        logger.info(f"Data shape: {data.shape}, sfreq: {self.sfreq}")
+
         # Compute PSD using Welch's method
+        # nperseg should be smaller than signal length to allow proper windowing
+        # Using 1-second windows (half the epoch duration) for good frequency resolution
+        nperseg = min(int(self.sfreq), n_times)  # 1 second or signal length, whichever is smaller
+
+        logger.info(f"Using nperseg={nperseg} for Welch PSD calculation")
+
         freqs, psd = signal.welch(
             data,
             fs=self.sfreq,
-            nperseg=int(2 * self.sfreq),  # 2-second windows
+            nperseg=nperseg,
             axis=-1
         )
+
+        logger.info(f"Freqs shape: {freqs.shape}, range: {freqs.min():.2f}-{freqs.max():.2f} Hz")
+        logger.info(f"PSD shape: {psd.shape}, sample values (first channel, first epoch): {psd[0, 0, :5]}")
 
         # Average across epochs
         psd_mean = np.mean(psd, axis=0)  # Shape: (n_channels, n_freqs)
 
+        logger.info(f"PSD mean shape: {psd_mean.shape}, sample values (first channel): {psd_mean[0, :5]}")
+
         # Extract band power for each channel
         band_power = {}
+
+        # Debug: Log first channel's band powers
+        first_channel_logged = False
+
         for ch_idx, ch_name in enumerate(epochs.ch_names):
             band_power[ch_name] = {}
 
             # Compute absolute power for each band
             for band_name, (low, high) in BANDS.items():
                 freq_idx = np.logical_and(freqs >= low, freqs < high)
+
+                # Debug logging for first channel
+                if not first_channel_logged:
+                    logger.info(f"Band {band_name} ({low}-{high} Hz): {freq_idx.sum()} frequencies selected")
+                    if freq_idx.sum() > 0:
+                        logger.info(f"  Selected freqs: {freqs[freq_idx][:5]}")
+                        logger.info(f"  PSD values: {psd_mean[ch_idx, freq_idx][:5]}")
+                        logger.info(f"  Integration range: {freqs[freq_idx].min():.2f}-{freqs[freq_idx].max():.2f} Hz")
+
                 absolute = np.trapz(psd_mean[ch_idx, freq_idx], freqs[freq_idx])
+
+                if not first_channel_logged:
+                    logger.info(f"  Integrated power: {absolute}")
+
                 band_power[ch_name][band_name] = {'absolute': float(absolute)}
+
+            first_channel_logged = True
 
             # Compute total power for relative calculation
             total_power = sum(bp['absolute'] for bp in band_power[ch_name].values())
@@ -108,6 +140,8 @@ class FeatureExtractor:
             for band_name in BANDS.keys():
                 relative = band_power[ch_name][band_name]['absolute'] / total_power if total_power > 0 else 0
                 band_power[ch_name][band_name]['relative'] = float(relative)
+
+        logger.info(f"Band power computation complete. Sample channel ({epochs.ch_names[0]}): {band_power[epochs.ch_names[0]]}")
 
         return band_power
 
