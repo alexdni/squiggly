@@ -430,72 +430,71 @@ export default function AnalysisDetailsClient({
             {analysis.results.band_power && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Band Power Summary
+                  Band Power by Channel
                 </h2>
                 <p className="text-sm text-gray-800 mb-4">
-                  Average absolute power across all channels (μV²/Hz)
+                  Absolute power (μV²/Hz) for each channel across frequency bands
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {['eo', 'ec'].map((condition) => {
-                    const bandPower = analysis.results.band_power[condition];
-                    if (!bandPower) return null;
 
-                    // Calculate average power for each band
-                    const bands = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'];
-                    const averages: Record<string, number> = {};
+                {['eo', 'ec'].map((condition) => {
+                  const bandPower = analysis.results.band_power[condition];
+                  if (!bandPower) return null;
 
-                    // Debug: log the structure
-                    console.log(`Band power structure for ${condition}:`, bandPower);
+                  const bands = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'];
+                  const channels = Object.keys(bandPower).sort();
 
-                    bands.forEach((band) => {
-                      let sum = 0;
-                      let count = 0;
+                  console.log(`Band power for ${condition}:`, bandPower);
 
-                      // Iterate over channels
-                      Object.keys(bandPower).forEach((channelName) => {
-                        const channelData = bandPower[channelName];
-
-                        // Check if this band exists for this channel
-                        if (channelData && typeof channelData === 'object' && band in channelData) {
-                          const bandData = channelData[band];
-
-                          // Handle both direct number and object with 'absolute' property
-                          const absoluteValue = typeof bandData === 'number'
-                            ? bandData
-                            : (bandData?.absolute || 0);
-
-                          if (absoluteValue > 0) {
-                            sum += absoluteValue;
-                            count++;
-                          }
-                        }
-                      });
-
-                      averages[band] = count > 0 ? sum / count : 0;
-                      console.log(`${condition} ${band}: sum=${sum}, count=${count}, avg=${averages[band]}`);
-                    });
-
-                    return (
-                      <div key={condition} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                          {condition === 'eo' ? 'Eyes Open' : 'Eyes Closed'}
-                        </h3>
-                        <div className="space-y-2">
-                          {bands.map((band) => (
-                            <div key={band} className="flex justify-between items-center text-sm">
-                              <span className="font-medium text-gray-800 capitalize">
-                                {band.replace(/([a-z])([0-9])/g, '$1 $2')}
-                              </span>
-                              <span className="text-gray-900 font-mono font-semibold" style={{ color: '#111827' }}>
-                                {averages[band].toFixed(2)} μV²/Hz
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                  return (
+                    <div key={condition} className="mb-6 last:mb-0">
+                      <h3 className="text-base font-semibold text-gray-900 mb-3">
+                        {condition === 'eo' ? 'Eyes Open' : 'Eyes Closed'}
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 border border-gray-200 text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-2 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-200 sticky left-0 bg-gray-50 z-10">
+                                Ch
+                              </th>
+                              {bands.map((band) => (
+                                <th key={band} className="px-2 py-2 text-center text-xs font-medium text-gray-700 uppercase">
+                                  {band.replace('alpha', 'α').replace('beta', 'β').replace('theta', 'θ').replace('delta', 'δ').replace('gamma', 'γ').replace(/([a-z])([0-9])/g, '$1$2')}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {channels.map((channelName) => {
+                              const channelData = bandPower[channelName];
+                              return (
+                                <tr key={channelName} className="hover:bg-gray-50">
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs font-medium text-gray-900 border-r border-gray-200 sticky left-0 bg-white hover:bg-gray-50">
+                                    {channelName}
+                                  </td>
+                                  {bands.map((band) => {
+                                    let value = 0;
+                                    if (channelData && typeof channelData === 'object' && band in channelData) {
+                                      const bandData = channelData[band];
+                                      value = typeof bandData === 'number'
+                                        ? bandData
+                                        : (bandData?.absolute || 0);
+                                    }
+                                    return (
+                                      <td key={band} className="px-2 py-1.5 whitespace-nowrap text-xs text-gray-900 text-center font-mono">
+                                        {value > 0 ? value.toFixed(1) : '0.0'}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 

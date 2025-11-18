@@ -194,6 +194,18 @@ export default function RawEEGViewer({
     );
   };
 
+  // Helper function to clean channel labels
+  const cleanChannelLabel = (label: string): string => {
+    // Remove common prefixes like "EEG " and suffixes like "-LE", "-REF", etc.
+    return label
+      .replace(/^EEG\s+/i, '')  // Remove "EEG " prefix
+      .replace(/-LE$/i, '')      // Remove "-LE" suffix
+      .replace(/-REF$/i, '')     // Remove "-REF" suffix
+      .replace(/-M1$/i, '')      // Remove "-M1" suffix
+      .replace(/-M2$/i, '')      // Remove "-M2" suffix
+      .trim();
+  };
+
   const renderChart = () => {
     if (!edfData || selectedChannels.length === 0) return null;
 
@@ -245,7 +257,7 @@ export default function RawEEGViewer({
       });
 
       return {
-        label: edfData.header.channels[channelIndex].label,
+        label: cleanChannelLabel(edfData.header.channels[channelIndex].label),
         data: offsetData,
         borderColor: colors[i % colors.length],
         backgroundColor: 'transparent',
@@ -264,7 +276,7 @@ export default function RawEEGViewer({
     const channelSpacing = 200;
     const yTicks = selectedChannels.map((channelIndex, i) => ({
       value: (selectedChannels.length - 1 - i) * channelSpacing,
-      label: edfData.header.channels[channelIndex].label,
+      label: cleanChannelLabel(edfData.header.channels[channelIndex].label),
     }));
 
     const options: ChartOptions<'line'> = {
@@ -292,7 +304,7 @@ export default function RawEEGViewer({
             label: (context) => {
               const datasetIndex = context.datasetIndex;
               const channelIndex = selectedChannels[datasetIndex];
-              const channelLabel = edfData.header.channels[channelIndex].label;
+              const channelLabel = cleanChannelLabel(edfData.header.channels[channelIndex].label);
               const baseline = (selectedChannels.length - 1 - datasetIndex) * channelSpacing;
               const actualValue = (context.parsed.y ?? 0) - baseline;
               return `${channelLabel}: ${actualValue.toFixed(2)} μV`;
@@ -342,14 +354,14 @@ export default function RawEEGViewer({
           ticks: {
             color: '#000000', // pure black for maximum visibility
             font: {
-              size: 14,
+              size: 10,
               weight: 'bold' as const,
               family: 'system-ui, -apple-system, sans-serif',
             },
             autoSkip: false,
             maxRotation: 0,
             minRotation: 0,
-            padding: 10,
+            padding: 5,
             callback: function(value: any, index: number) {
               // Show only channel labels at baseline positions
               const tick = yTicks.find(t => Math.abs(t.value - value) < 0.1);
