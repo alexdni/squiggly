@@ -152,7 +152,10 @@ class FeatureExtractor:
     def compute_alpha_peak(self, epochs: mne.Epochs) -> Dict[str, Dict[str, float]]:
         """
         Compute Individual Alpha Frequency (IAF) - the frequency with maximum power
-        in the alpha band (8-12 Hz) for each channel.
+        in the alpha band (8-12 Hz) after removing 1/f background.
+
+        Uses 1/f normalization to remove aperiodic (background) component and isolate
+        the true alpha peak from the periodic component.
 
         Args:
             epochs: MNE Epochs object
@@ -160,7 +163,7 @@ class FeatureExtractor:
         Returns:
             Dictionary: {channel: {'peak_frequency': Hz, 'peak_power': μV²/Hz}}
         """
-        logger.info("Computing alpha peak frequency")
+        logger.info("Computing alpha peak frequency with 1/f normalization")
 
         data = epochs.get_data()  # Shape: (n_epochs, n_channels, n_times)
         n_epochs, n_channels, n_times = data.shape
@@ -183,32 +186,71 @@ class FeatureExtractor:
 
         # Define alpha range (8-12 Hz for individual alpha frequency)
         alpha_range = (8, 12)
-        freq_idx = np.logical_and(freqs >= alpha_range[0], freqs <= alpha_range[1])
-        alpha_freqs = freqs[freq_idx]
+
+        # Define broader range for 1/f fitting (3-40 Hz to avoid DC and high-freq noise)
+        fit_range = (3, 40)
+        fit_idx = np.logical_and(freqs >= fit_range[0], freqs <= fit_range[1])
+        fit_freqs = freqs[fit_idx]
 
         alpha_peaks = {}
 
         for ch_idx, ch_name in enumerate(epochs.ch_names):
-            # Extract alpha band PSD for this channel
-            alpha_psd = psd_mean[ch_idx, freq_idx]
+            # Get PSD for fitting range
+            fit_psd = psd_mean[ch_idx, fit_idx]
 
-            if len(alpha_psd) == 0:
-                logger.warning(f"No alpha frequencies found for {ch_name}")
+            # Fit 1/f background: log(PSD) = log(A) - beta * log(freq)
+            # Using robust linear regression in log-log space
+            try:
+                log_freqs = np.log10(fit_freqs)
+                log_psd = np.log10(fit_psd + 1e-10)  # Add small constant to avoid log(0)
+
+                # Fit line to log-log data
+                coeffs = np.polyfit(log_freqs, log_psd, deg=1)
+                slope = coeffs[0]
+                intercept = coeffs[1]
+
+                # Predict 1/f background across all frequencies
+                log_freqs_all = np.log10(freqs[freqs > 0])
+                predicted_log_psd = slope * log_freqs_all + intercept
+                predicted_psd = 10 ** predicted_log_psd
+
+                # Compute residual (observed - predicted) in original space
+                # This isolates the periodic (oscillatory) component
+                psd_residual = psd_mean[ch_idx, freqs > 0] - predicted_psd
+
+                # Extract alpha band from residual
+                freq_idx_alpha = np.logical_and(freqs >= alpha_range[0], freqs <= alpha_range[1])
+                alpha_freqs = freqs[freq_idx_alpha]
+                alpha_residual = psd_residual[np.logical_and(freqs[freqs > 0] >= alpha_range[0],
+                                                             freqs[freqs > 0] <= alpha_range[1])]
+
+                if len(alpha_residual) == 0 or np.all(alpha_residual <= 0):
+                    # No clear alpha peak above background
+                    logger.warning(f"No alpha peak found for {ch_name} after 1/f correction")
+                    alpha_peaks[ch_name] = {
+                        'peak_frequency': 0.0,
+                        'peak_power': 0.0
+                    }
+                    continue
+
+                # Find peak in residual (corrected for 1/f)
+                peak_idx = np.argmax(alpha_residual)
+                peak_freq = alpha_freqs[peak_idx]
+
+                # Get original power at peak frequency (not residual)
+                peak_power = psd_mean[ch_idx, freq_idx_alpha][peak_idx]
+
+                alpha_peaks[ch_name] = {
+                    'peak_frequency': float(peak_freq),
+                    'peak_power': float(peak_power)
+                }
+
+            except Exception as e:
+                logger.warning(f"Error computing alpha peak for {ch_name}: {e}")
                 alpha_peaks[ch_name] = {
                     'peak_frequency': 0.0,
                     'peak_power': 0.0
                 }
-                continue
-
-            # Find peak (maximum power in alpha range)
-            peak_idx = np.argmax(alpha_psd)
-            peak_freq = alpha_freqs[peak_idx]
-            peak_power = alpha_psd[peak_idx]
-
-            alpha_peaks[ch_name] = {
-                'peak_frequency': float(peak_freq),
-                'peak_power': float(peak_power)
-            }
 
         logger.info(f"Alpha peak computation complete. Sample: {list(alpha_peaks.items())[:3]}")
 
