@@ -29,6 +29,7 @@ from generate_visuals import (
     generate_coherence_grid,
     generate_spectrogram_grid,
     generate_lzc_topomap,
+    generate_alpha_peak_topomap,
     compress_png
 )
 
@@ -451,6 +452,31 @@ def analyze_eeg_file(
                 if spectrogram_ec:
                     visuals['spectrogram_EC'] = compress_png(spectrogram_ec)
                     logger.info("Generated spectrogram grid for EC")
+
+            # 5. Generate alpha peak topomaps (Individual Alpha Frequency)
+            alpha_peak_eo = features.get('alpha_peak', {}).get('eo')
+            alpha_peak_ec = features.get('alpha_peak', {}).get('ec')
+
+            if alpha_peak_eo and ch_names:
+                alpha_peak_topomap_eo = generate_alpha_peak_topomap(
+                    alpha_peak_values=alpha_peak_eo,
+                    ch_names=ch_names,
+                    condition='EO',
+                    dpi=200
+                )
+                visuals['alpha_peak_topomap_EO'] = compress_png(alpha_peak_topomap_eo)
+
+            if alpha_peak_ec and ch_names:
+                alpha_peak_topomap_ec = generate_alpha_peak_topomap(
+                    alpha_peak_values=alpha_peak_ec,
+                    ch_names=ch_names,
+                    condition='EC',
+                    dpi=200
+                )
+                visuals['alpha_peak_topomap_EC'] = compress_png(alpha_peak_topomap_ec)
+
+            if alpha_peak_eo or alpha_peak_ec:
+                logger.info("Generated alpha peak topomaps")
 
             logger.info(f"Visualization generation complete - {len(visuals)} images created")
 

@@ -149,6 +149,71 @@ class FeatureExtractor:
 
         return band_power
 
+    def compute_alpha_peak(self, epochs: mne.Epochs) -> Dict[str, Dict[str, float]]:
+        """
+        Compute Individual Alpha Frequency (IAF) - the frequency with maximum power
+        in the alpha band (8-12 Hz) for each channel.
+
+        Args:
+            epochs: MNE Epochs object
+
+        Returns:
+            Dictionary: {channel: {'peak_frequency': Hz, 'peak_power': μV²/Hz}}
+        """
+        logger.info("Computing alpha peak frequency")
+
+        data = epochs.get_data()  # Shape: (n_epochs, n_channels, n_times)
+        n_epochs, n_channels, n_times = data.shape
+
+        # Compute PSD using Welch's method (same as band_power)
+        nperseg = min(int(self.sfreq), n_times)
+
+        freqs, psd = signal.welch(
+            data,
+            fs=self.sfreq,
+            nperseg=nperseg,
+            axis=-1
+        )
+
+        # Average across epochs
+        psd_mean = np.mean(psd, axis=0)  # Shape: (n_channels, n_freqs)
+
+        # Convert from V²/Hz to μV²/Hz
+        psd_mean = psd_mean * 1e12
+
+        # Define alpha range (8-12 Hz for individual alpha frequency)
+        alpha_range = (8, 12)
+        freq_idx = np.logical_and(freqs >= alpha_range[0], freqs <= alpha_range[1])
+        alpha_freqs = freqs[freq_idx]
+
+        alpha_peaks = {}
+
+        for ch_idx, ch_name in enumerate(epochs.ch_names):
+            # Extract alpha band PSD for this channel
+            alpha_psd = psd_mean[ch_idx, freq_idx]
+
+            if len(alpha_psd) == 0:
+                logger.warning(f"No alpha frequencies found for {ch_name}")
+                alpha_peaks[ch_name] = {
+                    'peak_frequency': 0.0,
+                    'peak_power': 0.0
+                }
+                continue
+
+            # Find peak (maximum power in alpha range)
+            peak_idx = np.argmax(alpha_psd)
+            peak_freq = alpha_freqs[peak_idx]
+            peak_power = alpha_psd[peak_idx]
+
+            alpha_peaks[ch_name] = {
+                'peak_frequency': float(peak_freq),
+                'peak_power': float(peak_power)
+            }
+
+        logger.info(f"Alpha peak computation complete. Sample: {list(alpha_peaks.items())[:3]}")
+
+        return alpha_peaks
+
     def compute_band_ratios(self, band_power: Dict) -> Dict:
         """
         Compute clinically relevant band ratios
@@ -501,11 +566,13 @@ def extract_features(
     band_power_eo = None
     coherence_eo = None
     lzc_eo = None
+    alpha_peak_eo = None
     if epochs_eo is not None:
         logger.info("Extracting features for Eyes Open condition")
         band_power_eo = extractor.compute_band_power(epochs_eo)
         coherence_eo = extractor.compute_coherence(epochs_eo)
         lzc_eo = extractor.compute_lzc(epochs_eo)
+        alpha_peak_eo = extractor.compute_alpha_peak(epochs_eo)
     else:
         logger.info("Skipping Eyes Open feature extraction (no EO epochs)")
 
@@ -513,11 +580,13 @@ def extract_features(
     band_power_ec = None
     coherence_ec = None
     lzc_ec = None
+    alpha_peak_ec = None
     if epochs_ec is not None:
         logger.info("Extracting features for Eyes Closed condition")
         band_power_ec = extractor.compute_band_power(epochs_ec)
         coherence_ec = extractor.compute_coherence(epochs_ec)
         lzc_ec = extractor.compute_lzc(epochs_ec)
+        alpha_peak_ec = extractor.compute_alpha_peak(epochs_ec)
     else:
         logger.info("Skipping Eyes Closed feature extraction (no EC epochs)")
 
@@ -541,6 +610,10 @@ def extract_features(
         'lzc': {
             'eo': lzc_eo,
             'ec': lzc_ec,
+        },
+        'alpha_peak': {
+            'eo': alpha_peak_eo,
+            'ec': alpha_peak_ec,
         },
         'band_ratios': band_ratios,
         'asymmetry': asymmetry,

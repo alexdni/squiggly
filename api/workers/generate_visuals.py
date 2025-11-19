@@ -529,6 +529,132 @@ def generate_lzc_topomap(
     return buf.read()
 
 
+def generate_alpha_peak_topomap(
+    alpha_peak_values: Dict[str, Dict[str, float]],
+    ch_names: List[str],
+    condition: str,
+    title: Optional[str] = None,
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a topographic brainmap with table for Individual Alpha Frequency (IAF).
+
+    Shows the peak alpha frequency (8-12 Hz) for each channel with a topomap
+    and a side table listing frequencies by channel.
+
+    Args:
+        alpha_peak_values: Dict mapping channel -> {'peak_frequency': Hz, 'peak_power': μV²/Hz}
+        ch_names: List of channel names (must match standard 10-20)
+        condition: Condition label (e.g., 'EO', 'EC')
+        title: Custom title (if None, auto-generated)
+        dpi: Resolution in DPI (default 300 for print quality)
+
+    Returns:
+        PNG image as bytes
+    """
+    logger.info(f"Generating alpha peak topomap for {condition}")
+
+    # Extract peak frequencies in channel order
+    peak_frequencies = np.array([
+        alpha_peak_values[ch]['peak_frequency'] if ch in alpha_peak_values else 0.0
+        for ch in ch_names
+    ])
+
+    # Create MNE Info object with standard montage
+    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    montage = mne.channels.make_standard_montage('standard_1020')
+    info.set_montage(montage)
+
+    # Set color scale for alpha frequencies (8-12 Hz range)
+    vmin = 8.0
+    vmax = 12.0
+
+    # Create figure with two subplots: topomap on left, table on right
+    fig = plt.figure(figsize=(12, 6), dpi=dpi)
+
+    # Left subplot: Topomap
+    ax_topo = plt.subplot(1, 2, 1)
+
+    # Generate topomap with viridis colormap (purple to yellow)
+    im, _ = mne.viz.plot_topomap(
+        peak_frequencies,
+        info,
+        axes=ax_topo,
+        show=False,
+        vlim=(vmin, vmax),
+        cmap='viridis',  # Purple (low freq) to yellow (high freq)
+        contours=6,
+        res=128,
+        sensors=True,
+        names=None,  # Don't show names on topomap
+    )
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax_topo, fraction=0.046, pad=0.04)
+    cbar.set_label('Peak Frequency (Hz)', rotation=270, labelpad=20)
+
+    # Set title for topomap
+    ax_topo.set_title('Topographic Map', fontsize=12, fontweight='bold')
+
+    # Right subplot: Table
+    ax_table = plt.subplot(1, 2, 2)
+    ax_table.axis('off')
+
+    # Prepare table data sorted by channel name
+    table_data = []
+    sorted_channels = sorted(ch_names)
+
+    for ch in sorted_channels:
+        if ch in alpha_peak_values:
+            freq = alpha_peak_values[ch]['peak_frequency']
+            power = alpha_peak_values[ch]['peak_power']
+            table_data.append([ch, f'{freq:.2f}', f'{power:.1f}'])
+        else:
+            table_data.append([ch, 'N/A', 'N/A'])
+
+    # Create table
+    table = ax_table.table(
+        cellText=table_data,
+        colLabels=['Channel', 'Peak (Hz)', 'Power (μV²/Hz)'],
+        cellLoc='center',
+        loc='center',
+        colWidths=[0.25, 0.35, 0.4]
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(1, 1.5)
+
+    # Style header
+    for i in range(3):
+        cell = table[(0, i)]
+        cell.set_facecolor('#4CAF50')
+        cell.set_text_props(weight='bold', color='white')
+
+    # Alternate row colors
+    for i in range(1, len(table_data) + 1):
+        for j in range(3):
+            cell = table[(i, j)]
+            if i % 2 == 0:
+                cell.set_facecolor('#f0f0f0')
+
+    ax_table.set_title('Peak Frequencies by Channel', fontsize=12, fontweight='bold', pad=20)
+
+    # Set overall title
+    if title is None:
+        title = f'Individual Alpha Frequency (IAF) - {condition}'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read()
+
+
 def generate_coherence_matrix(
     coherence_data: List[Dict],
     band_name: str,

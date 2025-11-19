@@ -578,6 +578,49 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
+            {/* Individual Alpha Frequency (IAF) */}
+            {(analysis.results.visuals?.alpha_peak_topomap_EO || analysis.results.visuals?.alpha_peak_topomap_EC) && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Individual Alpha Frequency (IAF)
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  The dominant frequency within the alpha band (8-12 Hz) varies by individual and brain region.
+                  Higher IAF is associated with better cognitive performance and neural efficiency.
+                </p>
+                <div className="grid grid-cols-1 gap-6">
+                  {analysis.results.visuals.alpha_peak_topomap_EO && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                        Eyes Open
+                      </h3>
+                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                        <img
+                          src={analysis.results.visuals.alpha_peak_topomap_EO as string}
+                          alt="Alpha Peak Frequency Eyes Open"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {analysis.results.visuals.alpha_peak_topomap_EC && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                        Eyes Closed
+                      </h3>
+                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                        <img
+                          src={analysis.results.visuals.alpha_peak_topomap_EC as string}
+                          alt="Alpha Peak Frequency Eyes Closed"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Spectrograms */}
             {(analysis.results.visuals?.spectrogram_EO || analysis.results.visuals?.spectrogram_EC) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
