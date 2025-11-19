@@ -168,21 +168,42 @@ class FeatureExtractor:
         data = epochs.get_data()  # Shape: (n_epochs, n_channels, n_times)
         n_epochs, n_channels, n_times = data.shape
 
-        # Compute PSD using Welch's method (same as band_power)
-        nperseg = min(int(self.sfreq), n_times)
+        # For alpha peak detection, we need fine frequency resolution (0.1 Hz)
+        # To achieve 0.1 Hz resolution: nperseg = sfreq / 0.1
+        # For 250 Hz: nperseg = 2500 samples = 10 seconds
+        # Since epochs are only 2 seconds, we concatenate them for each channel
+
+        # Concatenate all epochs for each channel to get longer signal
+        data_concat = data.reshape(n_channels, -1)  # (n_channels, n_epochs * n_times)
+
+        # Use 4-second window for better than 0.1 Hz resolution
+        # 4 seconds at 250 Hz = 1000 samples, giving 0.25 Hz resolution
+        # But we can use longer window if we have enough data
+        total_length = data_concat.shape[1]
+        desired_nperseg = int(self.sfreq / 0.1)  # For 0.1 Hz resolution (10 seconds)
+
+        # Use the desired window size if we have enough data, otherwise use max available
+        nperseg = min(desired_nperseg, total_length)
+
+        # Ensure nperseg is reasonable (at least 2 seconds)
+        nperseg = max(nperseg, int(2 * self.sfreq))
+
+        freq_resolution = self.sfreq / nperseg
+        logger.info(f"Alpha peak: using nperseg={nperseg} for {freq_resolution:.2f} Hz frequency resolution")
 
         freqs, psd = signal.welch(
-            data,
+            data_concat,
             fs=self.sfreq,
             nperseg=nperseg,
+            noverlap=nperseg // 2,  # 50% overlap
             axis=-1
         )
 
-        # Average across epochs
-        psd_mean = np.mean(psd, axis=0)  # Shape: (n_channels, n_freqs)
+        # No need to average across epochs since we concatenated
+        # psd shape is now (n_channels, n_freqs)
 
         # Convert from V²/Hz to μV²/Hz
-        psd_mean = psd_mean * 1e12
+        psd = psd * 1e12
 
         # Define alpha range (8-12 Hz for individual alpha frequency)
         alpha_range = (8, 12)
@@ -196,7 +217,7 @@ class FeatureExtractor:
 
         for ch_idx, ch_name in enumerate(epochs.ch_names):
             # Get PSD for fitting range
-            fit_psd = psd_mean[ch_idx, fit_idx]
+            fit_psd = psd[ch_idx, fit_idx]
 
             # Fit 1/f background: log(PSD) = log(A) - beta * log(freq)
             # Using robust linear regression in log-log space
@@ -216,7 +237,7 @@ class FeatureExtractor:
 
                 # Compute residual (observed - predicted) in original space
                 # This isolates the periodic (oscillatory) component
-                psd_residual = psd_mean[ch_idx, freqs > 0] - predicted_psd
+                psd_residual = psd[ch_idx, freqs > 0] - predicted_psd
 
                 # Extract alpha band from residual
                 freq_idx_alpha = np.logical_and(freqs >= alpha_range[0], freqs <= alpha_range[1])
@@ -238,7 +259,7 @@ class FeatureExtractor:
                 peak_freq = alpha_freqs[peak_idx]
 
                 # Get original power at peak frequency (not residual)
-                peak_power = psd_mean[ch_idx, freq_idx_alpha][peak_idx]
+                peak_power = psd[ch_idx, freq_idx_alpha][peak_idx]
 
                 alpha_peaks[ch_name] = {
                     'peak_frequency': float(peak_freq),
