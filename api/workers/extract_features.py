@@ -96,12 +96,16 @@ class FeatureExtractor:
         )
 
         logger.info(f"Freqs shape: {freqs.shape}, range: {freqs.min():.2f}-{freqs.max():.2f} Hz")
-        logger.info(f"PSD shape: {psd.shape}, sample values (first channel, first epoch): {psd[0, 0, :5]}")
+        logger.info(f"PSD shape: {psd.shape}, sample values in V²/Hz (first channel, first epoch): {psd[0, 0, :5]}")
 
         # Average across epochs
         psd_mean = np.mean(psd, axis=0)  # Shape: (n_channels, n_freqs)
 
-        logger.info(f"PSD mean shape: {psd_mean.shape}, sample values (first channel): {psd_mean[0, :5]}")
+        # Convert from V²/Hz to μV²/Hz (multiply by 1e12)
+        # MNE stores data in Volts, but EEG power is conventionally reported in μV²/Hz
+        psd_mean = psd_mean * 1e12
+
+        logger.info(f"PSD mean shape: {psd_mean.shape}, sample values in μV²/Hz (first channel): {psd_mean[0, :5]}")
 
         # Extract band power for each channel
         band_power = {}
