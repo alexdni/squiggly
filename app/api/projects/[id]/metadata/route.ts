@@ -79,14 +79,14 @@ export async function PATCH(
     if (body.interventions !== undefined) {
       if (Array.isArray(body.interventions)) {
         metadata.interventions = body.interventions
-          .map((i) => String(i).trim())
-          .filter((i) => i.length > 0);
+          .map((i: any) => String(i).trim())
+          .filter((i: string) => i.length > 0);
       } else if (typeof body.interventions === 'string') {
         // Support comma-separated string input
         metadata.interventions = body.interventions
           .split(',')
-          .map((i) => i.trim())
-          .filter((i) => i.length > 0);
+          .map((i: string) => i.trim())
+          .filter((i: string) => i.length > 0);
       } else {
         return NextResponse.json(
           { error: 'Interventions must be an array or comma-separated string' },
