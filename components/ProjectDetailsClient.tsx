@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import type { User } from '@supabase/supabase-js';
+import ComparisonView from './ComparisonView';
 
 interface Project {
   id: string;
@@ -30,6 +31,8 @@ interface ProjectDetailsClientProps {
   user: User;
 }
 
+type TabType = 'recordings' | 'overview' | 'comparison';
+
 export default function ProjectDetailsClient({
   project,
   user,
@@ -38,6 +41,7 @@ export default function ProjectDetailsClient({
   const supabase = createClient();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>('recordings');
 
   useEffect(() => {
     fetchRecordings();
@@ -217,11 +221,47 @@ export default function ProjectDetailsClient({
           </div>
         </div>
 
-        {/* Recordings Section */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-            Recordings ({recordings.length})
-          </h2>
+        {/* Tabs */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="border-b border-gray-200">
+            <nav className="flex -mb-px">
+              <button
+                onClick={() => setActiveTab('recordings')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'recordings'
+                    ? 'border-neuro-primary text-neuro-primary'
+                    : 'border-transparent text-gray-700 hover:text-gray-900 hover:border-gray-300'
+                }`}
+              >
+                Recordings ({recordings.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'overview'
+                    ? 'border-neuro-primary text-neuro-primary'
+                    : 'border-transparent text-gray-700 hover:text-gray-900 hover:border-gray-300'
+                }`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setActiveTab('comparison')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'comparison'
+                    ? 'border-neuro-primary text-neuro-primary'
+                    : 'border-transparent text-gray-700 hover:text-gray-900 hover:border-gray-300'
+                }`}
+              >
+                Comparison
+              </button>
+            </nav>
+          </div>
+
+          <div className="p-6">
+            {/* Recordings Tab */}
+            {activeTab === 'recordings' && (
+              <div>
 
           {isLoading ? (
             <div className="text-center py-12">
@@ -338,6 +378,75 @@ export default function ProjectDetailsClient({
               </table>
             </div>
           )}
+              </div>
+            )}
+
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+              <div>
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Project Overview
+                </h2>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Project Details
+                    </h3>
+                    <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <dt className="text-sm font-medium text-gray-700">Name</dt>
+                        <dd className="text-sm text-gray-900">{project.name}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-700">Created</dt>
+                        <dd className="text-sm text-gray-900">
+                          {new Date(project.created_at).toLocaleDateString()}
+                        </dd>
+                      </div>
+                      {project.description && (
+                        <div className="md:col-span-2">
+                          <dt className="text-sm font-medium text-gray-700">Description</dt>
+                          <dd className="text-sm text-gray-900">{project.description}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Statistics
+                    </h3>
+                    <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <dt className="text-sm font-medium text-gray-700">Total Recordings</dt>
+                        <dd className="text-2xl font-bold text-neuro-primary">{recordings.length}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-700">Total Duration</dt>
+                        <dd className="text-2xl font-bold text-neuro-primary">
+                          {formatDuration(
+                            recordings.reduce((sum, r) => sum + (r.duration_seconds || 0), 0)
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-700">Total Size</dt>
+                        <dd className="text-2xl font-bold text-neuro-primary">
+                          {formatFileSize(
+                            recordings.reduce((sum, r) => sum + r.file_size, 0)
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Comparison Tab */}
+            {activeTab === 'comparison' && (
+              <ComparisonView projectId={project.id} />
+            )}
+          </div>
         </div>
       </div>
     </main>
