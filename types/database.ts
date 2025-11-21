@@ -4,11 +4,25 @@ export type ProjectRole = 'owner' | 'collaborator' | 'viewer';
 
 export type AnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
+export type ConditionType = 'EO' | 'EC' | 'BOTH';
+
+export type Gender = 'male' | 'female' | 'other' | 'unknown';
+
+export interface ClientMetadata {
+  diagnosis?: string;
+  primary_issue?: string;
+  secondary_issue?: string;
+  gender?: Gender;
+  age?: number;
+  interventions?: string[];
+}
+
 export interface Project {
   id: string;
   name: string;
   description: string | null;
   owner_id: string;
+  client_metadata: ClientMetadata;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +46,7 @@ export interface Recording {
   n_channels: number;
   montage: string;
   reference: string;
+  condition_type: ConditionType;
   eo_label: string;
   ec_label: string;
   eo_start: number | null;
@@ -240,6 +255,28 @@ export interface ExportLog {
   file_path: string;
   exported_by: string;
   created_at: string;
+}
+
+export interface ComparisonResult {
+  eo_recording_id: string;
+  ec_recording_id: string;
+  power_deltas: {
+    absolute: Record<string, Record<string, number>>;  // channel -> band -> delta
+    percent: Record<string, Record<string, number>>;   // channel -> band -> percent change
+  };
+  coherence_deltas: Record<string, Record<string, number>>;  // pair -> band -> delta
+  asymmetry_deltas: {
+    pai: Record<string, Record<string, number>>;  // pair -> band -> delta
+    faa: number;
+    alpha_gradient: number;
+  };
+  summary_metrics: {
+    mean_alpha_change_percent: number;
+    alpha_blocking_eo: number;
+    alpha_blocking_ec: number;
+    faa_shift: number;
+    theta_beta_change: number;
+  };
 }
 
 // Database interface for type-safe queries

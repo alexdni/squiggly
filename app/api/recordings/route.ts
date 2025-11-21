@@ -196,6 +196,19 @@ export async function POST(request: Request) {
       console.log(`[Auto-detect] Manual mode enabled, skipping auto-detection`);
     }
 
+    // Determine condition type based on EO/EC segments
+    const hasEO = finalEoStart !== null && finalEoStart !== undefined && finalEoEnd !== null && finalEoEnd !== undefined;
+    const hasEC = finalEcStart !== null && finalEcStart !== undefined && finalEcEnd !== null && finalEcEnd !== undefined;
+
+    let conditionType: 'EO' | 'EC' | 'BOTH' = 'BOTH';
+    if (hasEO && !hasEC) {
+      conditionType = 'EO';
+    } else if (hasEC && !hasEO) {
+      conditionType = 'EC';
+    } else if (hasEO && hasEC) {
+      conditionType = 'BOTH';
+    }
+
     // Create recording entry
     const recordingData: any = {
       project_id: projectId,
@@ -207,6 +220,7 @@ export async function POST(request: Request) {
       n_channels: metadata.n_channels,
       montage: '10-20',
       reference: 'LE',
+      condition_type: conditionType,
       eo_label: finalEoLabel || null,
       ec_label: finalEcLabel || null,
       eo_start: finalEoStart ?? null,  // Use ?? to preserve 0 values
@@ -256,10 +270,39 @@ export async function POST(request: Request) {
       // Don't fail the request, just log the error
     }
 
+    // Automatically trigger analysis processing
+    let analysisStarted = false;
+    if (analysis) {
+      try {
+        console.log(`[Auto-Analysis] Triggering analysis for recording ${recordingResult.id}`);
+
+        const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysis.id}/process`;
+
+        // Call the analysis processing endpoint asynchronously
+        // Don't await to avoid blocking the upload response
+        fetch(analysisProcessUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }).then(() => {
+          console.log(`[Auto-Analysis] ✓ Analysis processing initiated for ${analysis.id}`);
+        }).catch((err) => {
+          console.error(`[Auto-Analysis] ✗ Failed to trigger analysis:`, err);
+        });
+
+        analysisStarted = true;
+      } catch (triggerError) {
+        console.error('[Auto-Analysis] Error triggering analysis:', triggerError);
+        // Continue anyway - user can manually trigger later
+      }
+    }
+
     return NextResponse.json({
       recording,
       analysis: analysis || null,
       metadata,
+      analysisStarted,
     });
   } catch (error) {
     console.error('Error creating recording:', error);

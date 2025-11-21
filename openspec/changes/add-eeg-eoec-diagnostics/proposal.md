@@ -8,7 +8,7 @@ Clinicians and researchers need a rapid, transparent, open-source tool to analyz
 
 This is a foundational change that introduces the complete EEG EO/EC Diagnostics platform:
 
-- **Upload System**: EDF file upload (19-channel 10-20 montage, LE reference) with validation, storage management, and job queuing
+- **Upload System**: EDF file upload (19-channel 10-20 montage, LE reference) with validation, storage management, and automatic analysis initiation
 - **Preprocessing Pipeline**: Python-based signal processing with configurable filtering (0.5-45 Hz), bad channel detection, ICA artifact removal (blinks, heartbeat, jaw-clench, motion), epoching, and EO/EC segmentation
 - **Feature Extraction**: Multi-domain biomarker computation including:
   - Amplitude/Power: absolute/relative PSD, band ratios (θ/β, θ/α, slowing index), APF, alpha blocking, SMR, regional aggregates
@@ -20,22 +20,32 @@ This is a foundational change that introduces the complete EEG EO/EC Diagnostics
 - **Rule Engine**: Percentile-based heuristic risk assessment for 5 neurophysiological patterns with transparent criteria tracing
 - **Export**: PDF reports with visuals + rules panel, JSON data export, PNG asset generation
 - **Authentication & Authorization**: Google OAuth with role-based access (Owner, Collaborator) and project-level data privacy
+- **Project-Level Client Metadata**: Diagnosis, primary/secondary issues, gender, age (extracted from EDF), interventions attached to project
+- **EO→EC Comparative Analysis**: Project-level function to compare changes between EO and EC files within the same project based on computed summaries
+- **Automatic Analysis Initiation**: Analysis automatically starts upon upload completion with visual feedback ("Analysis in progress...")
+- **Extended Timeout**: 3-minute timeout for backend processing to accommodate Railway deployment
 
 ## Impact
 
 **Affected specs:**
-- New: `upload`, `preprocessing`, `features`, `visualization`, `rules`, `export`
+- New: `upload`, `preprocessing`, `features`, `visualization`, `rules`, `export`, `project-metadata`, `eo-ec-comparison`
 
 **Affected code:**
-- Frontend: New Next.js App Router application with React, TypeScript, Tailwind, Plotly visualizations
-- Backend: New Next.js API routes + Python worker functions
-- Infrastructure: New Supabase project (Postgres, Storage, Auth, Queue)
+- Frontend: Next.js App Router application with React, TypeScript, Tailwind, Plotly visualizations
+  - Project details page (add client metadata form and comparison view)
+  - Upload flow (automatic analysis initiation + loading animation)
+  - Analysis details (extended polling timeout)
+- Backend: Next.js API routes + Python worker functions
+  - Project metadata endpoints
+  - EO/EC comparison endpoint
+  - Extended timeout configuration for Railway
+- Infrastructure: Supabase project (Postgres, Storage, Auth)
 - Dependencies: MNE, NumPy/SciPy, pandas, antropy, scikit-learn, Plotly, Tailwind
 
 **Data Schema:**
-- `recordings` table: metadata, file references, EO/EC labeling
+- `projects` table: ownership, sharing, collaboration roles, **+ client metadata (diagnosis, primary_issue, secondary_issue, gender, age, interventions)**
+- `recordings` table: metadata, file references, EO/EC labeling, **+ condition_type (EO/EC) field**
 - `analyses` table: job config, status, computed features, visual asset URLs
-- `projects` table: ownership, sharing, collaboration roles
 - Storage buckets: EDF files, visual assets (PNGs), exported PDFs/JSON
 
 **Non-Goals:**

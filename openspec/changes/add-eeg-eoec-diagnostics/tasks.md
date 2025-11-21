@@ -54,17 +54,17 @@
 - [x] 5.2 Implement PSD computation (Welch method) for absolute and relative power per channel/band/condition
 - [x] 5.3 Build regional aggregation function (mean power per F/C/P/O/T regions)
 - [x] 5.4 Implement band ratio calculations (θ/β, θ/α, slowing index at specified sites)
-- [ ] 5.5 Create APF detection function (center-of-gravity method in 8-12 Hz range for posterior channels)
-- [ ] 5.6 Implement alpha blocking calculation (EC→EO suppression percentage)
+- [x] 5.5 Create APF detection function (center-of-gravity method in 8-12 Hz range for posterior channels)
+- [x] 5.6 Implement alpha blocking calculation (EC→EO suppression percentage)
 - [x] 5.7 Build SMR power extraction (12-15 Hz at C3/C4/Cz) - via band power extraction
-- [ ] 5.8 Implement reactivity metrics (absolute delta and percent change EC→EO per band/site)
+- [x] 5.8 Implement reactivity metrics (absolute delta and percent change EC→EO per band/site)
 - [x] 5.9 Create coherence computation function (magnitude-squared coherence for predefined 12 pairs per band)
-- [ ] 5.10 Implement hyper/hypo coherence flagging (p90/p10 thresholds)
-- [ ] 5.11 Build LZC computation wrapper (antropy library, binary median-threshold per channel)
-- [ ] 5.12 Implement LZC delta and anterior-posterior gradient calculations
+- [x] 5.10 Implement hyper/hypo coherence flagging (p90/p10 thresholds)
+- [x] 5.11 Build LZC computation wrapper (antropy library, binary median-threshold per channel)
+- [x] 5.12 Implement LZC delta and anterior-posterior gradient calculations
 - [x] 5.13 Create PAI calculation function (Left-Right asymmetry for homologous pairs)
 - [x] 5.14 Implement FAA calculation (log(alpha_F4) - log(alpha_F3) for EC)
-- [ ] 5.15 Build anterior-posterior alpha gradient function
+- [x] 5.15 Build anterior-posterior alpha gradient function
 - [x] 5.16 Persist all features to `analyses.results` JSONB column
 - [ ] 5.17 Write unit tests: PSD sum validation, APF detection stability, coherence symmetry
 - [ ] 5.18 Write integration test: extract features from preprocessed synthetic data, validate output schema
@@ -182,23 +182,82 @@
 - [ ] 14.4 Collect user feedback (in-app feedback form, GitHub Issues)
 - [ ] 14.5 Plan v1.1 roadmap items (PLI/wPLI, ASR toggle, batch comparison)
 
+## 15. Project-Level Client Metadata
+- [ ] 15.1 Add `client_metadata` JSONB column to `projects` table with default '{}' (DATABASE MIGRATION REQUIRED)
+- [x] 15.2 Update database schema types to include ClientMetadata interface (diagnosis, primary_issue, secondary_issue, gender, age, interventions)
+- [x] 15.3 Create API route `PATCH /api/projects/:id/metadata` to update client metadata
+- [x] 15.3b Create API route `GET /api/projects/:id/metadata` to retrieve client metadata
+- [ ] 15.4 Build client metadata form component with fields: diagnosis (text), primary issue (text), secondary issue (optional text), gender (select), age (number), interventions (multi-line text or tag input)
+- [ ] 15.5 Integrate metadata form into project details page (collapsible "Client Information" section)
+- [ ] 15.6 Implement EDF header parsing utility to extract patient DOB and gender if available
+- [ ] 15.7 Auto-populate age and gender from EDF header on first upload to project (with override option)
+- [x] 15.8 Add access control: only project owner and collaborators can edit metadata (implemented in API route)
+- [ ] 15.9 Display client metadata in read-only mode on project details page for viewers
+- [ ] 15.10 Write unit tests for metadata validation (age >0, gender enum validation)
+
+## 16. EO→EC Comparative Analysis
+- [ ] 16.1 Add `condition_type` enum column to `recordings` table: ('EO' | 'EC' | 'BOTH'), default 'BOTH' (DATABASE MIGRATION REQUIRED)
+- [x] 16.2 Update upload flow to auto-detect condition type based on EO/EC segment labeling (implemented in recordings API route)
+- [x] 16.3 Create API route `GET /api/projects/:id/compare?eo_id=...&ec_id=...` for pairwise comparison
+- [x] 16.4 Implement comparison logic: fetch analyses for specified EO and EC recordings, compute feature deltas
+- [x] 16.5 Build comparison result structure: includes power deltas, coherence shifts, asymmetry changes
+- [ ] 16.6 Create "Comparison" tab on project details page
+- [ ] 16.7 Build EO/EC recording selector UI (dropdown or card selection for EO recording + EC recording)
+- [ ] 16.8 Display comparison results: side-by-side topomaps, difference topomaps, delta bar charts for key metrics
+- [ ] 16.9 Add automatic comparison: if project has exactly one EO and one EC recording, show "Quick Compare" button
+- [x] 16.10 Implement access control: comparison respects project membership roles (implemented in API route)
+- [ ] 16.11 Write integration test: create project with EO and EC recordings, trigger comparison, validate output structure
+
+## 17. Automatic Analysis Initiation
+- [x] 17.1 Update `POST /api/recordings` endpoint to automatically create and trigger analysis job after recording creation
+- [ ] 17.2 Modify upload success flow: redirect to `/analyses/:id` immediately with `status: 'pending'` or `'processing'` (FRONTEND UPDATE REQUIRED)
+- [ ] 17.3 Update upload UI to show "Upload successful! Analysis starting..." message (FRONTEND UPDATE REQUIRED)
+- [ ] 17.4 Redirect to analysis details page with polling enabled on upload completion (FRONTEND UPDATE REQUIRED)
+- [x] 17.5 Add animated loading state to analysis details page when `status === 'processing'`: "Analysis in progress... This may take up to 3 minutes."
+- [ ] 17.6 Implement skeleton UI for analysis details page during processing (show placeholders for topomaps, charts)
+- [ ] 17.7 Remove manual "Run Analysis" button from recording details page (analysis now automatic)
+- [ ] 17.8 Write E2E test: upload file → verify automatic redirect to analysis page → verify polling starts
+- [x] 17.9 Handle edge case: if analysis creation fails, show error and allow manual retry (implemented in API route)
+
+## 18. Extended Timeout Configuration
+- [x] 18.1 Add `ANALYSIS_TIMEOUT_MS` environment variable with default 180000 (3 minutes) (implemented in worker-client.ts)
+- [x] 18.2 Remove hardcoded 60-second timeout from worker client polling logic (implemented with configurable timeout)
+- [x] 18.3 Update frontend polling interval: continue for up to 180 seconds before showing timeout error (implemented in AnalysisDetailsClient)
+- [x] 18.4 Modify polling logic: poll every 2 seconds for up to 3 minutes (90 iterations)
+- [x] 18.5 Add server-side timeout handling: if Python worker exceeds timeout, mark analysis as `failed` with timeout error (implemented in worker HTTP submission)
+- [ ] 18.6 Update Railway deployment configuration to set `ANALYSIS_TIMEOUT_MS=180000` (DEPLOYMENT CONFIG REQUIRED)
+- [x] 18.7 Update analysis details UI: show "This may take up to 3 minutes" in loading state
+- [ ] 18.8 Add timeout retry UX: if analysis times out, show "Retry Analysis" button
+- [ ] 18.9 Document timeout configuration in README for different deployment environments
+- [ ] 18.10 Write integration test: simulate timeout scenario, verify error handling and user feedback
+
 ---
 
 ## Dependencies & Parallelizable Work
 
 **Parallel Tracks:**
-- Track A (Frontend): Tasks 2, 8 (can start after 1.1-1.8)
+- Track A (Frontend): Tasks 2, 8, 15, 16, 17 (can work in parallel after core features complete)
 - Track B (Python Workers): Tasks 4, 5, 6, 7 (can start after 1.9-1.10)
-- Track C (API Routes): Task 10 (depends on 3, 4, 5, 6, 7 being >50% complete)
+- Track C (API Routes): Task 10, 15, 16 (depends on 3, 4, 5, 6, 7 being >50% complete)
 - Track D (Export): Task 9 (depends on 6, 7 complete)
+- Track E (New Features): Tasks 15, 16, 17, 18 (can start after Tasks 1-3 complete)
 
 **Critical Path:**
-1 → 3 → 4 → 5 → 6 → 7 → 9 → 10 → 11 → 12 → 13 → 14
+1 → 3 → 4 → 5 → 6 → 7 → 9 → 10 → 11 → 15 → 16 → 17 → 18 → 12 → 13 → 14
 
 **Estimated Timeline:**
-- Weeks 1-2: Project setup, auth, upload UI
-- Weeks 3-5: Preprocessing, feature extraction, visualization workers
-- Week 6: Rule engine, frontend dashboard
+- Weeks 1-2: Project setup, auth, upload UI (COMPLETED)
+- Weeks 3-5: Preprocessing, feature extraction, visualization workers (COMPLETED)
+- Week 6: Rule engine, frontend dashboard (IN PROGRESS)
 - Week 7: Export functionality, API routes
-- Week 8: Testing, QA, documentation
-- Week 9: Deployment, monitoring, post-launch fixes
+- Week 8: Project metadata, EO/EC comparison, auto-analysis, timeout config
+- Week 9: Testing, QA, documentation
+- Week 10: Deployment, monitoring, post-launch fixes
+
+**Current Progress:**
+- Sections 1-3: ✅ COMPLETED (Project setup, auth, upload)
+- Section 4: 🔄 ~50% COMPLETE (Preprocessing pipeline - need ICA, epoching, QC)
+- Section 5: ✅ ~95% COMPLETE (Feature extraction - need unit tests only)
+- Section 6: 🔄 ~60% COMPLETE (Visualization - need LZC/PAI topos, coherence matrix, QC dashboard)
+- Sections 7-14: ⏳ PENDING
+- Sections 15-18: ⏳ NEW (Added for this update)

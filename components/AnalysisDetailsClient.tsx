@@ -63,11 +63,31 @@ export default function AnalysisDetailsClient({
   const supabase = createClient();
   const [analysis, setAnalysis] = useState(initialAnalysis);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pollingElapsed, setPollingElapsed] = useState(0);
+
+  // Get timeout from env or default to 3 minutes (180 seconds)
+  const ANALYSIS_TIMEOUT_SECONDS = 180;
+  const POLL_INTERVAL_MS = 2000;
 
   // Auto-refresh when processing
   useEffect(() => {
-    if (analysis.status === 'processing') {
+    if (analysis.status === 'processing' || analysis.status === 'pending') {
+      let pollCount = 0;
+      const startTime = Date.now();
+
       const interval = setInterval(async () => {
+        pollCount++;
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setPollingElapsed(elapsed);
+
+        // Check if timeout exceeded
+        if (elapsed >= ANALYSIS_TIMEOUT_SECONDS) {
+          console.warn(`Analysis polling timeout exceeded after ${ANALYSIS_TIMEOUT_SECONDS} seconds`);
+          clearInterval(interval);
+          setPollingElapsed(0);
+          return;
+        }
+
         const { data } = await (supabase as any)
           .from('analyses')
           .select(`
@@ -95,13 +115,17 @@ export default function AnalysisDetailsClient({
 
         if (data) {
           setAnalysis(data);
-          if (data.status !== 'processing') {
+          if (data.status !== 'processing' && data.status !== 'pending') {
             clearInterval(interval);
+            setPollingElapsed(0);
           }
         }
-      }, 2000); // Poll every 2 seconds
+      }, POLL_INTERVAL_MS);
 
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        setPollingElapsed(0);
+      };
     }
   }, [analysis.status, analysis.id, supabase]);
 
@@ -345,16 +369,21 @@ export default function AnalysisDetailsClient({
           </div>
         )}
 
-        {analysis.status === 'processing' && (
+        {(analysis.status === 'processing' || analysis.status === 'pending') && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
             <div className="flex items-center">
               <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-blue-900">
-                  Processing EEG Data
+                  Analysis in progress...
                 </h3>
                 <p className="text-blue-700">
-                  Analysis is currently running. This may take a few minutes.
+                  This may take up to 3 minutes. Please do not close this page.
+                  {pollingElapsed > 0 && (
+                    <span className="ml-2">
+                      ({pollingElapsed}s elapsed)
+                    </span>
+                  )}
                 </p>
               </div>
             </div>

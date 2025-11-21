@@ -272,6 +272,140 @@ adhd_like:
 
 ---
 
+---
+
+### Project-Level Client Metadata Storage
+
+**Decision:** Store client demographic and clinical metadata at the project level, not per-recording.
+
+**Rationale:**
+- Projects represent unique clients/subjects in this workflow
+- Metadata (diagnosis, age, gender, interventions) applies to the entire client, not individual recordings
+- Supports longitudinal analysis: multiple EO/EC recordings for the same client over time
+- Age can be extracted from EDF headers (patient DOB) or manually entered
+- Gender can be extracted from EDF headers or manually entered
+
+**Schema Addition to `projects` table:**
+```sql
+ALTER TABLE projects ADD COLUMN client_metadata JSONB DEFAULT '{}'::jsonb;
+-- Structure:
+-- {
+--   "diagnosis": "string",
+--   "primary_issue": "string",
+--   "secondary_issue": "string | null",
+--   "gender": "male | female | other | unknown",
+--   "age": number,
+--   "interventions": ["string", ...]
+-- }
+```
+
+**Alternatives Considered:**
+- **Store metadata per recording:** Rejected due to redundancy and potential inconsistency across recordings for same client
+- **Separate `clients` table:** Deferred to v1.1; MVP assumes 1 project = 1 client for simplicity
+
+**Trade-offs:**
+- (+) Simple data model for MVP
+- (+) Metadata attached to project enables project-level comparative analysis
+- (−) No support for multi-client projects; acceptable for v1
+
+---
+
+### EO→EC Comparative Analysis at Project Level
+
+**Decision:** Provide a project-level comparison function that analyzes changes from EO→EC by comparing analysis summaries of recordings labeled as EO vs EC within the same project.
+
+**Flow:**
+1. User uploads multiple EDF files to a project, some labeled EO, some labeled EC
+2. Each file is analyzed independently
+3. Project dashboard includes "Compare EO→EC" view that:
+   - Identifies recordings with EO vs EC condition labels
+   - Computes deltas between aggregated features (e.g., alpha power change, coherence shifts)
+   - Visualizes comparative metrics (side-by-side topomaps, difference maps, bar charts)
+
+**Implementation:**
+- Add `condition_type` enum field to `recordings` table: `'EO' | 'EC' | 'BOTH'` (default `'BOTH'` for files with both conditions)
+- New API endpoint: `GET /api/projects/:id/compare` returns comparative analysis
+- Frontend: New "Comparison" tab on project details page
+
+**Rationale:**
+- Many clinical workflows upload separate EO and EC files sequentially
+- Enables within-subject longitudinal comparison (e.g., pre/post intervention)
+- Leverages existing analysis summaries without re-processing raw data
+
+**Alternatives Considered:**
+- **Automatic pairing of EO/EC files:** Rejected due to ambiguity (which files should pair?); user can manually select files for comparison in v1.1
+- **Real-time comparison during upload:** Rejected; asynchronous processing is more scalable
+
+**Trade-offs:**
+- (+) Flexible comparison selection (user picks which recordings to compare)
+- (+) Works with existing analysis pipeline
+- (−) Requires user to manually trigger comparison; acceptable for MVP
+
+---
+
+### Automatic Analysis Initiation on Upload
+
+**Decision:** Automatically start analysis job immediately after upload completes, without requiring user to manually click "Analyze."
+
+**Flow:**
+1. User uploads EDF file and labels EO/EC segments
+2. API route creates `recordings` entry and `analyses` entry with `status: 'pending'`
+3. API route immediately calls analysis processing endpoint
+4. Frontend shows "Analysis in progress..." animation on upload success page
+
+**Rationale:**
+- Reduces friction: users expect results immediately after upload
+- Matches user mental model (upload → process → view results)
+- Eliminates extra click required in previous design
+
+**UI Changes:**
+- Upload success page redirects to analysis details page with polling enabled
+- Show animated spinner with message: "Analysis in progress... This may take up to 3 minutes."
+- Poll `/api/analyses/:id` every 2 seconds until status is `'completed'` or `'failed'`
+
+**Alternatives Considered:**
+- **Manual analysis trigger:** Rejected; adds unnecessary friction
+- **Background processing without user feedback:** Rejected; users need to know when results are ready
+
+**Trade-offs:**
+- (+) Seamless UX, no extra clicks
+- (+) Clear progress feedback
+- (−) User must wait on analysis details page; acceptable since analysis is <3 min
+
+---
+
+### Extended Timeout for Railway Backend
+
+**Decision:** Increase backend analysis timeout from 60 seconds to 180 seconds (3 minutes) to accommodate Railway serverless function limits.
+
+**Implementation:**
+- Remove hardcoded 60-second timeout in worker client polling logic
+- Set configurable timeout via environment variable: `ANALYSIS_TIMEOUT_MS=180000`
+- Update frontend polling to continue for up to 3 minutes before showing timeout error
+- Add server-side timeout handling: if analysis exceeds 180 seconds, mark as `failed` with timeout error message
+
+**Rationale:**
+- Railway serverless functions have longer cold start times than Vercel
+- Complex ICA processing can take 90-120 seconds for 10-minute EEG files
+- 3-minute timeout provides sufficient buffer while maintaining reasonable UX
+
+**Configuration:**
+```env
+# .env.local
+ANALYSIS_TIMEOUT_MS=180000  # 3 minutes
+```
+
+**Alternatives Considered:**
+- **Keep 60-second timeout:** Rejected; insufficient for Railway backend
+- **Increase to 5+ minutes:** Rejected; too long for acceptable UX
+
+**Trade-offs:**
+- (+) Accommodates Railway processing time
+- (+) Configurable for different deployment environments
+- (−) Longer wait time for users; mitigated by clear progress feedback
+
+---
+
 ## Open Questions
 
 1. **Alpha peak frequency (APF) detection method:** Use center-of-gravity or polynomial fit? (Default to COG for simplicity; make configurable)
@@ -280,5 +414,7 @@ adhd_like:
 4. **EDF file size limit:** 50MB or 100MB? (Start with 50MB; upgrade based on user feedback)
 5. **Project sharing granularity:** Role-based (viewer/editor/runner) or simpler (viewer/editor)? (Use 3-role system for flexibility)
 6. **QC auto-rejection threshold:** Conservative (reject >20% epochs) or permissive (reject >40%)? (Default to 30% with warning; make configurable)
+7. **Age extraction from EDF:** Use patient DOB from header (if available) or require manual entry? (Try auto-extract, fall back to manual)
+8. **EO/EC comparison granularity:** Compare only latest EO vs latest EC, or allow user to select specific recordings? (v1: latest only; v1.1: user selection)
 
 **Resolution Plan:** Document decisions in `project.md` after stakeholder review (if applicable) or default to conservative/simple options for MVP.

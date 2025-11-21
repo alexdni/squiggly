@@ -10,6 +10,7 @@ export interface WorkerConfig {
   workerUrl?: string;
   authToken?: string;
   queueUrl?: string;
+  timeoutMs?: number;
 }
 
 export interface AnalysisJobData {
@@ -35,6 +36,20 @@ export interface AnalysisJob {
 }
 
 /**
+ * Get timeout from environment or default to 3 minutes (180000ms)
+ */
+export function getAnalysisTimeout(): number {
+  const timeoutEnv = process.env.ANALYSIS_TIMEOUT_MS;
+  if (timeoutEnv) {
+    const timeout = parseInt(timeoutEnv, 10);
+    if (!isNaN(timeout) && timeout > 0) {
+      return timeout;
+    }
+  }
+  return 180000; // Default: 3 minutes
+}
+
+/**
  * Get worker configuration from environment
  */
 export function getWorkerConfig(): WorkerConfig {
@@ -45,6 +60,7 @@ export function getWorkerConfig(): WorkerConfig {
     workerUrl: process.env.WORKER_SERVICE_URL,
     authToken: process.env.WORKER_AUTH_TOKEN,
     queueUrl: process.env.QUEUE_URL,
+    timeoutMs: getAnalysisTimeout(),
   };
 }
 
@@ -105,21 +121,38 @@ async function submitHttpJob(
   }
 
   try {
-    const response = await fetch(`${config.workerUrl}/analyze`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(job),
-    });
+    // Create timeout controller
+    const timeoutMs = config.timeoutMs || 180000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Worker service returned ${response.status}: ${error}`);
+    try {
+      const response = await fetch(`${config.workerUrl}/analyze`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(job),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Worker service returned ${response.status}: ${error}`);
+      }
+
+      return {
+        success: true,
+        message: 'Analysis job submitted to worker service',
+      };
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+
+      if (fetchError.name === 'AbortError') {
+        throw new Error(`Analysis timed out after ${timeoutMs / 1000} seconds`);
+      }
+      throw fetchError;
     }
-
-    return {
-      success: true,
-      message: 'Analysis job submitted to worker service',
-    };
   } catch (error: any) {
     console.error('Failed to submit job to worker:', error);
     throw new Error(`Failed to submit job: ${error.message}`);
