@@ -97,8 +97,26 @@ export async function POST(request: Request) {
     // Convert to buffer for validation
     const buffer = Buffer.from(await fileData.arrayBuffer());
 
-    // Validate EDF montage using TypeScript validator
-    const validationResult = await validateEDFMontage(buffer);
+    // Detect file type from extension
+    const fileExtension = filename.toLowerCase().split('.').pop();
+    let validationResult;
+
+    if (fileExtension === 'csv') {
+      console.log('[Recording] Validating CSV file');
+      const { validateCSVFile } = await import('@/lib/csv-validator');
+      validationResult = await validateCSVFile(buffer);
+    } else if (fileExtension === 'edf') {
+      console.log('[Recording] Validating EDF file');
+      validationResult = await validateEDFMontage(buffer);
+    } else {
+      return NextResponse.json(
+        {
+          error: 'Unsupported file format',
+          message: `File type .${fileExtension} is not supported. Only .edf and .csv files are allowed.`,
+        },
+        { status: 400 }
+      );
+    }
 
     if (!validationResult.valid) {
       // Delete uploaded file from storage
@@ -106,7 +124,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json(
         {
-          error: 'Invalid EDF file',
+          error: `Invalid ${fileExtension.toUpperCase()} file`,
           message: validationResult.error,
         },
         { status: 400 }
