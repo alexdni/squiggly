@@ -149,8 +149,26 @@ export async function validateCSVFile(
       };
     }
 
-    // Convert timestamps from microseconds to seconds
-    const timestampsSeconds = timestamps.map(t => t / 1_000_000);
+    // Auto-detect timestamp unit (microseconds vs milliseconds vs seconds)
+    const firstTimestamp = timestamps[0];
+    let timeScale = 1; // seconds by default
+
+    if (firstTimestamp > 1e9) {
+      // Likely microseconds (e.g., 337679000000)
+      timeScale = 1_000_000;
+      console.log('[CSV Validator] Detected microsecond timestamps');
+    } else if (firstTimestamp > 1e6) {
+      // Likely milliseconds
+      timeScale = 1_000;
+      console.log('[CSV Validator] Detected millisecond timestamps');
+    } else {
+      console.log('[CSV Validator] Detected second timestamps');
+    }
+
+    console.log(`[CSV Validator] First timestamp: ${firstTimestamp}, scale: 1/${timeScale}`);
+
+    // Convert timestamps to seconds
+    const timestampsSeconds = timestamps.map(t => t / timeScale);
 
     // Calculate sampling rate from time differences
     const timeDiffs: number[] = [];
@@ -173,6 +191,8 @@ export async function validateCSVFile(
     const medianDiff = timeDiffs[Math.floor(timeDiffs.length / 2)];
     const samplingRate = Math.round(1 / medianDiff);
 
+    console.log(`[CSV Validator] Median time diff: ${medianDiff}s, sampling rate: ${samplingRate} Hz`);
+
     // Estimate total duration
     // Parse last line to get final timestamp
     let lastTimestamp = timestamps[timestamps.length - 1];
@@ -188,7 +208,7 @@ export async function validateCSVFile(
       }
     }
 
-    const duration = (lastTimestamp - timestamps[0]) / 1_000_000;
+    const duration = (lastTimestamp - timestamps[0]) / timeScale;
 
     console.log(`[CSV Validator] Metadata:`, {
       duration_seconds: duration.toFixed(2),

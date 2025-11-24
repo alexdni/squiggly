@@ -144,9 +144,27 @@ class CSVReader:
         if ecg_channels:
             logger.info(f"Found {len(ecg_channels)} ECG channels: {ecg_channels}")
 
-        # Extract timestamps and calculate sampling rate
+        # Extract timestamps and auto-detect unit
         timestamps = df['timestamp'].values
-        timestamps_sec = timestamps / 1_000_000  # Convert microseconds to seconds
+        first_ts = timestamps[0]
+
+        # Auto-detect timestamp unit
+        if first_ts > 1e9:
+            # Likely microseconds
+            time_scale = 1_000_000
+            logger.info("Detected microsecond timestamps")
+        elif first_ts > 1e6:
+            # Likely milliseconds
+            time_scale = 1_000
+            logger.info("Detected millisecond timestamps")
+        else:
+            # Likely seconds
+            time_scale = 1
+            logger.info("Detected second timestamps")
+
+        logger.info(f"First timestamp: {first_ts}, scale: 1/{time_scale}")
+
+        timestamps_sec = timestamps / time_scale  # Convert to seconds
 
         # Calculate sampling rate from timestamps
         time_diffs = np.diff(timestamps_sec[:min(100, len(timestamps_sec))])
@@ -157,7 +175,7 @@ class CSVReader:
 
         median_diff = np.median(valid_diffs)
         sfreq = 1.0 / median_diff
-        logger.info(f"Calculated sampling rate: {sfreq:.2f} Hz")
+        logger.info(f"Median time diff: {median_diff:.6f}s, sampling rate: {sfreq:.2f} Hz")
 
         # Extract channel data
         data = df[valid_channels].values.T  # Transpose to [channels, samples]

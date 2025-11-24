@@ -16,10 +16,17 @@ import {
 import zoomPlugin from 'chartjs-plugin-zoom';
 import {
   parseEDFFile,
-  extractTimeWindow,
-  downsampleSignals,
+  extractTimeWindow as extractEDFTimeWindow,
+  downsampleSignals as downsampleEDFSignals,
   type EDFData,
 } from '@/lib/edf-reader-browser';
+import {
+  readCSVFile,
+  extractTimeWindow as extractCSVTimeWindow,
+  downsampleSignals as downsampleCSVSignals,
+  filterValidChannels,
+  type CSVData,
+} from '@/lib/csv-reader-browser';
 import { createClient } from '@/lib/supabase-client';
 
 // Register Chart.js components
@@ -39,45 +46,83 @@ interface RawEEGViewerProps {
   filePath: string;
 }
 
+// Unified interface for both data types
+interface UnifiedSignalData {
+  signals: number[][];
+  sampleRate: number;
+  duration: number;
+  channelNames: string[];
+  fileType: 'edf' | 'csv';
+}
+
 export default function RawEEGViewer({
   recordingId,
   filePath,
 }: RawEEGViewerProps) {
-  const [edfData, setEdfData] = useState<EDFData | null>(null);
+  const [signalData, setSignalData] = useState<UnifiedSignalData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeWindow, setTimeWindow] = useState({ start: 0, duration: 10 }); // Show 10 seconds by default
   const [selectedChannels, setSelectedChannels] = useState<number[]>([]);
 
   useEffect(() => {
-    loadEDFFile();
+    loadFile();
   }, [filePath]);
 
-  const loadEDFFile = async () => {
+  const loadFile = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
       const supabase = createClient();
 
-      // Download the EDF file from Supabase storage
+      // Detect file type from extension
+      const fileExtension = filePath.toLowerCase().split('.').pop();
+
+      // Download the file from Supabase storage
       const { data, error: downloadError } = await supabase.storage
         .from('recordings')
         .download(filePath);
 
       if (downloadError) throw downloadError;
 
-      // Convert Blob to ArrayBuffer
-      const arrayBuffer = await data.arrayBuffer();
+      if (fileExtension === 'csv') {
+        // Parse CSV file
+        const parsedData = await readCSVFile(data);
+        const filteredData = filterValidChannels(parsedData);
 
-      // Parse EDF file
-      const parsedData = await parseEDFFile(arrayBuffer);
-      setEdfData(parsedData);
+        const unifiedData: UnifiedSignalData = {
+          signals: filteredData.signals,
+          sampleRate: filteredData.sampleRate,
+          duration: filteredData.duration,
+          channelNames: filteredData.channelNames,
+          fileType: 'csv',
+        };
 
-      // Select first 4 channels by default
-      setSelectedChannels([0, 1, 2, 3].filter((i) => i < parsedData.header.channelCount));
+        setSignalData(unifiedData);
+
+        // Select first 4 channels by default
+        setSelectedChannels([0, 1, 2, 3].filter((i) => i < filteredData.channelNames.length));
+      } else {
+        // Parse EDF file
+        const arrayBuffer = await data.arrayBuffer();
+        const parsedData = await parseEDFFile(arrayBuffer);
+
+        const unifiedData: UnifiedSignalData = {
+          signals: parsedData.signals,
+          sampleRate: parsedData.sampleRate,
+          duration: parsedData.duration,
+          channelNames: parsedData.header.channels.map(ch => ch.label),
+          fileType: 'edf',
+        };
+
+        setSignalData(unifiedData);
+
+        // Select first 4 channels by default
+        setSelectedChannels([0, 1, 2, 3].filter((i) => i < parsedData.header.channelCount));
+      }
     } catch (err: any) {
-      console.error('Error loading EDF file:', err);
+      console.error('Error loading file:', err);
       setError(err.message || 'Failed to load EEG data');
     } finally {
       setIsLoading(false);
@@ -95,13 +140,13 @@ export default function RawEEGViewer({
   };
 
   const renderChannelSelector = () => {
-    if (!edfData) return null;
+    if (!signalData) return null;
 
     return (
       <div className="mb-4">
         <h3 className="text-sm font-semibold mb-2 text-gray-900">Select Channels to Display:</h3>
         <div className="flex flex-wrap gap-2">
-          {edfData.header.channels.map((channel, index) => (
+          {signalData.channelNames.map((channelName, index) => (
             <button
               key={index}
               onClick={() => handleChannelToggle(index)}
@@ -111,7 +156,7 @@ export default function RawEEGViewer({
                   : 'bg-gray-200 text-gray-900 hover:bg-gray-300'
               }`}
             >
-              {channel.label}
+              {cleanChannelLabel(channelName)}
             </button>
           ))}
         </div>
@@ -120,9 +165,9 @@ export default function RawEEGViewer({
   };
 
   const renderTimeControls = () => {
-    if (!edfData) return null;
+    if (!signalData) return null;
 
-    const maxTime = edfData.duration;
+    const maxTime = signalData.duration;
 
     return (
       <div className="mb-4 space-y-2">
@@ -207,12 +252,15 @@ export default function RawEEGViewer({
   };
 
   const renderChart = () => {
-    if (!edfData || selectedChannels.length === 0) return null;
+    if (!signalData || selectedChannels.length === 0) return null;
 
-    // Extract time window
+    // Extract time window (use appropriate function based on file type)
+    const extractTimeWindow = signalData.fileType === 'csv' ? extractCSVTimeWindow : extractEDFTimeWindow;
+    const downsampleSignals = signalData.fileType === 'csv' ? downsampleCSVSignals : downsampleEDFSignals;
+
     const windowSignals = extractTimeWindow(
-      edfData.signals,
-      edfData.sampleRate,
+      signalData.signals,
+      signalData.sampleRate,
       timeWindow.start,
       timeWindow.duration
     );
@@ -257,7 +305,7 @@ export default function RawEEGViewer({
       });
 
       return {
-        label: cleanChannelLabel(edfData.header.channels[channelIndex].label),
+        label: cleanChannelLabel(signalData.channelNames[channelIndex]),
         data: offsetData,
         borderColor: colors[i % colors.length],
         backgroundColor: 'transparent',
@@ -276,7 +324,7 @@ export default function RawEEGViewer({
     const channelSpacing = 200;
     const yTicks = selectedChannels.map((channelIndex, i) => ({
       value: (selectedChannels.length - 1 - i) * channelSpacing,
-      label: cleanChannelLabel(edfData.header.channels[channelIndex].label),
+      label: cleanChannelLabel(signalData.channelNames[channelIndex]),
     }));
 
     const options: ChartOptions<'line'> = {
@@ -304,7 +352,7 @@ export default function RawEEGViewer({
             label: (context) => {
               const datasetIndex = context.datasetIndex;
               const channelIndex = selectedChannels[datasetIndex];
-              const channelLabel = cleanChannelLabel(edfData.header.channels[channelIndex].label);
+              const channelLabel = cleanChannelLabel(signalData.channelNames[channelIndex]);
               const baseline = (selectedChannels.length - 1 - datasetIndex) * channelSpacing;
               const actualValue = (context.parsed.y ?? 0) - baseline;
               return `${channelLabel}: ${actualValue.toFixed(2)} μV`;

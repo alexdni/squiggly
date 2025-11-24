@@ -94,9 +94,23 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
     throw new Error('No valid data rows found in CSV file');
   }
 
+  // Auto-detect timestamp unit (microseconds vs milliseconds vs seconds)
+  // Check the magnitude of the first timestamp
+  const firstTimestamp = timestamps[0];
+  let timeScale = 1; // seconds by default
+
+  if (firstTimestamp > 1e9) {
+    // Likely microseconds (e.g., 337679)
+    timeScale = 1_000_000;
+  } else if (firstTimestamp > 1e6) {
+    // Likely milliseconds
+    timeScale = 1_000;
+  }
+
+  console.log(`CSV: First timestamp: ${firstTimestamp}, detected scale: 1/${timeScale}`);
+
   // Calculate sampling rate from timestamps
-  // Assuming timestamps are in microseconds, convert to seconds
-  const timeInSeconds = timestamps.map(t => t / 1000000);
+  const timeInSeconds = timestamps.map(t => t / timeScale);
   const timeDiffs: number[] = [];
 
   for (let i = 1; i < Math.min(100, timeInSeconds.length); i++) {
@@ -111,7 +125,7 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
   const medianDiff = timeDiffs[Math.floor(timeDiffs.length / 2)] || 0.004; // fallback to 250 Hz
   const sampleRate = Math.round(1 / medianDiff);
 
-  const duration = (timestamps[timestamps.length - 1] - timestamps[0]) / 1000000;
+  const duration = (timestamps[timestamps.length - 1] - timestamps[0]) / timeScale;
 
   // Convert channel data to array format [channel][sample]
   const signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
