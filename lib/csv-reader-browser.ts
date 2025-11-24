@@ -94,20 +94,48 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
     throw new Error('No valid data rows found in CSV file');
   }
 
-  // Auto-detect timestamp unit (microseconds vs milliseconds vs seconds)
-  // Check the magnitude of the first timestamp
+  // Auto-detect timestamp unit by analyzing time differences
   const firstTimestamp = timestamps[0];
-  let timeScale = 1; // seconds by default
 
-  if (firstTimestamp > 1e9) {
-    // Likely microseconds (e.g., 337679)
-    timeScale = 1_000_000;
-  } else if (firstTimestamp > 1e6) {
-    // Likely milliseconds
-    timeScale = 1_000;
+  // Sample first 20 time differences to detect unit
+  const timeDiffsRaw: number[] = [];
+  for (let i = 1; i < Math.min(20, timestamps.length); i++) {
+    const diff = timestamps[i] - timestamps[i - 1];
+    if (diff > 0) {
+      timeDiffsRaw.push(diff);
+    }
   }
 
-  console.log(`CSV: First timestamp: ${firstTimestamp}, detected scale: 1/${timeScale}`);
+  if (timeDiffsRaw.length === 0) {
+    throw new Error('Cannot determine sampling pattern from timestamps');
+  }
+
+  // Calculate median raw time difference
+  timeDiffsRaw.sort((a, b) => a - b);
+  const medianRawDiff = timeDiffsRaw[Math.floor(timeDiffsRaw.length / 2)];
+
+  let timeScale = 1;
+
+  // Determine scale based on typical sampling intervals
+  if (medianRawDiff < 0.1) {
+    // Very small differences, likely already in seconds
+    timeScale = 1;
+    console.log('CSV: Detected second timestamps');
+  } else if (medianRawDiff < 100) {
+    // Small differences (0.1 to 100), likely milliseconds
+    timeScale = 1_000;
+    console.log('CSV: Detected millisecond timestamps');
+  } else if (medianRawDiff < 100_000) {
+    // Medium differences, likely microseconds
+    timeScale = 1_000_000;
+    console.log('CSV: Detected microsecond timestamps');
+  } else {
+    // Large differences
+    timeScale = 1_000_000_000;
+    console.log('CSV: Detected nanosecond timestamps');
+  }
+
+  console.log(`CSV: First timestamp: ${firstTimestamp}, median diff: ${medianRawDiff}, scale: 1/${timeScale}`);
 
   // Calculate sampling rate from timestamps
   const timeInSeconds = timestamps.map(t => t / timeScale);

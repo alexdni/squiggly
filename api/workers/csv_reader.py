@@ -144,25 +144,38 @@ class CSVReader:
         if ecg_channels:
             logger.info(f"Found {len(ecg_channels)} ECG channels: {ecg_channels}")
 
-        # Extract timestamps and auto-detect unit
+        # Extract timestamps and auto-detect unit by analyzing differences
         timestamps = df['timestamp'].values
         first_ts = timestamps[0]
 
-        # Auto-detect timestamp unit
-        if first_ts > 1e9:
-            # Likely microseconds
-            time_scale = 1_000_000
-            logger.info("Detected microsecond timestamps")
-        elif first_ts > 1e6:
-            # Likely milliseconds
-            time_scale = 1_000
-            logger.info("Detected millisecond timestamps")
-        else:
-            # Likely seconds
+        # Sample first 20 time differences to detect unit
+        time_diffs_raw = np.diff(timestamps[:min(20, len(timestamps))])
+        valid_diffs_raw = time_diffs_raw[time_diffs_raw > 0]
+
+        if len(valid_diffs_raw) == 0:
+            raise ValueError("Cannot determine sampling pattern from timestamps")
+
+        median_raw_diff = np.median(valid_diffs_raw)
+
+        # Determine scale based on typical sampling intervals
+        if median_raw_diff < 0.1:
+            # Very small differences, likely already in seconds
             time_scale = 1
             logger.info("Detected second timestamps")
+        elif median_raw_diff < 100:
+            # Small differences (0.1 to 100), likely milliseconds
+            time_scale = 1_000
+            logger.info("Detected millisecond timestamps")
+        elif median_raw_diff < 100_000:
+            # Medium differences, likely microseconds
+            time_scale = 1_000_000
+            logger.info("Detected microsecond timestamps")
+        else:
+            # Large differences
+            time_scale = 1_000_000_000
+            logger.info("Detected nanosecond timestamps")
 
-        logger.info(f"First timestamp: {first_ts}, scale: 1/{time_scale}")
+        logger.info(f"First timestamp: {first_ts}, median diff: {median_raw_diff}, scale: 1/{time_scale}")
 
         timestamps_sec = timestamps / time_scale  # Convert to seconds
 

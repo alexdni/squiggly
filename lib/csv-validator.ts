@@ -149,23 +149,54 @@ export async function validateCSVFile(
       };
     }
 
-    // Auto-detect timestamp unit (microseconds vs milliseconds vs seconds)
+    // Auto-detect timestamp unit by analyzing time differences
     const firstTimestamp = timestamps[0];
-    let timeScale = 1; // seconds by default
 
-    if (firstTimestamp > 1e9) {
-      // Likely microseconds (e.g., 337679000000)
-      timeScale = 1_000_000;
-      console.log('[CSV Validator] Detected microsecond timestamps');
-    } else if (firstTimestamp > 1e6) {
-      // Likely milliseconds
-      timeScale = 1_000;
-      console.log('[CSV Validator] Detected millisecond timestamps');
-    } else {
-      console.log('[CSV Validator] Detected second timestamps');
+    // Sample first 20 time differences to detect unit
+    const timeDiffsRaw: number[] = [];
+    for (let i = 1; i < Math.min(20, timestamps.length); i++) {
+      const diff = timestamps[i] - timestamps[i - 1];
+      if (diff > 0) {
+        timeDiffsRaw.push(diff);
+      }
     }
 
-    console.log(`[CSV Validator] First timestamp: ${firstTimestamp}, scale: 1/${timeScale}`);
+    if (timeDiffsRaw.length === 0) {
+      return {
+        valid: false,
+        error: 'Cannot determine sampling pattern from timestamps',
+      };
+    }
+
+    // Calculate median raw time difference
+    timeDiffsRaw.sort((a, b) => a - b);
+    const medianRawDiff = timeDiffsRaw[Math.floor(timeDiffsRaw.length / 2)];
+
+    let timeScale = 1;
+
+    // Determine scale based on typical sampling intervals
+    // For 250 Hz: expect 4ms = 0.004s difference
+    if (medianRawDiff < 0.1) {
+      // Very small differences (< 0.1), likely already in seconds
+      timeScale = 1;
+      console.log('[CSV Validator] Detected second timestamps');
+    } else if (medianRawDiff < 100) {
+      // Small differences (0.1 to 100), likely milliseconds
+      // This catches: diff=4 for 250Hz, diff=10 for 100Hz, etc.
+      timeScale = 1_000;
+      console.log('[CSV Validator] Detected millisecond timestamps');
+    } else if (medianRawDiff < 100_000) {
+      // Medium differences (100 to 100k), likely microseconds
+      // This catches: diff=4000 for 250Hz in microseconds
+      timeScale = 1_000_000;
+      console.log('[CSV Validator] Detected microsecond timestamps');
+    } else {
+      // Large differences, likely nanoseconds or unusual format
+      timeScale = 1_000_000_000;
+      console.log('[CSV Validator] Detected nanosecond or large unit timestamps');
+    }
+
+    console.log(`[CSV Validator] First timestamp: ${firstTimestamp}, median raw diff: ${medianRawDiff}, scale: 1/${timeScale}`);
 
     // Convert timestamps to seconds
     const timestampsSeconds = timestamps.map(t => t / timeScale);
