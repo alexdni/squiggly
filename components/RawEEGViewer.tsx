@@ -21,7 +21,7 @@ import {
   type EDFData,
 } from '@/lib/edf-reader-browser';
 import {
-  readCSVFile,
+  parseCSVFile,
   extractTimeWindow as extractCSVTimeWindow,
   downsampleSignals as downsampleCSVSignals,
   filterValidChannels,
@@ -87,8 +87,9 @@ export default function RawEEGViewer({
       if (downloadError) throw downloadError;
 
       if (fileExtension === 'csv') {
-        // Parse CSV file
-        const parsedData = await readCSVFile(data);
+        // Parse CSV file - convert Blob to text first
+        const text = await data.text();
+        const parsedData = await parseCSVFile(text);
         const filteredData = filterValidChannels(parsedData);
 
         const unifiedData: UnifiedSignalData = {
