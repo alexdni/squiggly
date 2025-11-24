@@ -158,6 +158,18 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
   // Convert channel data to array format [channel][sample]
   const signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
 
+  // Debug: Log signal statistics
+  console.log('CSV Signal Stats:');
+  signals.forEach((sig, idx) => {
+    const nonZero = sig.filter(v => v !== 0);
+    if (nonZero.length > 0) {
+      const min = Math.min(...nonZero);
+      const max = Math.max(...nonZero);
+      const mean = nonZero.reduce((a, b) => a + b, 0) / nonZero.length;
+      console.log(`  ${channelNames[idx]}: min=${min.toFixed(2)}, max=${max.toFixed(2)}, mean=${mean.toFixed(2)}, samples=${sig.length}`);
+    }
+  });
+
   const header: CSVHeader = {
     channels: channelNames,
     timestamps: timeInSeconds,

@@ -270,8 +270,26 @@ export default function RawEEGViewer({
     const downsampled = downsampleSignals(windowSignals, 1000);
 
     // Prepare chart data with stacked montage display
-    const amplitudePerChannel = 100; // μV (±100μV range per channel)
     const selectedData = selectedChannels.map((channelIndex) => downsampled[channelIndex]);
+
+    // Auto-detect data range from actual values
+    let globalMin = Infinity;
+    let globalMax = -Infinity;
+    selectedData.forEach(channelData => {
+      channelData.forEach(value => {
+        if (isFinite(value)) {
+          globalMin = Math.min(globalMin, value);
+          globalMax = Math.max(globalMax, value);
+        }
+      });
+    });
+
+    // Calculate amplitude range per channel
+    const dataRange = globalMax - globalMin;
+    const amplitudePerChannel = dataRange > 0 ? dataRange / selectedChannels.length : 100;
+
+    console.log(`Data range: ${globalMin.toFixed(2)} to ${globalMax.toFixed(2)}, amplitude per channel: ${amplitudePerChannel.toFixed(2)}`);
+
     const labels = Array.from(
       { length: selectedData[0].length },
       (_, i) =>
@@ -292,17 +310,15 @@ export default function RawEEGViewer({
       '#F97316',
     ];
 
-    // Stack channels vertically with fixed amplitude range
+    // Stack channels vertically with auto-scaled amplitude range
     const datasets = selectedChannels.map((channelIndex, i) => {
       // Calculate baseline (center) for this channel (inverted so first channel is at top)
-      // Each channel gets 200μV of space (±100μV from baseline)
-      const channelSpacing = 200; // Space between channel centers
+      const channelSpacing = amplitudePerChannel * 1.5; // Add some spacing between channels
       const baseline = (selectedChannels.length - 1 - i) * channelSpacing;
 
-      // Clamp signal to ±100μV and add baseline offset
+      // Normalize and offset data (no clamping!)
       const offsetData = selectedData[i].map((value) => {
-        const clampedValue = Math.max(-100, Math.min(100, value));
-        return clampedValue + baseline;
+        return value + baseline;
       });
 
       return {
@@ -354,9 +370,12 @@ export default function RawEEGViewer({
               const datasetIndex = context.datasetIndex;
               const channelIndex = selectedChannels[datasetIndex];
               const channelLabel = cleanChannelLabel(signalData.channelNames[channelIndex]);
+              const channelSpacing = amplitudePerChannel * 1.5;
               const baseline = (selectedChannels.length - 1 - datasetIndex) * channelSpacing;
               const actualValue = (context.parsed.y ?? 0) - baseline;
-              return `${channelLabel}: ${actualValue.toFixed(2)} μV`;
+              // Show value in appropriate units
+              const unit = Math.abs(actualValue) < 1000 ? 'μV' : '';
+              return `${channelLabel}: ${actualValue.toFixed(2)} ${unit}`;
             },
           },
         },
