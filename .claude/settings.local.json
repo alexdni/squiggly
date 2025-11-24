@@ -3,7 +3,8 @@
     "allow": [
       "Bash(openspec list:*)",
       "Bash(openspec show:*)",
-      "Bash(openspec validate:*)"
+      "Bash(openspec validate:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

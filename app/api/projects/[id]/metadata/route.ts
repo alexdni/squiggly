@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
-import { checkProjectAccess } from '@/lib/rbac';
+import { checkProjectPermission } from '@/lib/rbac';
 import type { ClientMetadata, Gender } from '@/types/database';
 
 /**
@@ -23,11 +23,10 @@ export async function PATCH(
     }
 
     // Check if user has write access (owner or collaborator)
-    const hasAccess = await checkProjectAccess(
-      supabase,
+    const hasAccess = await checkProjectPermission(
       params.id,
       user.id,
-      ['owner', 'collaborator']
+      'project:update'
     );
 
     if (!hasAccess) {
@@ -80,14 +79,14 @@ export async function PATCH(
     if (body.interventions !== undefined) {
       if (Array.isArray(body.interventions)) {
         metadata.interventions = body.interventions
-          .map((i) => String(i).trim())
-          .filter((i) => i.length > 0);
+          .map((i: any) => String(i).trim())
+          .filter((i: string) => i.length > 0);
       } else if (typeof body.interventions === 'string') {
         // Support comma-separated string input
         metadata.interventions = body.interventions
           .split(',')
-          .map((i) => i.trim())
-          .filter((i) => i.length > 0);
+          .map((i: string) => i.trim())
+          .filter((i: string) => i.length > 0);
       } else {
         return NextResponse.json(
           { error: 'Interventions must be an array or comma-separated string' },
@@ -148,11 +147,10 @@ export async function GET(
     }
 
     // Check if user has read access (owner, collaborator, or viewer)
-    const hasAccess = await checkProjectAccess(
-      supabase,
+    const hasAccess = await checkProjectPermission(
       params.id,
       user.id,
-      ['owner', 'collaborator', 'viewer']
+      'project:read'
     );
 
     if (!hasAccess) {

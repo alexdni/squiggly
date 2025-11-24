@@ -270,13 +270,16 @@ export async function POST(request: Request) {
       // Don't fail the request, just log the error
     }
 
+    // Cast analysis to any to avoid TypeScript type issues
+    const analysisResult = analysis as any;
+
     // Automatically trigger analysis processing
     let analysisStarted = false;
-    if (analysis) {
+    if (analysisResult) {
       try {
         console.log(`[Auto-Analysis] Triggering analysis for recording ${recordingResult.id}`);
 
-        const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysis.id}/process`;
+        const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysisResult.id}/process`;
 
         // Call the analysis processing endpoint asynchronously
         // Don't await to avoid blocking the upload response
@@ -286,7 +289,7 @@ export async function POST(request: Request) {
             'Content-Type': 'application/json',
           },
         }).then(() => {
-          console.log(`[Auto-Analysis] ✓ Analysis processing initiated for ${analysis.id}`);
+          console.log(`[Auto-Analysis] ✓ Analysis processing initiated for ${analysisResult.id}`);
         }).catch((err) => {
           console.error(`[Auto-Analysis] ✗ Failed to trigger analysis:`, err);
         });
