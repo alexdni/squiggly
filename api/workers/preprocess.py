@@ -2,7 +2,7 @@
 """
 EEG Preprocessing Module
 
-Handles preprocessing of EDF files using MNE-Python:
+Handles preprocessing of EDF and CSV files using MNE-Python:
 - Loading and resampling
 - Filtering (bandpass and notch)
 - Artifact rejection
@@ -14,6 +14,8 @@ import numpy as np
 import mne
 from typing import Dict, List, Tuple, Optional
 import logging
+import os
+from csv_reader import load_csv_as_raw
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +65,31 @@ class EEGPreprocessor:
             'P7', 'P3', 'Pz', 'P4', 'P8',
             'O1', 'O2'
         ]
+
+    def load_file(self, file_path: str) -> mne.io.Raw:
+        """
+        Load EDF or CSV file and prepare raw data
+
+        Args:
+            file_path: Path to EDF or CSV file
+
+        Returns:
+            MNE Raw object
+        """
+        # Detect file type from extension
+        _, ext = os.path.splitext(file_path)
+        ext_lower = ext.lower()
+
+        if ext_lower == '.csv':
+            logger.info(f"Loading CSV file: {file_path}")
+            # Load CSV file (already preprocessed by csv_reader)
+            raw = load_csv_as_raw(file_path)
+            logger.info(f"Loaded CSV data: {raw.info['sfreq']} Hz, {len(raw.ch_names)} channels, {raw.times[-1]:.1f}s duration")
+            return raw
+        elif ext_lower == '.edf':
+            return self.load_edf(file_path)
+        else:
+            raise ValueError(f"Unsupported file format: {ext}. Supported formats: .edf, .csv")
 
     def load_edf(self, file_path: str) -> mne.io.Raw:
         """
@@ -415,8 +442,8 @@ def preprocess_eeg(
     config = config or {}
     preprocessor = EEGPreprocessor(**config)
 
-    # Load data
-    raw_original = preprocessor.load_edf(file_path)
+    # Load data (auto-detects EDF or CSV)
+    raw_original = preprocessor.load_file(file_path)
 
     # Preprocess
     raw = preprocessor.preprocess(raw_original.copy())

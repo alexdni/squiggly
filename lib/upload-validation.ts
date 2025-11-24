@@ -82,6 +82,63 @@ export async function validateEDFHeader(file: File): Promise<ValidationResult> {
 }
 
 /**
+ * Basic CSV validation (checks for timestamp column and valid structure)
+ */
+export async function validateCSVHeader(file: File): Promise<ValidationResult> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      const lines = content.split('\n');
+
+      if (lines.length < 2) {
+        resolve({
+          valid: false,
+          error: 'CSV file must have at least a header row and one data row.',
+        });
+        return;
+      }
+
+      // Check header
+      const headerLine = lines[0].trim();
+      const headers = headerLine.split(/[,\t]/).map(h => h.trim());
+
+      // First column should be timestamp
+      if (!headers[0] || headers[0].toLowerCase() !== 'timestamp') {
+        resolve({
+          valid: false,
+          error: 'CSV file must have "timestamp" as the first column.',
+        });
+        return;
+      }
+
+      // Check that there are channel columns
+      const channelCount = headers.slice(1).filter(h => h.length > 0).length;
+      if (channelCount === 0) {
+        resolve({
+          valid: false,
+          error: 'CSV file must have at least one channel column.',
+        });
+        return;
+      }
+
+      resolve({ valid: true });
+    };
+
+    reader.onerror = () => {
+      resolve({
+        valid: false,
+        error: 'Failed to read CSV file.',
+      });
+    };
+
+    // Read first 1KB to check header
+    reader.readAsText(file.slice(0, 1024));
+  });
+}
+
+/**
  * Comprehensive file validation
  */
 export async function validateUploadFile(file: File): Promise<ValidationResult> {
@@ -97,10 +154,21 @@ export async function validateUploadFile(file: File): Promise<ValidationResult> 
     return sizeResult;
   }
 
-  // Check EDF header
-  const headerResult = await validateEDFHeader(file);
-  if (!headerResult.valid) {
-    return headerResult;
+  // Determine file type and validate accordingly
+  const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+
+  if (extension === '.csv') {
+    // Validate CSV header
+    const csvResult = await validateCSVHeader(file);
+    if (!csvResult.valid) {
+      return csvResult;
+    }
+  } else {
+    // Validate EDF header
+    const edfResult = await validateEDFHeader(file);
+    if (!edfResult.valid) {
+      return edfResult;
+    }
   }
 
   return { valid: true };

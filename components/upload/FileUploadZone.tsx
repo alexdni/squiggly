@@ -90,7 +90,7 @@ export default function FileUploadZone({
       >
         <input
           type="file"
-          accept=".edf,.EDF"
+          accept=".edf,.EDF,.csv,.CSV"
           onChange={handleFileInput}
           disabled={disabled}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -115,7 +115,7 @@ export default function FileUploadZone({
 
           <div>
             <p className="text-lg font-medium text-gray-700">
-              {selectedFile ? selectedFile.name : 'Drop your EDF file here'}
+              {selectedFile ? selectedFile.name : 'Drop your EDF or CSV file here'}
             </p>
             <p className="text-sm text-gray-700 mt-2">
               {selectedFile
@@ -126,8 +126,9 @@ export default function FileUploadZone({
           </div>
 
           <div className="text-xs text-gray-400 space-y-1">
-            <p>Supported format: EDF (European Data Format)</p>
-            <p>Requirements: 19 channels, 10-20 montage, LE reference</p>
+            <p>Supported formats: EDF (European Data Format) or CSV</p>
+            <p>Requirements: Standard 10-20 EEG channels</p>
+            <p>CSV format: timestamp column followed by channel columns</p>
             <p>Maximum file size: 50 MB</p>
           </div>
         </div>
