@@ -7,6 +7,8 @@ export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF', '.csv', '.CSV'];
 // EEG Configuration
 export const EXPECTED_CHANNELS_19 = 19;
 export const EXPECTED_CHANNELS_21 = 21;
+export const EXPECTED_CHANNELS_24 = 24;  // 10-10 montage (common 24-channel setup)
+
 export const MONTAGE_10_20_19CH = [
   'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
   'T7', 'C3', 'Cz', 'C4', 'T8',
@@ -20,6 +22,39 @@ export const MONTAGE_10_20_21CH = [
   'P7', 'P3', 'Pz', 'P4', 'P8',
   'O1', 'O2',
   'A1', 'A2'  // Ear references
+];
+
+// 10-10 system extended montage (24 channels - common clinical setup)
+// Includes the 19-channel 10-20 base plus additional 10-10 positions
+export const MONTAGE_10_10_24CH = [
+  // Standard 10-20 positions
+  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+  'T7', 'C3', 'Cz', 'C4', 'T8',
+  'P7', 'P3', 'Pz', 'P4', 'P8',
+  'O1', 'O2',
+  // Additional 10-10 positions (common extensions)
+  'FC1', 'FC2', 'CP1', 'CP2', 'Oz'
+];
+
+// Alternative 10-10 24-channel montage variations
+export const MONTAGE_10_10_24CH_ALT1 = [
+  // With frontocentral and centroparietal positions
+  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+  'FC5', 'FC1', 'FC2', 'FC6',
+  'T7', 'C3', 'Cz', 'C4', 'T8',
+  'CP5', 'CP1', 'CP2', 'CP6',
+  'P7', 'P3', 'Pz', 'P4', 'P8',
+  'O1', 'O2'
+];
+
+export const MONTAGE_10_10_24CH_ALT2 = [
+  // With ear references and Oz
+  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+  'T7', 'C3', 'Cz', 'C4', 'T8',
+  'P7', 'P3', 'Pz', 'P4', 'P8',
+  'O1', 'Oz', 'O2',
+  'A1', 'A2',
+  'FC1', 'FC2'
 ];
 
 // Legacy export for backwards compatibility

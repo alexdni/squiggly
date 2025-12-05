@@ -58,13 +58,39 @@ class EEGPreprocessor:
             'eeg': 150e-6,  # 150 μV
         }
 
-        # Standard 10-20 channel names
-        self.expected_channels = [
+        # Standard 10-20 channel names (base 19 channels)
+        self.expected_channels_10_20 = [
             'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
             'T7', 'C3', 'Cz', 'C4', 'T8',
             'P7', 'P3', 'Pz', 'P4', 'P8',
             'O1', 'O2'
         ]
+
+        # Extended 10-10 channels (additional positions beyond 10-20)
+        self.additional_10_10_channels = [
+            # Midline
+            'Fpz', 'AFz', 'FCz', 'CPz', 'POz', 'Oz', 'Iz',
+            # Anterior frontal
+            'AF3', 'AF4', 'AF7', 'AF8',
+            # Frontocentral
+            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
+            # Frontotemporal
+            'FT7', 'FT8', 'FT9', 'FT10',
+            # Centroparietal
+            'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6',
+            # Temporoparietal
+            'TP7', 'TP8', 'TP9', 'TP10',
+            # Parieto-occipital
+            'PO3', 'PO4', 'PO7', 'PO8',
+            # Ear references
+            'A1', 'A2',
+        ]
+
+        # All valid EEG channels (combined)
+        self.all_valid_channels = self.expected_channels_10_20 + self.additional_10_10_channels
+
+        # Legacy: expected_channels for backward compatibility
+        self.expected_channels = self.expected_channels_10_20
 
     def load_file(self, file_path: str) -> mne.io.Raw:
         """
@@ -168,15 +194,24 @@ class EEGPreprocessor:
         return raw
 
     def _select_eeg_channels(self, raw: mne.io.Raw) -> mne.io.Raw:
-        """Select only EEG channels that match 10-20 montage"""
+        """Select only EEG channels that match 10-20 or 10-10 montage"""
 
-        available_channels = [ch for ch in raw.ch_names if ch in self.expected_channels]
+        # First, find all valid EEG channels (both 10-20 and 10-10)
+        available_channels = [ch for ch in raw.ch_names if ch in self.all_valid_channels]
 
-        if len(available_channels) < 19:
-            missing = set(self.expected_channels) - set(available_channels)
-            logger.warning(f"Missing channels: {missing}")
+        # Check if we have at least the base 10-20 channels
+        base_channels_present = [ch for ch in raw.ch_names if ch in self.expected_channels_10_20]
 
-        logger.info(f"Selecting {len(available_channels)} EEG channels")
+        if len(base_channels_present) < 19:
+            missing = set(self.expected_channels_10_20) - set(base_channels_present)
+            logger.warning(f"Missing base 10-20 channels: {missing}")
+
+        # Find additional 10-10 channels present
+        additional_present = [ch for ch in raw.ch_names if ch in self.additional_10_10_channels]
+        if additional_present:
+            logger.info(f"Found {len(additional_present)} additional 10-10 channels: {additional_present}")
+
+        logger.info(f"Selecting {len(available_channels)} EEG channels ({len(base_channels_present)} base + {len(additional_present)} extended)")
         raw.pick_channels(available_channels)
 
         return raw

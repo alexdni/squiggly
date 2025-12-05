@@ -5,7 +5,9 @@ import {
   MONTAGE_10_20_19CH,
   MONTAGE_10_20_21CH,
   EXPECTED_CHANNELS_19,
-  EXPECTED_CHANNELS_21
+  EXPECTED_CHANNELS_21,
+  EXPECTED_CHANNELS_24,
+  ALL_EEG_CHANNELS,
 } from './constants';
 
 interface ValidationResult {
@@ -87,11 +89,15 @@ export async function validateEDFMontage(
     // Get number of channels (bytes 252-256)
     const nChannels = parseInt(buffer.toString('ascii', 252, 256).trim());
 
-    // Support both 19-channel and 21-channel 10-20 montages
-    if (isNaN(nChannels) || (nChannels !== EXPECTED_CHANNELS_19 && nChannels !== EXPECTED_CHANNELS_21)) {
+    // Validate channel count - support 10-20 (19, 21 channels) and 10-10 (24+ channels)
+    // We accept any count >= 19 as long as it contains the required 10-20 base channels
+    const validChannelCounts = [EXPECTED_CHANNELS_19, EXPECTED_CHANNELS_21, EXPECTED_CHANNELS_24];
+    const isValidCount = !isNaN(nChannels) && nChannels >= EXPECTED_CHANNELS_19;
+
+    if (!isValidCount) {
       return {
         valid: false,
-        error: `Expected ${EXPECTED_CHANNELS_19} or ${EXPECTED_CHANNELS_21} channels, found ${nChannels}. This tool requires 10-20 montage.`,
+        error: `Expected at least ${EXPECTED_CHANNELS_19} channels, found ${nChannels}. This tool requires 10-20 or 10-10 montage.`,
       };
     }
 
@@ -139,36 +145,37 @@ export async function validateEDFMontage(
       hasA2A1Reference,
     });
 
-    // Determine expected montage based on channel count
-    // Use 19-channel montage as base, since LE-referenced files don't have separate A1/A2 channels
-    const expectedMontage = MONTAGE_10_20_19CH;
+    // Base required channels (10-20 montage without ear references)
+    // All montages must contain at least these 19 channels
+    const requiredBaseChannels = MONTAGE_10_20_19CH;
 
-    // Check if all expected channels are present
-    const missingChannels = expectedMontage.filter(
+    // Check if all required base channels are present
+    const missingChannels = requiredBaseChannels.filter(
       (ch) => !channelLabels.includes(ch)
     );
 
     if (missingChannels.length > 0) {
       return {
         valid: false,
-        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 montage. Found: ${channelLabels.join(', ')}`,
+        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 or 10-10 montage with base channels. Found: ${channelLabels.join(', ')}`,
       };
     }
 
-    // Check for extra channels (allow annotation channels and reference channels)
+    // Check for unexpected channels - allow:
+    // 1. All known EEG channels (10-20 and 10-10 systems)
+    // 2. Annotation channels
+    // 3. Reference channels (A1, A2)
     const extraChannels = channelLabels.filter(
       (ch) =>
-        !expectedMontage.includes(ch) &&
+        !ALL_EEG_CHANNELS.includes(ch) &&
         !ch.toLowerCase().includes('annotation') &&
         ch !== 'A1' &&
         ch !== 'A2'
     );
 
+    // Only warn about unknown channels, don't reject
     if (extraChannels.length > 0) {
-      return {
-        valid: false,
-        error: `Unexpected channels found: ${extraChannels.join(', ')}. Only 10-20 montage is supported.`,
-      };
+      console.log('[EDF Validator] Unknown channels (will be ignored):', extraChannels);
     }
 
     // Skip to samples per record (after several other fields)
