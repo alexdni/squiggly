@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -55,6 +55,221 @@ interface UnifiedSignalData {
   fileType: 'edf' | 'csv';
 }
 
+// Individual channel plot component
+interface ChannelPlotProps {
+  channelName: string;
+  data: number[];
+  labels: string[];
+  color: string;
+  minValue: number;
+  maxValue: number;
+}
+
+function ChannelPlot({ channelName, data, labels, color, minValue, maxValue }: ChannelPlotProps) {
+  const chartData = useMemo(() => ({
+    labels,
+    datasets: [
+      {
+        label: channelName,
+        data: data,
+        borderColor: color,
+        backgroundColor: 'transparent',
+        borderWidth: 1.2,
+        pointRadius: 0,
+        tension: 0,
+      },
+    ],
+  }), [channelName, data, labels, color]);
+
+  const options: ChartOptions<'line'> = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        display: false,
+      },
+      title: {
+        display: false,
+      },
+      tooltip: {
+        enabled: true,
+        mode: 'index',
+        intersect: false,
+        callbacks: {
+          label: (context) => {
+            const value = context.parsed.y ?? 0;
+            return `${value.toFixed(2)} μV`;
+          },
+        },
+      },
+      zoom: {
+        pan: {
+          enabled: true,
+          mode: 'x',
+        },
+        zoom: {
+          wheel: {
+            enabled: true,
+            speed: 0.05,
+          },
+          pinch: {
+            enabled: true,
+          },
+          mode: 'x',
+        },
+      },
+    },
+    scales: {
+      x: {
+        display: false, // Hide x-axis for individual channels (shown only on last)
+      },
+      y: {
+        type: 'linear' as const,
+        display: true,
+        min: minValue,
+        max: maxValue,
+        position: 'right' as const,
+        ticks: {
+          color: '#6B7280',
+          font: {
+            size: 9,
+          },
+          maxTicksLimit: 3,
+          callback: function(value: any) {
+            return Math.round(value);
+          },
+        },
+        grid: {
+          display: true,
+          color: 'rgba(0, 0, 0, 0.05)',
+        },
+      },
+    },
+  }), [minValue, maxValue]);
+
+  return (
+    <div style={{ height: '100px' }}>
+      <Line data={chartData} options={options} />
+    </div>
+  );
+}
+
+// Channel plot with x-axis (for the last channel)
+function ChannelPlotWithXAxis({ channelName, data, labels, color, minValue, maxValue }: ChannelPlotProps) {
+  const chartData = useMemo(() => ({
+    labels,
+    datasets: [
+      {
+        label: channelName,
+        data: data,
+        borderColor: color,
+        backgroundColor: 'transparent',
+        borderWidth: 1.2,
+        pointRadius: 0,
+        tension: 0,
+      },
+    ],
+  }), [channelName, data, labels, color]);
+
+  const options: ChartOptions<'line'> = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        display: false,
+      },
+      title: {
+        display: false,
+      },
+      tooltip: {
+        enabled: true,
+        mode: 'index',
+        intersect: false,
+        callbacks: {
+          label: (context) => {
+            const value = context.parsed.y ?? 0;
+            return `${value.toFixed(2)} μV`;
+          },
+        },
+      },
+      zoom: {
+        pan: {
+          enabled: true,
+          mode: 'x',
+        },
+        zoom: {
+          wheel: {
+            enabled: true,
+            speed: 0.05,
+          },
+          pinch: {
+            enabled: true,
+          },
+          mode: 'x',
+        },
+      },
+    },
+    scales: {
+      x: {
+        display: true,
+        title: {
+          display: true,
+          text: 'Time (s)',
+          color: '#374151',
+          font: {
+            size: 12,
+          },
+        },
+        ticks: {
+          maxTicksLimit: 10,
+          color: '#6B7280',
+        },
+        grid: {
+          display: true,
+          color: 'rgba(0, 0, 0, 0.1)',
+        },
+      },
+      y: {
+        type: 'linear' as const,
+        display: true,
+        min: minValue,
+        max: maxValue,
+        position: 'right' as const,
+        ticks: {
+          color: '#6B7280',
+          font: {
+            size: 9,
+          },
+          maxTicksLimit: 3,
+          callback: function(value: any) {
+            return Math.round(value);
+          },
+        },
+        grid: {
+          display: true,
+          color: 'rgba(0, 0, 0, 0.05)',
+        },
+      },
+    },
+  }), [minValue, maxValue]);
+
+  return (
+    <div style={{ height: '120px' }}>
+      <Line data={chartData} options={options} />
+    </div>
+  );
+}
+
 export default function RawEEGViewer({
   recordingId,
   filePath,
@@ -64,6 +279,8 @@ export default function RawEEGViewer({
   const [error, setError] = useState<string | null>(null);
   const [timeWindow, setTimeWindow] = useState({ start: 0, duration: 10 }); // Show 10 seconds by default
   const [selectedChannels, setSelectedChannels] = useState<number[]>([]);
+  const [autoscale, setAutoscale] = useState(false);
+  const [displayGraph, setDisplayGraph] = useState(true);
 
   useEffect(() => {
     loadFile();
@@ -172,7 +389,7 @@ export default function RawEEGViewer({
 
     return (
       <div className="mb-4 space-y-2">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <label className="text-sm font-semibold text-gray-900">Time Window:</label>
           <input
             type="number"
@@ -207,7 +424,7 @@ export default function RawEEGViewer({
           <span className="text-sm text-gray-900 font-medium">Duration (s)</span>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
           <button
             onClick={() =>
               setTimeWindow((prev) => ({
@@ -235,6 +452,37 @@ export default function RawEEGViewer({
           >
             Next →
           </button>
+
+          <div className="ml-4 flex items-center gap-2">
+            <label className="text-sm font-semibold text-gray-900">Scaling:</label>
+            <button
+              onClick={() => setAutoscale(false)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                !autoscale
+                  ? 'bg-neuro-primary text-white'
+                  : 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+              }`}
+            >
+              100 μV
+            </button>
+            <button
+              onClick={() => setAutoscale(true)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                autoscale
+                  ? 'bg-neuro-primary text-white'
+                  : 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+              }`}
+            >
+              Autoscale
+            </button>
+          </div>
+
+          <button
+            onClick={() => setDisplayGraph(!displayGraph)}
+            className="ml-4 px-3 py-1 bg-neuro-primary text-white rounded text-sm"
+          >
+            {displayGraph ? 'Hide Graph' : 'Show Graph'}
+          </button>
         </div>
       </div>
     );
@@ -252,8 +500,19 @@ export default function RawEEGViewer({
       .trim();
   };
 
+  const colors = [
+    '#3B82F6', // blue
+    '#10B981', // green
+    '#F59E0B', // orange
+    '#EF4444', // red
+    '#8B5CF6', // purple
+    '#EC4899', // pink
+    '#14B8A6', // teal
+    '#F97316', // orange-red
+  ];
+
   const renderChart = () => {
-    if (!signalData || selectedChannels.length === 0) return null;
+    if (!signalData || selectedChannels.length === 0 || !displayGraph) return null;
 
     // Extract time window (use appropriate function based on file type)
     const extractTimeWindow = signalData.fileType === 'csv' ? extractCSVTimeWindow : extractEDFTimeWindow;
@@ -266,212 +525,89 @@ export default function RawEEGViewer({
       timeWindow.duration
     );
 
-    // Downsample for visualization (max 1000 points per channel)
-    const downsampled = downsampleSignals(windowSignals, 1000);
+    // Downsample for visualization (max 2000 points per channel for smoother display)
+    const downsampled = downsampleSignals(windowSignals, 2000);
 
-    // Prepare chart data with stacked montage display
-    const selectedData = selectedChannels.map((channelIndex) => downsampled[channelIndex]);
-
-    // Auto-detect data range from actual values
-    let globalMin = Infinity;
-    let globalMax = -Infinity;
-    selectedData.forEach(channelData => {
-      channelData.forEach(value => {
-        if (isFinite(value)) {
-          globalMin = Math.min(globalMin, value);
-          globalMax = Math.max(globalMax, value);
-        }
-      });
-    });
-
-    // Calculate amplitude range per channel
-    const dataRange = globalMax - globalMin;
-    const amplitudePerChannel = dataRange > 0 ? dataRange / selectedChannels.length : 100;
-
-    console.log(`Data range: ${globalMin.toFixed(2)} to ${globalMax.toFixed(2)}, amplitude per channel: ${amplitudePerChannel.toFixed(2)}`);
-
+    // Generate time labels
     const labels = Array.from(
-      { length: selectedData[0].length },
+      { length: downsampled[0]?.length || 0 },
       (_, i) =>
         (
           timeWindow.start +
-          (i / selectedData[0].length) * timeWindow.duration
+          (i / (downsampled[0]?.length || 1)) * timeWindow.duration
         ).toFixed(2)
     );
 
-    const colors = [
-      '#3B82F6',
-      '#10B981',
-      '#F59E0B',
-      '#EF4444',
-      '#8B5CF6',
-      '#EC4899',
-      '#14B8A6',
-      '#F97316',
-    ];
+    // Calculate Y-axis range
+    let minValue = -100;
+    let maxValue = 100;
 
-    // Stack channels vertically with auto-scaled amplitude range
-    const datasets = selectedChannels.map((channelIndex, i) => {
-      // Calculate baseline (center) for this channel (inverted so first channel is at top)
-      const channelSpacing = amplitudePerChannel * 1.5; // Add some spacing between channels
-      const baseline = (selectedChannels.length - 1 - i) * channelSpacing;
-
-      // Normalize and offset data (no clamping!)
-      const offsetData = selectedData[i].map((value) => {
-        return value + baseline;
+    if (autoscale) {
+      // Calculate range from all selected channels
+      let dataMin = Infinity;
+      let dataMax = -Infinity;
+      selectedChannels.forEach((channelIndex) => {
+        const channelData = downsampled[channelIndex];
+        if (channelData) {
+          channelData.forEach((value) => {
+            if (isFinite(value)) {
+              dataMin = Math.min(dataMin, value);
+              dataMax = Math.max(dataMax, value);
+            }
+          });
+        }
       });
 
-      return {
-        label: cleanChannelLabel(signalData.channelNames[channelIndex]),
-        data: offsetData,
-        borderColor: colors[i % colors.length],
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        pointRadius: 0,
-        tension: 0,
-      };
-    });
-
-    const chartData = {
-      labels,
-      datasets,
-    };
-
-    // Create Y-axis tick labels at each channel baseline
-    const channelSpacing = 200;
-    const yTicks = selectedChannels.map((channelIndex, i) => ({
-      value: (selectedChannels.length - 1 - i) * channelSpacing,
-      label: cleanChannelLabel(signalData.channelNames[channelIndex]),
-    }));
-
-    const options: ChartOptions<'line'> = {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        mode: 'index' as const,
-        intersect: false,
-      },
-      plugins: {
-        legend: {
-          display: false, // Hide legend since we show labels on Y-axis
-        },
-        title: {
-          display: true,
-          text: `EEG Signals (${timeWindow.start}s - ${(
-            timeWindow.start + timeWindow.duration
-          ).toFixed(1)}s)`,
-        },
-        tooltip: {
-          enabled: true,
-          mode: 'index',
-          intersect: false,
-          callbacks: {
-            label: (context) => {
-              const datasetIndex = context.datasetIndex;
-              const channelIndex = selectedChannels[datasetIndex];
-              const channelLabel = cleanChannelLabel(signalData.channelNames[channelIndex]);
-              const channelSpacing = amplitudePerChannel * 1.5;
-              const baseline = (selectedChannels.length - 1 - datasetIndex) * channelSpacing;
-              const actualValue = (context.parsed.y ?? 0) - baseline;
-              // Show value in appropriate units
-              const unit = Math.abs(actualValue) < 1000 ? 'μV' : '';
-              return `${channelLabel}: ${actualValue.toFixed(2)} ${unit}`;
-            },
-          },
-        },
-        zoom: {
-          pan: {
-            enabled: true,
-            mode: 'x',
-          },
-          zoom: {
-            wheel: {
-              enabled: true,
-              speed: 0.05,
-            },
-            pinch: {
-              enabled: true,
-            },
-            mode: 'x',
-          },
-          limits: {
-            x: {
-              min: 'original',
-              max: 'original',
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          display: true,
-          title: {
-            display: true,
-            text: 'Time (s)',
-          },
-          ticks: {
-            maxTicksLimit: 10,
-          },
-        },
-        y: {
-          type: 'linear' as const,
-          display: true,
-          min: -channelSpacing / 2,
-          max: (selectedChannels.length - 0.5) * channelSpacing,
-          position: 'left' as const,
-          ticks: {
-            color: '#000000', // pure black for maximum visibility
-            font: {
-              size: 10,
-              weight: 'bold' as const,
-              family: 'system-ui, -apple-system, sans-serif',
-            },
-            autoSkip: false,
-            maxRotation: 0,
-            minRotation: 0,
-            padding: 5,
-            callback: function(value: any, index: number) {
-              // Show only channel labels at baseline positions
-              const tick = yTicks.find(t => Math.abs(t.value - value) < 0.1);
-              return tick ? tick.label : '';
-            },
-          },
-          grid: {
-            display: true,
-            drawOnChartArea: true,
-            color: (context) => {
-              // Highlight grid lines at channel baselines
-              const value = context.tick.value;
-              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 0.1);
-              return isBaseline ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)';
-            },
-            lineWidth: (context) => {
-              const value = context.tick.value;
-              const isBaseline = yTicks.some(t => Math.abs(t.value - value) < 0.1);
-              return isBaseline ? 2 : 1;
-            },
-          },
-          title: {
-            display: true,
-            text: 'Channels',
-            color: '#000000',
-            font: {
-              size: 14,
-              weight: 'bold' as const,
-            },
-            padding: 10,
-          },
-        },
-      },
-    };
+      // Add 10% padding
+      const range = dataMax - dataMin;
+      const padding = range * 0.1;
+      minValue = dataMin - padding;
+      maxValue = dataMax + padding;
+    }
 
     return (
       <div>
-        <div className="mb-2 text-sm text-gray-900 font-medium">
-          💡 Tip: Use mouse wheel to zoom, click and drag to pan horizontally
+        <div className="mb-2 text-sm text-gray-500">
+          Time: {timeWindow.start.toFixed(1)}s - {(timeWindow.start + timeWindow.duration).toFixed(1)}s
         </div>
-        <div style={{ height: '750px' }}>
-          <Line data={chartData} options={options} />
+        <div className="flex flex-col">
+          {selectedChannels.map((channelIndex, i) => {
+            const channelData = downsampled[channelIndex];
+            const channelName = cleanChannelLabel(signalData.channelNames[channelIndex]);
+            const color = colors[i % colors.length];
+            const isLast = i === selectedChannels.length - 1;
+
+            return (
+              <div key={channelIndex} className="flex w-full border-b border-gray-100 last:border-b-0">
+                {/* Channel label */}
+                <div className="w-16 flex items-center justify-end pr-2 text-sm font-medium text-gray-700">
+                  {channelName}
+                </div>
+                {/* Chart */}
+                <div className="flex-1">
+                  {isLast ? (
+                    <ChannelPlotWithXAxis
+                      channelName={channelName}
+                      data={channelData}
+                      labels={labels}
+                      color={color}
+                      minValue={minValue}
+                      maxValue={maxValue}
+                    />
+                  ) : (
+                    <ChannelPlot
+                      channelName={channelName}
+                      data={channelData}
+                      labels={labels}
+                      color={color}
+                      minValue={minValue}
+                      maxValue={maxValue}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
