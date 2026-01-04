@@ -57,3 +57,4 @@ pip-delete-this-directory.txt
 /uploads/
 .claude/settings.local.json
 .claude/settings.local.json
+.env.example

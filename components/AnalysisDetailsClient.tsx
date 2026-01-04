@@ -55,6 +55,21 @@ interface AnalysisDetailsClientProps {
   user: User;
 }
 
+interface AIInterpretationContent {
+  summary: string;
+  amplitude_patterns: string;
+  frequency_ratios: string;
+  asymmetry_analysis: string;
+  complexity_connectivity: string;
+  observations: string;
+}
+
+interface AIInterpretation {
+  generated_at: string;
+  model: string;
+  content: AIInterpretationContent;
+}
+
 export default function AnalysisDetailsClient({
   analysis: initialAnalysis,
   user,
@@ -64,6 +79,8 @@ export default function AnalysisDetailsClient({
   const [analysis, setAnalysis] = useState(initialAnalysis);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pollingElapsed, setPollingElapsed] = useState(0);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Get timeout from env or default to 3 minutes (180 seconds)
   const ANALYSIS_TIMEOUT_SECONDS = 180;
@@ -191,6 +208,38 @@ export default function AnalysisDetailsClient({
         return 'Pending Analysis';
     }
   };
+
+  const handleGenerateAIInterpretation = async () => {
+    setIsGeneratingAI(true);
+    setAiError(null);
+    try {
+      const response = await fetch(`/api/analyses/${analysis.id}/ai-interpretation`, {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate AI interpretation');
+      }
+
+      // Update local state with the new interpretation
+      setAnalysis({
+        ...analysis,
+        results: {
+          ...analysis.results,
+          ai_interpretation: data.interpretation,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error generating AI interpretation:', error);
+      setAiError(error.message || 'Failed to generate AI interpretation');
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
+  const aiInterpretation: AIInterpretation | null = analysis.results?.ai_interpretation || null;
 
   return (
     <main className="min-h-screen bg-neuro-light">
@@ -857,6 +906,145 @@ export default function AnalysisDetailsClient({
                 </div>
               </div>
             )}
+
+            {/* AI-Powered Interpretation */}
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 mb-6 border border-purple-200">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-purple-100 p-2 rounded-lg">
+                    <svg className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-2xl font-bold text-neuro-dark">
+                    AI-Powered Interpretation
+                  </h2>
+                </div>
+                {!aiInterpretation && !isGeneratingAI && (
+                  <button
+                    onClick={handleGenerateAIInterpretation}
+                    disabled={isGeneratingAI}
+                    className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Generate AI Analysis
+                  </button>
+                )}
+                {aiInterpretation && !isGeneratingAI && (
+                  <button
+                    onClick={handleGenerateAIInterpretation}
+                    disabled={isGeneratingAI}
+                    className="bg-white text-purple-600 border-2 border-purple-600 px-4 py-2 rounded-lg hover:bg-purple-50 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Regenerate
+                  </button>
+                )}
+              </div>
+
+              {/* Loading State */}
+              {isGeneratingAI && (
+                <div className="bg-white rounded-lg p-6 border border-purple-200">
+                  <div className="flex items-center justify-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mr-4"></div>
+                    <div>
+                      <p className="text-lg font-medium text-gray-900">Generating AI Interpretation...</p>
+                      <p className="text-sm text-gray-600">This may take up to 60 seconds. Please wait.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Error State */}
+              {aiError && !isGeneratingAI && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center">
+                    <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-red-800">{aiError}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Interpretation Content */}
+              {aiInterpretation && !isGeneratingAI && (
+                <div className="space-y-4">
+                  {/* Disclaimer Banner */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                      <svg className="h-5 w-5 text-amber-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <p className="text-sm text-amber-800">
+                        <strong>Educational Use Only:</strong> This AI-generated interpretation is for educational purposes only and does not constitute medical diagnosis or advice. Consult a qualified healthcare professional for clinical interpretation of EEG findings.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Generated timestamp */}
+                  <div className="text-sm text-gray-500">
+                    Generated on {new Date(aiInterpretation.generated_at).toLocaleString()} using {aiInterpretation.model}
+                  </div>
+
+                  {/* Interpretation Sections */}
+                  <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-200">
+                    {aiInterpretation.content.summary && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Summary</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.summary}</p>
+                      </div>
+                    )}
+                    {aiInterpretation.content.amplitude_patterns && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Amplitude Patterns</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.amplitude_patterns}</p>
+                      </div>
+                    )}
+                    {aiInterpretation.content.frequency_ratios && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Frequency Ratios</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.frequency_ratios}</p>
+                      </div>
+                    )}
+                    {aiInterpretation.content.asymmetry_analysis && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Asymmetry Analysis</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.asymmetry_analysis}</p>
+                      </div>
+                    )}
+                    {aiInterpretation.content.complexity_connectivity && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Complexity & Connectivity</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.complexity_connectivity}</p>
+                      </div>
+                    )}
+                    {aiInterpretation.content.observations && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Clinical Observations</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.observations}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!aiInterpretation && !isGeneratingAI && !aiError && (
+                <div className="bg-white rounded-lg p-6 border border-purple-200 text-center">
+                  <p className="text-gray-600 mb-2">
+                    Get an AI-powered expert interpretation of your EEG analysis results.
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    The AI will analyze band power patterns, frequency ratios, asymmetry metrics, and complexity measures to provide educational insights.
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Export Options */}
             <div className="bg-white rounded-lg shadow-md p-6">
