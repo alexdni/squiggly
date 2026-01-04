@@ -486,11 +486,17 @@ export default function AnalysisDetailsClient({
                               <th className="px-2 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-200 sticky left-0 bg-gray-50 z-10">
                                 Ch
                               </th>
-                              {bands.map((band) => (
-                                <th key={band} className="px-2 py-2 text-center text-xs font-medium text-gray-700 uppercase">
-                                  {band.replace('alpha', 'α').replace('beta', 'β').replace('theta', 'θ').replace('delta', 'δ').replace('gamma', 'γ').replace(/([a-z])([0-9])/g, '$1$2')}
-                                </th>
-                              ))}
+                              {bands.map((band) => {
+                                const bandDisplayNames: { [key: string]: string } = {
+                                  delta: 'Delta', theta: 'Theta', alpha1: 'A1', alpha2: 'A2',
+                                  smr: 'SMR', beta2: 'B2', hibeta: 'HiB', lowgamma: 'LowG'
+                                };
+                                return (
+                                  <th key={band} className="px-2 py-2 text-center text-xs font-medium text-gray-700 uppercase">
+                                    {bandDisplayNames[band] || band}
+                                  </th>
+                                );
+                              })}
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">

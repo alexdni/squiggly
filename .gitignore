@@ -55,3 +55,4 @@ pip-delete-this-directory.txt
 # Storage
 /tmp/
 /uploads/
+.claude/settings.local.json

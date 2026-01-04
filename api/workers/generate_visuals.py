@@ -839,11 +839,15 @@ def generate_coherence_grid(
             ax.set_xticklabels([ch_names[i] for i in tick_indices], fontsize=6, rotation=45, ha='right')
             ax.set_yticklabels([ch_names[i] for i in tick_indices], fontsize=6)
 
-            # Add title for top row (band names)
+            # Add title for top row (band names) - use English names
             if cond_idx == 0:
-                band_display = band_name.replace('alpha', 'α').replace('beta', 'β').replace('theta', 'θ').replace('delta', 'δ').replace('gamma', 'γ')
+                band_display_names = {
+                    'delta': 'Delta', 'theta': 'Theta', 'alpha1': 'A1', 'alpha2': 'A2',
+                    'smr': 'SMR', 'beta2': 'B2', 'hibeta': 'HiB', 'lowgamma': 'LowG'
+                }
+                band_display = band_display_names.get(band_name, band_name.capitalize())
                 freq_range = BANDS[band_name]
-                ax.set_title(f'{band_display.upper()}\n{freq_range[0]}-{freq_range[1]} Hz',
+                ax.set_title(f'{band_display}\n{freq_range[0]}-{freq_range[1]} Hz',
                            fontsize=8, fontweight='bold', pad=3)
 
             # Add condition label on left side
@@ -923,21 +927,41 @@ def generate_topomap_grid(
     montage = mne.channels.make_standard_montage('standard_1020')
     info.set_montage(montage)
 
-    # Create figure with subplots
+    # Create figure with subplots: 4 columns x 2 rows per condition
+    # Layout: 2 rows of bands per condition (8 bands total = 4 per row)
+    n_rows_per_condition = 2
+    n_cols = 4
+    total_rows = n_conditions * n_rows_per_condition
+
     fig, axes = plt.subplots(
-        n_conditions, n_bands,
-        figsize=(n_bands * 3, n_conditions * 2.5),
+        total_rows, n_cols,
+        figsize=(n_cols * 4, total_rows * 3),
         dpi=dpi
     )
 
-    # Ensure axes is 2D even if only one condition
-    if n_conditions == 1:
-        axes = axes.reshape(1, -1)
+    # Ensure axes is 2D
+    axes = np.atleast_2d(axes)
+
+    # English display names for frequency bands
+    band_display_names = {
+        'delta': 'Delta',
+        'theta': 'Theta',
+        'alpha1': 'A1',
+        'alpha2': 'A2',
+        'smr': 'SMR',
+        'beta2': 'B2',
+        'hibeta': 'HiB',
+        'lowgamma': 'LowG',
+    }
 
     # Plot each band and condition
     for cond_idx, condition in enumerate(conditions):
         for band_idx, band_name in enumerate(band_order):
-            ax = axes[cond_idx, band_idx]
+            # Calculate row and column for 4x2 layout per condition
+            row_within_condition = band_idx // n_cols
+            col = band_idx % n_cols
+            row = cond_idx * n_rows_per_condition + row_within_condition
+            ax = axes[row, col]
 
             # Check if data exists for this band/condition
             if band_name not in band_power_data or condition not in band_power_data[band_name]:
@@ -970,17 +994,16 @@ def generate_topomap_grid(
                 names=None,  # No channel labels
             )
 
-            # Add title for top row (band names)
-            if cond_idx == 0:
-                band_display = band_name.replace('alpha', 'α').replace('beta', 'β').replace('theta', 'θ').replace('delta', 'δ').replace('gamma', 'γ')
-                freq_range = BANDS[band_name]
-                ax.set_title(f'{band_display.upper()}\n{freq_range[0]}-{freq_range[1]} Hz',
-                           fontsize=9, fontweight='bold', pad=5)
+            # Add title with English band names
+            freq_range = BANDS[band_name]
+            band_display = band_display_names.get(band_name, band_name.capitalize())
+            ax.set_title(f'{band_display}\n{freq_range[0]}-{freq_range[1]} Hz',
+                       fontsize=10, fontweight='bold', pad=5)
 
-            # Add condition label on left side
-            if band_idx == 0:
-                ax.text(-0.3, 0.5, condition, transform=ax.transAxes,
-                       fontsize=12, fontweight='bold', rotation=90,
+            # Add condition label on left side (first column of each condition's rows)
+            if col == 0 and row_within_condition == 0:
+                ax.text(-0.35, 0.5, condition, transform=ax.transAxes,
+                       fontsize=14, fontweight='bold', rotation=90,
                        ha='center', va='center')
 
     # Add overall title
