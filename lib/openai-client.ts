@@ -90,13 +90,14 @@ function parseInterpretationResponse(content: string): AIInterpretationContent {
   };
 
   // Try to parse sections based on headers
+  // Includes patterns for both standard EEG interpretation and EO-EC comparison
   const sectionPatterns: { key: keyof AIInterpretationContent; patterns: RegExp[] }[] = [
     { key: 'summary', patterns: [/##?\s*Summary[:\s]*/i, /##?\s*Overview[:\s]*/i] },
-    { key: 'amplitude_patterns', patterns: [/##?\s*Amplitude\s*Patterns?[:\s]*/i, /##?\s*Band\s*Power[:\s]*/i] },
-    { key: 'frequency_ratios', patterns: [/##?\s*Frequency\s*Ratios?[:\s]*/i, /##?\s*Ratios?[:\s]*/i] },
-    { key: 'peak_alpha_frequency', patterns: [/##?\s*Peak\s*Alpha[:\s]*/i, /##?\s*Individual\s*Alpha[:\s]*/i, /##?\s*IAF[:\s]*/i, /##?\s*Alpha\s*Peak[:\s]*/i] },
+    { key: 'amplitude_patterns', patterns: [/##?\s*Amplitude\s*Patterns?[:\s]*/i, /##?\s*Band\s*Power[:\s]*/i, /##?\s*Alpha\s*Reactivity[:\s]*/i] },
+    { key: 'frequency_ratios', patterns: [/##?\s*Frequency\s*Ratios?[:\s]*/i, /##?\s*Ratios?[:\s]*/i, /##?\s*Arousal\s*Shift[:\s]*/i, /##?\s*Theta.?Beta\s*Dynamics[:\s]*/i] },
+    { key: 'peak_alpha_frequency', patterns: [/##?\s*Peak\s*Alpha[:\s]*/i, /##?\s*Individual\s*Alpha[:\s]*/i, /##?\s*IAF[:\s]*/i, /##?\s*Alpha\s*Peak[:\s]*/i, /##?\s*Alpha\s*Topography[:\s]*/i] },
     { key: 'asymmetry_analysis', patterns: [/##?\s*Asymmetry[:\s]*/i, /##?\s*Hemispheric[:\s]*/i] },
-    { key: 'complexity_connectivity', patterns: [/##?\s*Complexity[:\s]*/i, /##?\s*Connectivity[:\s]*/i, /##?\s*LZC[:\s]*/i] },
+    { key: 'complexity_connectivity', patterns: [/##?\s*Complexity[:\s]*/i, /##?\s*Connectivity[:\s]*/i, /##?\s*LZC[:\s]*/i, /##?\s*Complexity\s*Shift[:\s]*/i] },
     { key: 'observations', patterns: [/##?\s*Observations?[:\s]*/i, /##?\s*Clinical\s*Observations?[:\s]*/i, /##?\s*Additional[:\s]*/i] },
   ];
 
