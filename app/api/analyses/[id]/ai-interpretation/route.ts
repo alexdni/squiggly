@@ -169,14 +169,46 @@ export async function POST(request: Request, { params }: RouteParams) {
       payload.asymmetry = analysis.results.asymmetry;
     }
 
-    // Add LZC values if available
+    // Add LZC values if available - extract normalized_lzc from nested structure
+    // Structure: lzc[condition][channel] = { lzc: number, normalized_lzc: number }
     if (analysis.results.lzc) {
-      payload.lzc_values = analysis.results.lzc;
+      const lzcPayload: Record<string, Record<string, number>> = {};
+      for (const condition of ['eo', 'ec']) {
+        const conditionData = analysis.results.lzc[condition];
+        if (conditionData && typeof conditionData === 'object') {
+          lzcPayload[condition] = {};
+          for (const [ch, data] of Object.entries(conditionData)) {
+            const normalizedLzc = (data as any)?.normalized_lzc;
+            if (typeof normalizedLzc === 'number' && normalizedLzc > 0) {
+              lzcPayload[condition][ch] = normalizedLzc;
+            }
+          }
+        }
+      }
+      if (Object.keys(lzcPayload).length > 0) {
+        payload.lzc_values = lzcPayload;
+      }
     }
 
-    // Add alpha peak frequency if available
+    // Add alpha peak frequency if available - extract peak_frequency from nested structure
+    // Structure: alpha_peak[condition][channel] = { peak_frequency: number, peak_power: number }
     if (analysis.results.alpha_peak) {
-      payload.alpha_peak = analysis.results.alpha_peak;
+      const alphaPeakPayload: { eo?: Record<string, number>; ec?: Record<string, number> } = {};
+      for (const condition of ['eo', 'ec'] as const) {
+        const conditionData = analysis.results.alpha_peak[condition];
+        if (conditionData && typeof conditionData === 'object') {
+          alphaPeakPayload[condition] = {};
+          for (const [ch, data] of Object.entries(conditionData)) {
+            const peakFreq = (data as any)?.peak_frequency;
+            if (typeof peakFreq === 'number' && peakFreq > 0) {
+              alphaPeakPayload[condition]![ch] = peakFreq;
+            }
+          }
+        }
+      }
+      if (Object.keys(alphaPeakPayload).length > 0) {
+        payload.alpha_peak = alphaPeakPayload;
+      }
     }
 
     // Add client metadata if available
