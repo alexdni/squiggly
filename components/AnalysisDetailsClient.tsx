@@ -59,6 +59,7 @@ interface AIInterpretationContent {
   summary: string;
   amplitude_patterns: string;
   frequency_ratios: string;
+  peak_alpha_frequency: string;
   asymmetry_analysis: string;
   complexity_connectivity: string;
   observations: string;
@@ -1009,6 +1010,12 @@ export default function AnalysisDetailsClient({
                       <div className="p-4">
                         <h3 className="text-lg font-semibold text-gray-900 mb-2">Frequency Ratios</h3>
                         <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.frequency_ratios}</p>
+                      </div>
+                    )}
+                    {aiInterpretation.content.peak_alpha_frequency && (
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Peak Alpha Frequency</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.peak_alpha_frequency}</p>
                       </div>
                     )}
                     {aiInterpretation.content.asymmetry_analysis && (

@@ -17,6 +17,7 @@ export interface AIInterpretationContent {
   summary: string;
   amplitude_patterns: string;
   frequency_ratios: string;
+  peak_alpha_frequency: string;
   asymmetry_analysis: string;
   complexity_connectivity: string;
   observations: string;
@@ -82,6 +83,7 @@ function parseInterpretationResponse(content: string): AIInterpretationContent {
     summary: '',
     amplitude_patterns: '',
     frequency_ratios: '',
+    peak_alpha_frequency: '',
     asymmetry_analysis: '',
     complexity_connectivity: '',
     observations: '',
@@ -92,6 +94,7 @@ function parseInterpretationResponse(content: string): AIInterpretationContent {
     { key: 'summary', patterns: [/##?\s*Summary[:\s]*/i, /##?\s*Overview[:\s]*/i] },
     { key: 'amplitude_patterns', patterns: [/##?\s*Amplitude\s*Patterns?[:\s]*/i, /##?\s*Band\s*Power[:\s]*/i] },
     { key: 'frequency_ratios', patterns: [/##?\s*Frequency\s*Ratios?[:\s]*/i, /##?\s*Ratios?[:\s]*/i] },
+    { key: 'peak_alpha_frequency', patterns: [/##?\s*Peak\s*Alpha[:\s]*/i, /##?\s*Individual\s*Alpha[:\s]*/i, /##?\s*IAF[:\s]*/i, /##?\s*Alpha\s*Peak[:\s]*/i] },
     { key: 'asymmetry_analysis', patterns: [/##?\s*Asymmetry[:\s]*/i, /##?\s*Hemispheric[:\s]*/i] },
     { key: 'complexity_connectivity', patterns: [/##?\s*Complexity[:\s]*/i, /##?\s*Connectivity[:\s]*/i, /##?\s*LZC[:\s]*/i] },
     { key: 'observations', patterns: [/##?\s*Observations?[:\s]*/i, /##?\s*Clinical\s*Observations?[:\s]*/i, /##?\s*Additional[:\s]*/i] },

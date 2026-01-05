@@ -174,6 +174,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       payload.lzc_values = analysis.results.lzc;
     }
 
+    // Add alpha peak frequency if available
+    if (analysis.results.alpha_peak) {
+      payload.alpha_peak = analysis.results.alpha_peak;
+    }
+
     // Add client metadata if available
     if (clientMetadata) {
       payload.client_metadata = {
