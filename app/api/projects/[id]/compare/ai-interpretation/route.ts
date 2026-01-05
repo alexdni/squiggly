@@ -253,20 +253,58 @@ export async function POST(request: Request, { params }: RouteParams) {
     payload.eo_band_power = eoBandPowerFlat;
     payload.ec_band_power = ecBandPowerFlat;
 
-    // Add alpha peak data if available
+    // Add alpha peak data if available - extract peak_frequency from nested structure
+    // Structure: alpha_peak.eo[channel] = { peak_frequency: number, peak_power: number }
     if (eoAnalysis.results?.alpha_peak?.eo) {
-      payload.eo_alpha_peak = eoAnalysis.results.alpha_peak.eo;
+      const eoPeakData: Record<string, number> = {};
+      for (const [ch, data] of Object.entries(eoAnalysis.results.alpha_peak.eo)) {
+        const peakFreq = (data as any)?.peak_frequency;
+        if (typeof peakFreq === 'number' && peakFreq > 0) {
+          eoPeakData[ch] = peakFreq;
+        }
+      }
+      if (Object.keys(eoPeakData).length > 0) {
+        payload.eo_alpha_peak = eoPeakData;
+      }
     }
     if (ecAnalysis.results?.alpha_peak?.ec) {
-      payload.ec_alpha_peak = ecAnalysis.results.alpha_peak.ec;
+      const ecPeakData: Record<string, number> = {};
+      for (const [ch, data] of Object.entries(ecAnalysis.results.alpha_peak.ec)) {
+        const peakFreq = (data as any)?.peak_frequency;
+        if (typeof peakFreq === 'number' && peakFreq > 0) {
+          ecPeakData[ch] = peakFreq;
+        }
+      }
+      if (Object.keys(ecPeakData).length > 0) {
+        payload.ec_alpha_peak = ecPeakData;
+      }
     }
 
-    // Add LZC data if available
+    // Add LZC data if available - extract normalized_lzc from nested structure
+    // Structure: lzc.eo[channel] = { lzc: number, normalized_lzc: number }
     if (eoAnalysis.results?.lzc?.eo) {
-      payload.eo_lzc = eoAnalysis.results.lzc.eo;
+      const eoLzcData: Record<string, number> = {};
+      for (const [ch, data] of Object.entries(eoAnalysis.results.lzc.eo)) {
+        const normalizedLzc = (data as any)?.normalized_lzc;
+        if (typeof normalizedLzc === 'number' && normalizedLzc > 0) {
+          eoLzcData[ch] = normalizedLzc;
+        }
+      }
+      if (Object.keys(eoLzcData).length > 0) {
+        payload.eo_lzc = eoLzcData;
+      }
     }
     if (ecAnalysis.results?.lzc?.ec) {
-      payload.ec_lzc = ecAnalysis.results.lzc.ec;
+      const ecLzcData: Record<string, number> = {};
+      for (const [ch, data] of Object.entries(ecAnalysis.results.lzc.ec)) {
+        const normalizedLzc = (data as any)?.normalized_lzc;
+        if (typeof normalizedLzc === 'number' && normalizedLzc > 0) {
+          ecLzcData[ch] = normalizedLzc;
+        }
+      }
+      if (Object.keys(ecLzcData).length > 0) {
+        payload.ec_lzc = ecLzcData;
+      }
     }
 
     // Add client metadata if available
