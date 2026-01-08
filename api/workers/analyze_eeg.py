@@ -145,10 +145,11 @@ def upload_visual_to_supabase(
 
         logger.info(f"Uploading visual: {object_path}")
 
+        # Use upsert to overwrite existing files (important for re-analysis)
         supabase.storage.from_(bucket_name).upload(
             object_path,
             png_bytes,
-            file_options={"content-type": "image/png"}
+            file_options={"content-type": "image/png", "upsert": "true"}
         )
 
         # Generate signed URL (valid for 1 year)
@@ -507,7 +508,7 @@ def analyze_eeg_file(
             logger.info(f"Visualization generation complete - {len(visuals)} images created")
 
         except Exception as e:
-            logger.warning(f"Failed to generate some visualizations: {e}")
+            logger.warning(f"Failed to generate some visualizations: {e}", exc_info=True)
             # Continue anyway - visuals are optional
 
         # Step 4: Compile Results
