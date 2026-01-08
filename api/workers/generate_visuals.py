@@ -957,12 +957,14 @@ def generate_connectivity_graph(
                 # Line width proportional to connection strength
                 linewidths.append(1 + 4 * wpli)
 
-    # Create colormap for connections (blue to red via yellow)
-    cmap = plt.cm.RdYlBu_r
+    # Create colormap for connections - use hot colormap for better contrast
+    cmap = plt.cm.hot  # black -> red -> yellow -> white
 
     if lines:
-        # Normalize colors
-        norm = Normalize(vmin=threshold, vmax=1.0)
+        # Use data-adaptive normalization for better color contrast
+        data_min = min(colors)
+        data_max = max(colors)
+        norm = Normalize(vmin=max(threshold, data_min - 0.02), vmax=min(1.0, data_max + 0.05))
 
         # Create line collection
         lc = LineCollection(lines, cmap=cmap, norm=norm, linewidths=linewidths, alpha=0.7)
@@ -1087,9 +1089,35 @@ def generate_connectivity_grid(
     if n_rows == 1:
         axes = axes.reshape(1, -1)
 
-    # Colormap for connections
-    cmap = plt.cm.RdYlBu_r
-    norm = Normalize(vmin=threshold, vmax=1.0)
+    # Colormap for connections - use a more contrasting colormap
+    cmap = plt.cm.hot  # hot colormap: black -> red -> yellow -> white
+
+    # First pass: collect all wPLI values to determine data-adaptive normalization
+    all_wpli_values = []
+    for cond_idx, (condition, connectivity_data) in enumerate(conditions_to_plot):
+        if connectivity_data is None or 'connectivity_matrices' not in connectivity_data:
+            continue
+        for band_name in band_order:
+            if band_name not in connectivity_data['connectivity_matrices']:
+                continue
+            matrix_data = connectivity_data['connectivity_matrices'][band_name]
+            conn_matrix = np.array(matrix_data['matrix'])
+            # Get upper triangle values above threshold
+            n = conn_matrix.shape[0]
+            for i in range(n):
+                for j in range(i + 1, n):
+                    if conn_matrix[i, j] >= threshold:
+                        all_wpli_values.append(conn_matrix[i, j])
+
+    # Use data-adaptive normalization for better color contrast
+    if all_wpli_values:
+        data_min = min(all_wpli_values)
+        data_max = max(all_wpli_values)
+        # Add a small margin to make extremes visible
+        norm = Normalize(vmin=max(threshold, data_min - 0.02), vmax=min(1.0, data_max + 0.05))
+        logger.info(f"Connectivity grid color range: {data_min:.3f} - {data_max:.3f}")
+    else:
+        norm = Normalize(vmin=threshold, vmax=1.0)
 
     # Plot each band and condition
     for cond_idx, (condition, connectivity_data) in enumerate(conditions_to_plot):
