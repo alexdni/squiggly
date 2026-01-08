@@ -867,7 +867,9 @@ def generate_connectivity_grid(
     """
     Generate a grid of brain connectivity graphs for all bands and conditions.
 
-    Layout: 2 rows (EO and EC), 4 columns (delta, theta, alpha, beta)
+    Layout adapts based on available data:
+    - If both EO and EC: 2 rows (EO and EC), 4 columns (delta, theta, alpha, beta)
+    - If only one condition: 1 row, 4 columns
 
     Args:
         connectivity_eo: Connectivity dict for EO condition from compute_connectivity()
@@ -888,21 +890,36 @@ def generate_connectivity_grid(
     band_order = ['delta', 'theta', 'alpha', 'beta']
     n_bands = len(band_order)
 
-    # Create figure with subplots
+    # Determine which conditions have data
+    conditions_to_plot = []
+    if connectivity_eo is not None and 'connectivity_matrices' in connectivity_eo:
+        conditions_to_plot.append(('EO', connectivity_eo))
+    if connectivity_ec is not None and 'connectivity_matrices' in connectivity_ec:
+        conditions_to_plot.append(('EC', connectivity_ec))
+
+    if not conditions_to_plot:
+        logger.warning("No connectivity data available for either condition")
+        return b''
+
+    n_rows = len(conditions_to_plot)
+
+    # Create figure with subplots - adjust rows based on available conditions
     fig, axes = plt.subplots(
-        2, n_bands,
-        figsize=(n_bands * 4, 2 * 4),
+        n_rows, n_bands,
+        figsize=(n_bands * 4, n_rows * 4),
         dpi=dpi
     )
+
+    # Handle single row case (axes is 1D array)
+    if n_rows == 1:
+        axes = axes.reshape(1, -1)
 
     # Colormap for connections
     cmap = plt.cm.RdYlBu_r
     norm = Normalize(vmin=threshold, vmax=1.0)
 
     # Plot each band and condition
-    for cond_idx, (connectivity_data, condition) in enumerate(
-        [(connectivity_eo, 'EO'), (connectivity_ec, 'EC')]
-    ):
+    for cond_idx, (condition, connectivity_data) in enumerate(conditions_to_plot):
         for band_idx, band_name in enumerate(band_order):
             ax = axes[cond_idx, band_idx]
 
@@ -1023,7 +1040,10 @@ def generate_network_metrics_summary(
     dpi: int = 300
 ) -> bytes:
     """
-    Generate a summary visualization of network metrics comparing EO and EC conditions.
+    Generate a summary visualization of network metrics.
+
+    When both EO and EC are available, shows comparison bar charts.
+    When only one condition is available, shows single condition bar charts.
 
     Shows bar charts for global efficiency, clustering, small-worldness, and
     interhemispheric connectivity across frequency bands.
@@ -1037,6 +1057,14 @@ def generate_network_metrics_summary(
         PNG image as bytes
     """
     logger.info("Generating network metrics summary")
+
+    # Determine which conditions have data
+    has_eo = connectivity_eo is not None and 'network_metrics' in connectivity_eo
+    has_ec = connectivity_ec is not None and 'network_metrics' in connectivity_ec
+
+    if not has_eo and not has_ec:
+        logger.warning("No network metrics available for either condition")
+        return b''
 
     # Extract metrics for each band
     bands = ['delta', 'theta', 'alpha', 'beta']
@@ -1052,14 +1080,14 @@ def generate_network_metrics_summary(
     for band in bands:
         for metric in metrics_names:
             # EO
-            if connectivity_eo and 'network_metrics' in connectivity_eo:
+            if has_eo:
                 val = connectivity_eo['network_metrics'].get(band, {}).get(metric, 0)
             else:
                 val = 0
             eo_data[metric].append(val)
 
             # EC
-            if connectivity_ec and 'network_metrics' in connectivity_ec:
+            if has_ec:
                 val = connectivity_ec['network_metrics'].get(band, {}).get(metric, 0)
             else:
                 val = 0
@@ -1070,45 +1098,80 @@ def generate_network_metrics_summary(
     axes = axes.flatten()
 
     x = np.arange(len(bands))
-    width = 0.35
 
-    for idx, (metric, label) in enumerate(zip(metrics_names, metric_labels)):
-        ax = axes[idx]
+    # Determine bar layout based on available conditions
+    if has_eo and has_ec:
+        # Both conditions - side-by-side bars
+        width = 0.35
+        for idx, (metric, label) in enumerate(zip(metrics_names, metric_labels)):
+            ax = axes[idx]
+            eo_vals = eo_data[metric]
+            ec_vals = ec_data[metric]
 
-        eo_vals = eo_data[metric]
-        ec_vals = ec_data[metric]
+            bars1 = ax.bar(x - width/2, eo_vals, width, label='Eyes Open', color='#1f77b4', alpha=0.8)
+            bars2 = ax.bar(x + width/2, ec_vals, width, label='Eyes Closed', color='#ff7f0e', alpha=0.8)
 
-        bars1 = ax.bar(x - width/2, eo_vals, width, label='Eyes Open', color='#1f77b4', alpha=0.8)
-        bars2 = ax.bar(x + width/2, ec_vals, width, label='Eyes Closed', color='#ff7f0e', alpha=0.8)
+            ax.set_xlabel('Frequency Band', fontsize=11)
+            ax.set_ylabel(label, fontsize=11)
+            ax.set_title(label, fontsize=12, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([b.capitalize() for b in bands])
+            ax.legend(loc='upper right')
+            ax.grid(axis='y', alpha=0.3)
 
-        ax.set_xlabel('Frequency Band', fontsize=11)
-        ax.set_ylabel(label, fontsize=11)
-        ax.set_title(label, fontsize=12, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([b.capitalize() for b in bands])
-        ax.legend(loc='upper right')
-        ax.grid(axis='y', alpha=0.3)
+            # Add value labels on bars
+            for bar in bars1:
+                height = bar.get_height()
+                if height > 0.001:
+                    ax.annotate(f'{height:.2f}',
+                              xy=(bar.get_x() + bar.get_width() / 2, height),
+                              xytext=(0, 3),
+                              textcoords="offset points",
+                              ha='center', va='bottom', fontsize=8)
+            for bar in bars2:
+                height = bar.get_height()
+                if height > 0.001:
+                    ax.annotate(f'{height:.2f}',
+                              xy=(bar.get_x() + bar.get_width() / 2, height),
+                              xytext=(0, 3),
+                              textcoords="offset points",
+                              ha='center', va='bottom', fontsize=8)
 
-        # Add value labels on bars
-        for bar in bars1:
-            height = bar.get_height()
-            if height > 0:
-                ax.annotate(f'{height:.2f}',
-                          xy=(bar.get_x() + bar.get_width() / 2, height),
-                          xytext=(0, 3),
-                          textcoords="offset points",
-                          ha='center', va='bottom', fontsize=8)
+        title = 'Network Metrics: EO vs EC Comparison'
+    else:
+        # Single condition - centered bars
+        condition_name = 'Eyes Open' if has_eo else 'Eyes Closed'
+        condition_data = eo_data if has_eo else ec_data
+        color = '#1f77b4' if has_eo else '#ff7f0e'
+        width = 0.6
 
-        for bar in bars2:
-            height = bar.get_height()
-            if height > 0:
-                ax.annotate(f'{height:.2f}',
-                          xy=(bar.get_x() + bar.get_width() / 2, height),
-                          xytext=(0, 3),
-                          textcoords="offset points",
-                          ha='center', va='bottom', fontsize=8)
+        for idx, (metric, label) in enumerate(zip(metrics_names, metric_labels)):
+            ax = axes[idx]
+            vals = condition_data[metric]
 
-    fig.suptitle('Network Metrics: EO vs EC Comparison', fontsize=14, fontweight='bold', y=0.98)
+            bars = ax.bar(x, vals, width, label=condition_name, color=color, alpha=0.8)
+
+            ax.set_xlabel('Frequency Band', fontsize=11)
+            ax.set_ylabel(label, fontsize=11)
+            ax.set_title(label, fontsize=12, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([b.capitalize() for b in bands])
+            ax.legend(loc='upper right')
+            ax.grid(axis='y', alpha=0.3)
+
+            # Add value labels on bars
+            for bar in bars:
+                height = bar.get_height()
+                if height > 0.001:
+                    ax.annotate(f'{height:.2f}',
+                              xy=(bar.get_x() + bar.get_width() / 2, height),
+                              xytext=(0, 3),
+                              textcoords="offset points",
+                              ha='center', va='bottom', fontsize=8)
+
+        title = f'Network Metrics: {condition_name}'
+
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
 
     # Save to bytes buffer
     buf = io.BytesIO()

@@ -319,8 +319,8 @@ export default function RawEEGViewer({
 
         setSignalData(unifiedData);
 
-        // Select first 4 channels by default
-        setSelectedChannels([0, 1, 2, 3].filter((i) => i < filteredData.channelNames.length));
+        // Select all channels by default
+        setSelectedChannels(Array.from({ length: filteredData.channelNames.length }, (_, i) => i));
       } else {
         // Parse EDF file
         const arrayBuffer = await data.arrayBuffer();
@@ -336,8 +336,8 @@ export default function RawEEGViewer({
 
         setSignalData(unifiedData);
 
-        // Select first 4 channels by default
-        setSelectedChannels([0, 1, 2, 3].filter((i) => i < parsedData.header.channelCount));
+        // Select all channels by default
+        setSelectedChannels(Array.from({ length: parsedData.header.channelCount }, (_, i) => i));
       }
     } catch (err: any) {
       console.error('Error loading file:', err);
