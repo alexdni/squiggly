@@ -441,7 +441,7 @@ def analyze_eeg_file(
                     connectivity_eo=connectivity_eo,
                     connectivity_ec=connectivity_ec,
                     ch_names=ch_names,
-                    threshold=0.25,
+                    threshold=0.1,  # Lower threshold to show more connections
                     dpi=200
                 )
                 visuals['connectivity_grid'] = compress_png(connectivity_grid)

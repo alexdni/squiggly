@@ -5,7 +5,8 @@
       "Bash(openspec show:*)",
       "Bash(openspec validate:*)",
       "Bash(npm run build:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(source venv/bin/activate)"
     ],
     "deny": [],
     "ask": []

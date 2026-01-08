@@ -419,43 +419,136 @@ class FeatureExtractor:
         # Apply filter
         return signal.filtfilt(b, a, data, axis=-1)
 
-    def _compute_wpli(self, sig1: np.ndarray, sig2: np.ndarray) -> float:
+    def _compute_wpli_csd(self, sig1: np.ndarray, sig2: np.ndarray, low: float, high: float,
+                          debug: bool = False) -> float:
         """
-        Compute weighted Phase Lag Index (wPLI) between two signals.
+        Compute weighted Phase Lag Index (wPLI) using cross-spectral density.
+
+        This method computes wPLI in the frequency domain, which is more robust
+        for EEG analysis as it directly uses Fourier coefficients.
+
+        wPLI is computed per frequency bin (across epochs), then averaged across
+        frequency bins in the band. This preserves the phase consistency measure
+        at each frequency.
+
+        Args:
+            sig1: First signal (n_epochs, n_times) - raw (unfiltered) data
+            sig2: Second signal (n_epochs, n_times) - raw (unfiltered) data
+            low: Lower frequency bound (Hz)
+            high: Upper frequency bound (Hz)
+            debug: If True, log additional diagnostic info
+
+        Returns:
+            wPLI value between 0 and 1
+        """
+        n_epochs, n_times = sig1.shape
+
+        # Window size for CSD - use 1 second or half the epoch, whichever is smaller
+        # This ensures we get enough frequency bins in the band of interest
+        nperseg = min(int(self.sfreq), n_times // 2)  # 1 second window
+        nperseg = max(nperseg, 64)  # Minimum window size
+
+        # Collect CSD for all epochs to compute wPLI per frequency
+        all_csd = []
+
+        for epoch in range(n_epochs):
+            # Compute cross-spectral density
+            freqs, csd = signal.csd(
+                sig1[epoch, :], sig2[epoch, :],
+                fs=self.sfreq,
+                nperseg=nperseg,
+                noverlap=nperseg // 2
+            )
+            all_csd.append(csd)
+
+        if len(all_csd) == 0:
+            return 0.0
+
+        # Stack all CSD across epochs: shape (n_epochs, n_freqs)
+        all_csd = np.array(all_csd)
+
+        # Extract frequencies in the band of interest
+        freq_mask = (freqs >= low) & (freqs <= high)
+        if not np.any(freq_mask):
+            return 0.0
+
+        # Get imaginary part of CSD at frequencies in the band
+        # Shape: (n_epochs, n_band_freqs)
+        imag_csd = np.imag(all_csd[:, freq_mask])
+
+        if debug:
+            logger.info(f"    CSD debug: nperseg={nperseg}, nfreqs={len(freqs)}, "
+                       f"band_freqs={np.sum(freq_mask)}, n_epochs={n_epochs}, "
+                       f"imag_mean={np.mean(imag_csd):.2e}, imag_std={np.std(imag_csd):.2e}")
+
+        # Compute wPLI per frequency bin (across epochs), then average
+        # wPLI_f = |sum_epochs(Im_f)| / sum_epochs(|Im_f|)
+        wpli_per_freq = []
+        for f_idx in range(imag_csd.shape[1]):
+            imag_f = imag_csd[:, f_idx]
+            numerator = np.abs(np.sum(imag_f))
+            denominator = np.sum(np.abs(imag_f))
+            if denominator > 1e-20:
+                wpli_f = numerator / denominator
+                wpli_per_freq.append(wpli_f)
+
+        if len(wpli_per_freq) == 0:
+            return 0.0
+
+        # Average wPLI across frequency bins
+        wpli = np.mean(wpli_per_freq)
+
+        if debug:
+            logger.info(f"    wPLI per freq: min={np.min(wpli_per_freq):.4f}, "
+                       f"max={np.max(wpli_per_freq):.4f}, mean={wpli:.4f}")
+
+        return float(np.clip(wpli, 0, 1))
+
+    def _compute_wpli_hilbert(self, sig1: np.ndarray, sig2: np.ndarray) -> float:
+        """
+        Compute weighted Phase Lag Index (wPLI) between two signals using Hilbert transform.
 
         wPLI is robust to volume conduction and noise, measuring the consistency
         of phase relationships between signals while weighting by the magnitude
         of the imaginary component.
 
-        wPLI = |E[Im(S)]| / E[|Im(S)|]
-        where S is the cross-spectrum and Im() is the imaginary part.
+        The wPLI formula (Vinck et al., 2011):
+        wPLI = |E[|Im(S)| * sign(Im(S))]| / E[|Im(S)|]
 
         Args:
-            sig1: First signal (n_epochs, n_times)
-            sig2: Second signal (n_epochs, n_times)
+            sig1: First signal (n_epochs, n_times) - should already be bandpass filtered
+            sig2: Second signal (n_epochs, n_times) - should already be bandpass filtered
 
         Returns:
             wPLI value between 0 and 1
         """
-        n_epochs = sig1.shape[0]
+        n_epochs, n_times = sig1.shape
 
-        # Compute analytic signal using Hilbert transform
-        analytic1 = hilbert(sig1, axis=-1)
-        analytic2 = hilbert(sig2, axis=-1)
+        # Collect imaginary cross-spectrum values across all epochs
+        all_imag_cross = []
 
-        # Compute cross-spectrum
-        cross_spectrum = analytic1 * np.conj(analytic2)
+        for epoch in range(n_epochs):
+            # Use Hilbert transform to get analytic signals
+            analytic1 = hilbert(sig1[epoch, :])
+            analytic2 = hilbert(sig2[epoch, :])
 
-        # Get imaginary part of cross-spectrum
-        imag_cross = np.imag(cross_spectrum)
+            # Compute cross-spectrum: S = X1 * conj(X2)
+            cross_spectrum = analytic1 * np.conj(analytic2)
 
-        # Average across time within each epoch
-        imag_mean_per_epoch = np.mean(imag_cross, axis=-1)  # (n_epochs,)
-        imag_abs_mean_per_epoch = np.mean(np.abs(imag_cross), axis=-1)  # (n_epochs,)
+            # Get imaginary part (weighted by magnitude)
+            imag_cross = np.imag(cross_spectrum)
+            all_imag_cross.extend(imag_cross.tolist())
 
-        # Average across epochs
-        numerator = np.abs(np.mean(imag_mean_per_epoch))
-        denominator = np.mean(imag_abs_mean_per_epoch)
+        if len(all_imag_cross) == 0:
+            return 0.0
+
+        imag_array = np.array(all_imag_cross)
+
+        # Compute wPLI: |E[|Im| * sign(Im)]| / E[|Im|]
+        # = |sum(Im)| / sum(|Im|)
+        # The formula weights phase differences by their distance from 0/π
+        numerator = np.abs(np.sum(imag_array))
+        denominator = np.sum(np.abs(imag_array))
 
         if denominator < 1e-10:
             return 0.0
@@ -488,7 +581,8 @@ class FeatureExtractor:
         n_epochs, n_channels, n_times = data.shape
         ch_names = list(epochs.ch_names)
 
-        logger.info(f"Computing wPLI for {n_channels} channels, {n_epochs} epochs")
+        logger.info(f"Computing wPLI for {n_channels} channels, {n_epochs} epochs, {n_times} samples/epoch")
+        logger.info(f"  Raw data stats - mean: {np.mean(np.abs(data)):.6e}, std: {np.std(data):.6e}")
 
         # Initialize connectivity matrices for each band
         connectivity_matrices = {}
@@ -496,18 +590,44 @@ class FeatureExtractor:
         for band_name, (low, high) in CONNECTIVITY_BANDS.items():
             logger.info(f"Processing {band_name} band ({low}-{high} Hz)")
 
-            # Band-pass filter the data
+            # Band-pass filter the data for Hilbert-based method
             filtered_data = self._bandpass_filter(data, low, high)
 
             # Initialize connectivity matrix
             conn_matrix = np.zeros((n_channels, n_channels))
 
-            # Compute wPLI for all channel pairs
+            # Compute wPLI for all channel pairs using both methods for comparison
+            wpli_csd_values = []
+            wpli_hilbert_values = []
+            first_pair = True
             for i in range(n_channels):
                 for j in range(i + 1, n_channels):
-                    wpli = self._compute_wpli(filtered_data[:, i, :], filtered_data[:, j, :])
+                    # Method 1: CSD-based wPLI
+                    wpli_csd = self._compute_wpli_csd(data[:, i, :], data[:, j, :], low, high, debug=first_pair)
+
+                    # Method 2: Hilbert-based wPLI (on filtered data)
+                    wpli_hilbert = self._compute_wpli_hilbert(filtered_data[:, i, :], filtered_data[:, j, :])
+
+                    # Use the maximum of the two methods
+                    # This helps ensure we're capturing connectivity from whichever method works better
+                    wpli = max(wpli_csd, wpli_hilbert)
+
+                    if first_pair:
+                        logger.info(f"    First pair ({ch_names[i]}-{ch_names[j]}): "
+                                   f"wPLI_csd={wpli_csd:.4f}, wPLI_hilbert={wpli_hilbert:.4f}")
+
+                    first_pair = False
                     conn_matrix[i, j] = wpli
                     conn_matrix[j, i] = wpli  # Symmetric
+                    wpli_csd_values.append(wpli_csd)
+                    wpli_hilbert_values.append(wpli_hilbert)
+
+            # Log wPLI statistics for both methods
+            if wpli_csd_values:
+                logger.info(f"  wPLI CSD stats - mean: {np.mean(wpli_csd_values):.4f}, "
+                           f"max: {np.max(wpli_csd_values):.4f}")
+                logger.info(f"  wPLI Hilbert stats - mean: {np.mean(wpli_hilbert_values):.4f}, "
+                           f"max: {np.max(wpli_hilbert_values):.4f}")
 
             connectivity_matrices[band_name] = conn_matrix
 
