@@ -26,7 +26,8 @@ from preprocess import preprocess_eeg
 from extract_features import extract_features
 from generate_visuals import (
     generate_topomap_grid,
-    generate_coherence_grid,
+    generate_connectivity_grid,
+    generate_network_metrics_summary,
     generate_spectrogram_grid,
     generate_lzc_topomap,
     generate_alpha_peak_topomap,
@@ -175,7 +176,7 @@ def upload_results_to_supabase(
     supabase_key: str
 ) -> bool:
     """
-    Upload analysis results to Supabase
+    Upload analysis results to Supabase, preserving any existing AI interpretation
 
     Args:
         analysis_id: Analysis UUID
@@ -193,8 +194,22 @@ def upload_results_to_supabase(
 
         supabase: Client = create_client(supabase_url, supabase_key)
 
+        # First, fetch existing results to preserve AI interpretation
+        existing_response = supabase.table('analyses').select('results').eq('id', analysis_id).single().execute()
+        existing_results = existing_response.data.get('results') if existing_response.data else None
+
+        # Preserve AI interpretation if it exists
+        preserved_ai_interpretation = None
+        if existing_results and 'ai_interpretation' in existing_results:
+            preserved_ai_interpretation = existing_results['ai_interpretation']
+            logger.info("Preserving existing AI interpretation")
+
         # Convert NumPy types to native Python types for JSON serialization
         results_serializable = convert_numpy_types(results)
+
+        # Merge preserved AI interpretation into new results
+        if preserved_ai_interpretation:
+            results_serializable['ai_interpretation'] = preserved_ai_interpretation
 
         # Update analysis record
         response = supabase.table('analyses').update({
@@ -416,19 +431,30 @@ def analyze_eeg_file(
             if lzc_eo or lzc_ec:
                 logger.info("Generated LZC topomaps")
 
-            # 3. Generate combined coherence matrix grid (all bands in one image)
-            coherence_eo = features.get('coherence', {}).get('eo')
-            coherence_ec = features.get('coherence', {}).get('ec')
+            # 3. Generate brain connectivity graphs (wPLI-based)
+            connectivity_eo = features.get('connectivity', {}).get('eo')
+            connectivity_ec = features.get('connectivity', {}).get('ec')
 
-            if coherence_eo or coherence_ec:
-                coherence_grid = generate_coherence_grid(
-                    coherence_eo=coherence_eo,
-                    coherence_ec=coherence_ec,
+            if connectivity_eo or connectivity_ec:
+                # Generate connectivity grid (brain graphs for all bands)
+                connectivity_grid = generate_connectivity_grid(
+                    connectivity_eo=connectivity_eo,
+                    connectivity_ec=connectivity_ec,
                     ch_names=ch_names,
+                    threshold=0.25,
                     dpi=200
                 )
-                visuals['coherence_grid'] = compress_png(coherence_grid)
-                logger.info("Generated combined coherence grid")
+                visuals['connectivity_grid'] = compress_png(connectivity_grid)
+                logger.info("Generated brain connectivity grid")
+
+                # Generate network metrics comparison
+                network_metrics_chart = generate_network_metrics_summary(
+                    connectivity_eo=connectivity_eo,
+                    connectivity_ec=connectivity_ec,
+                    dpi=200
+                )
+                visuals['network_metrics'] = compress_png(network_metrics_chart)
+                logger.info("Generated network metrics summary")
 
             # 4. Generate spectrograms for key channels
             if epochs_eo is not None:
@@ -494,8 +520,9 @@ def analyze_eeg_file(
         results = {
             'qc_report': qc_metrics,
             'band_power': features['band_power'],
-            'coherence': features['coherence'],
+            'connectivity': features['connectivity'],
             'lzc': features['lzc'],
+            'alpha_peak': features['alpha_peak'],
             'band_ratios': features['band_ratios'],
             'asymmetry': features['asymmetry'],
             'risk_patterns': features['risk_patterns'],

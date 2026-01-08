@@ -7,7 +7,7 @@ Generates publication-quality visualizations for EEG analysis results:
 - Spectrograms for each channel
 - Power Spectral Density (PSD) plots
 - Alpha Peak Frequency (APF) visualizations
-- Coherence matrices
+- Brain connectivity graphs (wPLI-based)
 - QC dashboards
 """
 
@@ -15,7 +15,9 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for server-side rendering
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.collections import LineCollection
+import matplotlib.cm as cm
 import mne
 from scipy import signal
 from typing import Dict, List, Tuple, Optional
@@ -45,6 +47,38 @@ CHANNEL_NAMES = [
     'P7', 'P3', 'Pz', 'P4', 'P8',
     'O1', 'O2'
 ]
+
+# Connectivity-specific frequency bands (matches extract_features.py)
+CONNECTIVITY_BANDS = {
+    'delta': (1, 4),
+    'theta': (4, 8),
+    'alpha': (8, 13),
+    'beta': (13, 30),
+}
+
+# Electrode positions for 2D head plot (normalized coordinates)
+# Origin at center of head, x positive to right, y positive to front
+ELECTRODE_POSITIONS = {
+    'Fp1': (-0.15, 0.45),
+    'Fp2': (0.15, 0.45),
+    'F7': (-0.45, 0.25),
+    'F3': (-0.22, 0.22),
+    'Fz': (0.0, 0.25),
+    'F4': (0.22, 0.22),
+    'F8': (0.45, 0.25),
+    'T7': (-0.50, 0.0),
+    'C3': (-0.25, 0.0),
+    'Cz': (0.0, 0.0),
+    'C4': (0.25, 0.0),
+    'T8': (0.50, 0.0),
+    'P7': (-0.45, -0.25),
+    'P3': (-0.22, -0.22),
+    'Pz': (0.0, -0.25),
+    'P4': (0.22, -0.22),
+    'P8': (0.45, -0.25),
+    'O1': (-0.15, -0.45),
+    'O2': (0.15, -0.45),
+}
 
 # Create custom blue->red colormap for topomaps
 def create_blue_red_cmap():
@@ -655,218 +689,431 @@ def generate_alpha_peak_topomap(
     return buf.read()
 
 
-def generate_coherence_matrix(
-    coherence_data: List[Dict],
+def generate_connectivity_graph(
+    connectivity_data: Dict,
     band_name: str,
     condition: str,
     ch_names: List[str] = None,
+    threshold: float = 0.3,
     title: Optional[str] = None,
+    show_metrics: bool = True,
     dpi: int = 300
 ) -> bytes:
     """
-    Generate a coherence matrix heatmap for a specific band and condition.
+    Generate a brain connectivity graph visualization showing wPLI connections
+    between electrode positions on a 2D head schematic.
 
     Args:
-        coherence_data: List of coherence dicts from extract_features
-                       Each dict has: {ch1, ch2, type, delta, theta, ...}
-        band_name: Frequency band (e.g., 'alpha1')
+        connectivity_data: Dict containing connectivity_matrices and network_metrics
+                          from compute_connectivity()
+        band_name: Frequency band (e.g., 'alpha', 'theta')
         condition: Condition label (e.g., 'EO', 'EC')
         ch_names: List of channel names (if None, uses standard 19 channels)
+        threshold: Minimum wPLI value to display a connection (default 0.3)
         title: Custom title (if None, auto-generated)
+        show_metrics: Whether to show network metrics on the plot
         dpi: Resolution in DPI
 
     Returns:
         PNG image as bytes
     """
-    logger.info(f"Generating coherence matrix for {band_name} - {condition}")
+    logger.info(f"Generating connectivity graph for {band_name} - {condition}")
 
     if ch_names is None:
         ch_names = CHANNEL_NAMES
 
-    n_channels = len(ch_names)
+    # Get connectivity matrix for this band
+    if 'connectivity_matrices' not in connectivity_data:
+        logger.warning(f"No connectivity matrices found")
+        return b''
 
-    # Initialize matrix with NaN (for missing pairs)
-    coherence_matrix = np.full((n_channels, n_channels), np.nan)
+    if band_name not in connectivity_data['connectivity_matrices']:
+        logger.warning(f"Band {band_name} not found in connectivity data")
+        return b''
 
-    # Set diagonal to 1.0 (perfect self-coherence)
-    np.fill_diagonal(coherence_matrix, 1.0)
+    matrix_data = connectivity_data['connectivity_matrices'][band_name]
+    conn_matrix = np.array(matrix_data['matrix'])
+    matrix_channels = matrix_data['channels']
 
-    # Fill matrix from coherence data
-    for coh_pair in coherence_data:
-        ch1 = coh_pair['ch1']
-        ch2 = coh_pair['ch2']
-
-        if ch1 not in ch_names or ch2 not in ch_names:
-            continue
-
-        if band_name not in coh_pair:
-            continue
-
-        idx1 = ch_names.index(ch1)
-        idx2 = ch_names.index(ch2)
-        coh_value = coh_pair[band_name]
-
-        # Fill both symmetric positions
-        coherence_matrix[idx1, idx2] = coh_value
-        coherence_matrix[idx2, idx1] = coh_value
+    # Get network metrics if available
+    network_metrics = connectivity_data.get('network_metrics', {}).get(band_name, {})
 
     # Create figure
-    fig, ax = plt.subplots(figsize=(10, 8), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=dpi)
 
-    # Plot heatmap
-    im = ax.imshow(
-        coherence_matrix,
-        cmap='plasma',  # Sequential colormap (purple to yellow)
-        vmin=0.0,
-        vmax=1.0,
-        aspect='auto',
-        interpolation='nearest'
-    )
+    # Draw head outline (circle)
+    head_circle = plt.Circle((0, 0), 0.55, fill=False, color='gray',
+                              linewidth=2, linestyle='-')
+    ax.add_patch(head_circle)
 
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label('Coherence', rotation=270, labelpad=20)
+    # Draw nose indicator
+    nose_x = [0, 0.05, 0, -0.05, 0]
+    nose_y = [0.55, 0.60, 0.65, 0.60, 0.55]
+    ax.plot(nose_x, nose_y, color='gray', linewidth=2)
 
-    # Set ticks and labels
-    ax.set_xticks(np.arange(n_channels))
-    ax.set_yticks(np.arange(n_channels))
-    ax.set_xticklabels(ch_names, fontsize=8, rotation=45, ha='right')
-    ax.set_yticklabels(ch_names, fontsize=8)
+    # Draw ears
+    ear_left = plt.Circle((-0.55, 0), 0.04, fill=False, color='gray', linewidth=1.5)
+    ear_right = plt.Circle((0.55, 0), 0.04, fill=False, color='gray', linewidth=1.5)
+    ax.add_patch(ear_left)
+    ax.add_patch(ear_right)
 
-    # Add grid
-    ax.set_xticks(np.arange(n_channels) - 0.5, minor=True)
-    ax.set_yticks(np.arange(n_channels) - 0.5, minor=True)
-    ax.grid(which='minor', color='white', linestyle='-', linewidth=0.5)
+    # Get electrode positions
+    positions = {}
+    for ch in ch_names:
+        if ch in ELECTRODE_POSITIONS and ch in matrix_channels:
+            positions[ch] = ELECTRODE_POSITIONS[ch]
+
+    # Collect all connections above threshold
+    lines = []
+    colors = []
+    linewidths = []
+
+    n = len(matrix_channels)
+    for i in range(n):
+        for j in range(i + 1, n):
+            ch1, ch2 = matrix_channels[i], matrix_channels[j]
+            if ch1 not in positions or ch2 not in positions:
+                continue
+
+            wpli = conn_matrix[i, j]
+            if wpli >= threshold:
+                pos1 = positions[ch1]
+                pos2 = positions[ch2]
+                lines.append([(pos1[0], pos1[1]), (pos2[0], pos2[1])])
+                colors.append(wpli)
+                # Line width proportional to connection strength
+                linewidths.append(1 + 4 * wpli)
+
+    # Create colormap for connections (blue to red via yellow)
+    cmap = plt.cm.RdYlBu_r
+
+    if lines:
+        # Normalize colors
+        norm = Normalize(vmin=threshold, vmax=1.0)
+
+        # Create line collection
+        lc = LineCollection(lines, cmap=cmap, norm=norm, linewidths=linewidths, alpha=0.7)
+        lc.set_array(np.array(colors))
+        ax.add_collection(lc)
+
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, fraction=0.046, pad=0.04, shrink=0.8)
+        cbar.set_label('wPLI', rotation=270, labelpad=20)
+
+    # Draw electrodes
+    for ch, pos in positions.items():
+        # Get node strength if available
+        node_strength = network_metrics.get('node_strength', {}).get(ch, 0.5)
+
+        # Node size proportional to strength
+        node_size = 200 + 300 * node_strength
+
+        ax.scatter(pos[0], pos[1], s=node_size, c='white', edgecolors='black',
+                  linewidths=2, zorder=10)
+        ax.text(pos[0], pos[1], ch, ha='center', va='center',
+               fontsize=8, fontweight='bold', zorder=11)
+
+    # Add network metrics text if enabled
+    if show_metrics and network_metrics:
+        metrics_text = []
+
+        if 'global_efficiency' in network_metrics:
+            metrics_text.append(f"Global Efficiency: {network_metrics['global_efficiency']:.3f}")
+        if 'mean_clustering_coefficient' in network_metrics:
+            metrics_text.append(f"Clustering: {network_metrics['mean_clustering_coefficient']:.3f}")
+        if 'small_worldness' in network_metrics:
+            metrics_text.append(f"Small-worldness: {network_metrics['small_worldness']:.2f}")
+        if 'interhemispheric_connectivity' in network_metrics:
+            metrics_text.append(f"Interhemispheric: {network_metrics['interhemispheric_connectivity']:.3f}")
+
+        if metrics_text:
+            metrics_str = '\n'.join(metrics_text)
+            ax.text(0.02, 0.02, metrics_str, transform=ax.transAxes,
+                   fontsize=9, verticalalignment='bottom',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+    # Set plot properties
+    ax.set_xlim(-0.75, 0.75)
+    ax.set_ylim(-0.75, 0.75)
+    ax.set_aspect('equal')
+    ax.axis('off')
 
     # Set title
     if title is None:
-        band_display = band_name.replace('alpha', 'Alpha ').replace('beta', 'Beta ')
-        title = f'Coherence Matrix - {band_display.capitalize()} ({condition})'
+        band_display = band_name.capitalize()
+        freq_range = CONNECTIVITY_BANDS.get(band_name, (0, 0))
+        title = f'wPLI Connectivity - {band_display} ({freq_range[0]}-{freq_range[1]} Hz) - {condition}'
     ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
 
     # Save to bytes buffer
     buf = io.BytesIO()
     plt.tight_layout()
-    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     buf.seek(0)
 
     return buf.read()
 
 
-def generate_coherence_grid(
-    coherence_eo: List[Dict],
-    coherence_ec: List[Dict],
+def generate_connectivity_grid(
+    connectivity_eo: Dict,
+    connectivity_ec: Dict,
     ch_names: List[str] = None,
+    threshold: float = 0.25,
     dpi: int = 300
 ) -> bytes:
     """
-    Generate a grid of coherence matrices for all bands and conditions.
+    Generate a grid of brain connectivity graphs for all bands and conditions.
 
-    Layout: 2 rows (EO and EC), 8 columns (all bands)
+    Layout: 2 rows (EO and EC), 4 columns (delta, theta, alpha, beta)
 
     Args:
-        coherence_eo: List of coherence dicts for EO condition
-        coherence_ec: List of coherence dicts for EC condition
+        connectivity_eo: Connectivity dict for EO condition from compute_connectivity()
+        connectivity_ec: Connectivity dict for EC condition from compute_connectivity()
         ch_names: List of channel names (if None, uses standard 19 channels)
+        threshold: Minimum wPLI value to display a connection
         dpi: Resolution in DPI
 
     Returns:
-        PNG image as bytes containing all coherence matrices in a grid
+        PNG image as bytes containing all connectivity graphs in a grid
     """
-    logger.info("Generating combined coherence grid for all bands")
+    logger.info("Generating combined connectivity grid for all bands")
 
     if ch_names is None:
         ch_names = CHANNEL_NAMES
 
-    # Bands ordered by frequency
-    band_order = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma']
+    # Bands for connectivity (4 main bands)
+    band_order = ['delta', 'theta', 'alpha', 'beta']
     n_bands = len(band_order)
-    n_channels = len(ch_names)
 
     # Create figure with subplots
     fig, axes = plt.subplots(
         2, n_bands,
-        figsize=(n_bands * 2.5, 2 * 2.5),
+        figsize=(n_bands * 4, 2 * 4),
         dpi=dpi
     )
 
+    # Colormap for connections
+    cmap = plt.cm.RdYlBu_r
+    norm = Normalize(vmin=threshold, vmax=1.0)
+
     # Plot each band and condition
-    for cond_idx, (coherence_data, condition) in enumerate([(coherence_eo, 'EO'), (coherence_ec, 'EC')]):
+    for cond_idx, (connectivity_data, condition) in enumerate(
+        [(connectivity_eo, 'EO'), (connectivity_ec, 'EC')]
+    ):
         for band_idx, band_name in enumerate(band_order):
             ax = axes[cond_idx, band_idx]
 
-            if coherence_data is None:
+            if connectivity_data is None:
                 ax.axis('off')
-                ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes, fontsize=8)
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                       transform=ax.transAxes, fontsize=10)
                 continue
 
-            # Initialize matrix with NaN
-            coherence_matrix = np.full((n_channels, n_channels), np.nan)
-            np.fill_diagonal(coherence_matrix, 1.0)
+            # Check if band exists in data
+            if 'connectivity_matrices' not in connectivity_data:
+                ax.axis('off')
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                       transform=ax.transAxes, fontsize=10)
+                continue
 
-            # Fill matrix from coherence data
-            for coh_pair in coherence_data:
-                ch1 = coh_pair['ch1']
-                ch2 = coh_pair['ch2']
+            if band_name not in connectivity_data['connectivity_matrices']:
+                ax.axis('off')
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                       transform=ax.transAxes, fontsize=10)
+                continue
 
-                if ch1 not in ch_names or ch2 not in ch_names:
-                    continue
-                if band_name not in coh_pair:
-                    continue
+            matrix_data = connectivity_data['connectivity_matrices'][band_name]
+            conn_matrix = np.array(matrix_data['matrix'])
+            matrix_channels = matrix_data['channels']
 
-                idx1 = ch_names.index(ch1)
-                idx2 = ch_names.index(ch2)
-                coh_value = coh_pair[band_name]
+            # Draw head outline
+            head_circle = plt.Circle((0, 0), 0.55, fill=False, color='gray',
+                                      linewidth=1.5, linestyle='-')
+            ax.add_patch(head_circle)
 
-                coherence_matrix[idx1, idx2] = coh_value
-                coherence_matrix[idx2, idx1] = coh_value
+            # Draw nose
+            nose_x = [0, 0.04, 0, -0.04, 0]
+            nose_y = [0.55, 0.58, 0.62, 0.58, 0.55]
+            ax.plot(nose_x, nose_y, color='gray', linewidth=1.5)
 
-            # Plot heatmap
-            im = ax.imshow(
-                coherence_matrix,
-                cmap='plasma',
-                vmin=0.0,
-                vmax=1.0,
-                aspect='auto',
-                interpolation='nearest'
-            )
+            # Get electrode positions
+            positions = {}
+            for ch in ch_names:
+                if ch in ELECTRODE_POSITIONS and ch in matrix_channels:
+                    positions[ch] = ELECTRODE_POSITIONS[ch]
 
-            # Minimal tick labels (only show every 3rd channel)
-            tick_indices = list(range(0, n_channels, 3))
-            ax.set_xticks(tick_indices)
-            ax.set_yticks(tick_indices)
-            ax.set_xticklabels([ch_names[i] for i in tick_indices], fontsize=6, rotation=45, ha='right')
-            ax.set_yticklabels([ch_names[i] for i in tick_indices], fontsize=6)
+            # Collect connections
+            lines = []
+            colors = []
+            linewidths = []
 
-            # Add title for top row (band names) - use English names
+            n = len(matrix_channels)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    ch1, ch2 = matrix_channels[i], matrix_channels[j]
+                    if ch1 not in positions or ch2 not in positions:
+                        continue
+
+                    wpli = conn_matrix[i, j]
+                    if wpli >= threshold:
+                        pos1 = positions[ch1]
+                        pos2 = positions[ch2]
+                        lines.append([(pos1[0], pos1[1]), (pos2[0], pos2[1])])
+                        colors.append(wpli)
+                        linewidths.append(0.5 + 2 * wpli)
+
+            # Draw connections
+            if lines:
+                lc = LineCollection(lines, cmap=cmap, norm=norm,
+                                   linewidths=linewidths, alpha=0.6)
+                lc.set_array(np.array(colors))
+                ax.add_collection(lc)
+
+            # Draw electrodes (smaller for grid view)
+            for ch, pos in positions.items():
+                ax.scatter(pos[0], pos[1], s=80, c='white', edgecolors='black',
+                          linewidths=1, zorder=10)
+                ax.text(pos[0], pos[1], ch, ha='center', va='center',
+                       fontsize=5, fontweight='bold', zorder=11)
+
+            # Set plot properties
+            ax.set_xlim(-0.70, 0.70)
+            ax.set_ylim(-0.70, 0.70)
+            ax.set_aspect('equal')
+            ax.axis('off')
+
+            # Add band title for top row
             if cond_idx == 0:
-                band_display_names = {
-                    'delta': 'Delta', 'theta': 'Theta', 'alpha1': 'A1', 'alpha2': 'A2',
-                    'smr': 'SMR', 'beta2': 'B2', 'hibeta': 'HiB', 'lowgamma': 'LowG'
-                }
-                band_display = band_display_names.get(band_name, band_name.capitalize())
-                freq_range = BANDS[band_name]
-                ax.set_title(f'{band_display}\n{freq_range[0]}-{freq_range[1]} Hz',
-                           fontsize=8, fontweight='bold', pad=3)
+                freq_range = CONNECTIVITY_BANDS[band_name]
+                ax.set_title(f'{band_name.capitalize()}\n{freq_range[0]}-{freq_range[1]} Hz',
+                           fontsize=10, fontweight='bold', pad=5)
 
             # Add condition label on left side
             if band_idx == 0:
                 ax.text(-0.15, 0.5, condition, transform=ax.transAxes,
-                       fontsize=10, fontweight='bold', rotation=90,
+                       fontsize=12, fontweight='bold', rotation=90,
                        ha='center', va='center')
 
     # Add overall title
-    fig.suptitle('Inter-Channel Coherence Matrices', fontsize=14, fontweight='bold', y=0.98)
+    fig.suptitle('Brain Connectivity (wPLI)', fontsize=16, fontweight='bold', y=0.98)
 
     # Add colorbar
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
-    plt.colorbar(im, cax=cbar_ax, label='Coherence')
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    cbar = plt.colorbar(sm, cax=cbar_ax)
+    cbar.set_label('wPLI', rotation=270, labelpad=15)
 
     # Save to bytes buffer
     buf = io.BytesIO()
-    plt.tight_layout(rect=[0, 0, 0.91, 0.96])
-    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight')
+    plt.tight_layout(rect=[0, 0, 0.90, 0.96])
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read()
+
+
+def generate_network_metrics_summary(
+    connectivity_eo: Dict,
+    connectivity_ec: Dict,
+    dpi: int = 300
+) -> bytes:
+    """
+    Generate a summary visualization of network metrics comparing EO and EC conditions.
+
+    Shows bar charts for global efficiency, clustering, small-worldness, and
+    interhemispheric connectivity across frequency bands.
+
+    Args:
+        connectivity_eo: Connectivity dict for EO condition
+        connectivity_ec: Connectivity dict for EC condition
+        dpi: Resolution in DPI
+
+    Returns:
+        PNG image as bytes
+    """
+    logger.info("Generating network metrics summary")
+
+    # Extract metrics for each band
+    bands = ['delta', 'theta', 'alpha', 'beta']
+    metrics_names = ['global_efficiency', 'mean_clustering_coefficient',
+                    'small_worldness', 'interhemispheric_connectivity']
+    metric_labels = ['Global Efficiency', 'Clustering Coef.',
+                    'Small-worldness', 'Interhemispheric']
+
+    # Collect data
+    eo_data = {metric: [] for metric in metrics_names}
+    ec_data = {metric: [] for metric in metrics_names}
+
+    for band in bands:
+        for metric in metrics_names:
+            # EO
+            if connectivity_eo and 'network_metrics' in connectivity_eo:
+                val = connectivity_eo['network_metrics'].get(band, {}).get(metric, 0)
+            else:
+                val = 0
+            eo_data[metric].append(val)
+
+            # EC
+            if connectivity_ec and 'network_metrics' in connectivity_ec:
+                val = connectivity_ec['network_metrics'].get(band, {}).get(metric, 0)
+            else:
+                val = 0
+            ec_data[metric].append(val)
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=dpi)
+    axes = axes.flatten()
+
+    x = np.arange(len(bands))
+    width = 0.35
+
+    for idx, (metric, label) in enumerate(zip(metrics_names, metric_labels)):
+        ax = axes[idx]
+
+        eo_vals = eo_data[metric]
+        ec_vals = ec_data[metric]
+
+        bars1 = ax.bar(x - width/2, eo_vals, width, label='Eyes Open', color='#1f77b4', alpha=0.8)
+        bars2 = ax.bar(x + width/2, ec_vals, width, label='Eyes Closed', color='#ff7f0e', alpha=0.8)
+
+        ax.set_xlabel('Frequency Band', fontsize=11)
+        ax.set_ylabel(label, fontsize=11)
+        ax.set_title(label, fontsize=12, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels([b.capitalize() for b in bands])
+        ax.legend(loc='upper right')
+        ax.grid(axis='y', alpha=0.3)
+
+        # Add value labels on bars
+        for bar in bars1:
+            height = bar.get_height()
+            if height > 0:
+                ax.annotate(f'{height:.2f}',
+                          xy=(bar.get_x() + bar.get_width() / 2, height),
+                          xytext=(0, 3),
+                          textcoords="offset points",
+                          ha='center', va='bottom', fontsize=8)
+
+        for bar in bars2:
+            height = bar.get_height()
+            if height > 0:
+                ax.annotate(f'{height:.2f}',
+                          xy=(bar.get_x() + bar.get_width() / 2, height),
+                          xytext=(0, 3),
+                          textcoords="offset points",
+                          ha='center', va='bottom', fontsize=8)
+
+    fig.suptitle('Network Metrics: EO vs EC Comparison', fontsize=14, fontweight='bold', y=0.98)
+
+    # Save to bytes buffer
+    buf = io.BytesIO()
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     buf.seek(0)
 

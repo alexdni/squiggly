@@ -82,6 +82,8 @@ export default function AnalysisDetailsClient({
   const [pollingElapsed, setPollingElapsed] = useState(0);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
 
   // Get timeout from env or default to 3 minutes (180 seconds)
   const ANALYSIS_TIMEOUT_SECONDS = 180;
@@ -240,6 +242,58 @@ export default function AnalysisDetailsClient({
     }
   };
 
+  const handleReanalyze = async () => {
+    setIsReanalyzing(true);
+    setReanalyzeError(null);
+    try {
+      // Preserve the AI interpretation before clearing results
+      const preservedAiInterpretation = analysis.results?.ai_interpretation || null;
+
+      // Reset the analysis status to pending, but preserve AI interpretation in a separate field
+      const { error: resetError } = await (supabase as any)
+        .from('analyses')
+        .update({
+          status: 'pending',
+          results: preservedAiInterpretation ? { ai_interpretation: preservedAiInterpretation } : null,
+          error_log: null,
+          started_at: null,
+          completed_at: null,
+        })
+        .eq('id', analysis.id);
+
+      if (resetError) {
+        throw new Error('Failed to reset analysis status');
+      }
+
+      // Update local state, preserving AI interpretation
+      setAnalysis({
+        ...analysis,
+        status: 'pending',
+        results: preservedAiInterpretation ? { ai_interpretation: preservedAiInterpretation } : null,
+        error_log: null,
+        started_at: null,
+        completed_at: null,
+      });
+
+      // Start the new analysis
+      const response = await fetch(`/api/analyses/${analysis.id}/process`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start re-analysis');
+      }
+
+      // Update local state to show processing
+      setAnalysis((prev) => ({ ...prev, status: 'processing' }));
+    } catch (error: any) {
+      console.error('Error re-analyzing:', error);
+      setReanalyzeError(error.message || 'Failed to start re-analysis. Please try again.');
+    } finally {
+      setIsReanalyzing(false);
+    }
+  };
+
   const aiInterpretation: AIInterpretation | null = analysis.results?.ai_interpretation || null;
 
   return (
@@ -298,14 +352,43 @@ export default function AnalysisDetailsClient({
               </h1>
               <p className="text-gray-800">{analysis.recording.filename}</p>
             </div>
-            <div
-              className={`px-4 py-2 rounded-lg font-medium ${getStatusColor(
-                analysis.status
-              )}`}
-            >
-              {getStatusText(analysis.status)}
+            <div className="flex items-center gap-3">
+              {analysis.status === 'completed' && (
+                <button
+                  onClick={handleReanalyze}
+                  disabled={isReanalyzing}
+                  className="bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Re-run analysis with the latest features"
+                >
+                  {isReanalyzing ? (
+                    <>
+                      <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Re-Analyze
+                    </>
+                  )}
+                </button>
+              )}
+              <div
+                className={`px-4 py-2 rounded-lg font-medium ${getStatusColor(
+                  analysis.status
+                )}`}
+              >
+                {getStatusText(analysis.status)}
+              </div>
             </div>
           </div>
+          {reanalyzeError && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-red-800 text-sm">{reanalyzeError}</p>
+            </div>
+          )}
         </div>
 
         {/* Recording Information */}
@@ -644,21 +727,105 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
-            {/* Coherence Matrix Grid */}
-            {analysis.results.visuals?.coherence_grid && (
+            {/* Brain Connectivity Graph (wPLI) */}
+            {analysis.results.visuals?.connectivity_grid && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Inter-Channel Coherence Matrices
+                  Brain Connectivity (wPLI)
                 </h2>
                 <p className="text-sm text-gray-800 mb-4">
-                  Coherence (0-1) showing connectivity patterns between brain regions across all frequency bands
+                  Weighted Phase Lag Index (wPLI) connectivity between electrode sites. Line color and thickness indicate connection strength.
+                  wPLI is robust to volume conduction and measures true phase-lagged interactions.
                 </p>
                 <div className="bg-white rounded border border-gray-200 overflow-hidden">
                   <img
-                    src={analysis.results.visuals.coherence_grid as string}
-                    alt="Coherence matrices"
+                    src={analysis.results.visuals.connectivity_grid as string}
+                    alt="Brain connectivity graphs"
                     className="w-full h-auto"
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Network Metrics Summary */}
+            {analysis.results.visuals?.network_metrics && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Network Metrics Comparison
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Graph-theoretic network metrics comparing Eyes Open vs Eyes Closed conditions.
+                  Global efficiency measures network integration, clustering coefficient measures local connectivity,
+                  small-worldness indicates optimal balance of segregation and integration.
+                </p>
+                <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                  <img
+                    src={analysis.results.visuals.network_metrics as string}
+                    alt="Network metrics comparison"
+                    className="w-full h-auto"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Network Metrics Table (if connectivity data available) */}
+            {analysis.results.connectivity && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Network Metrics by Band
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Key graph-theoretic metrics for each frequency band. Lower global efficiency post-injury may indicate network disruption.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {['eo', 'ec'].map((condition) => {
+                    const connectivity = analysis.results.connectivity[condition];
+                    if (!connectivity?.network_metrics) return null;
+
+                    return (
+                      <div key={condition} className="border border-gray-200 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                          {condition === 'eo' ? 'Eyes Open' : 'Eyes Closed'}
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Band</th>
+                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase">Global Eff.</th>
+                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase">Clustering</th>
+                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase">Small-world</th>
+                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase">Interhemi.</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {['delta', 'theta', 'alpha', 'beta'].map((band) => {
+                                const metrics = connectivity.network_metrics[band];
+                                if (!metrics) return null;
+                                return (
+                                  <tr key={band} className="hover:bg-gray-50">
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 capitalize">{band}</td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-center font-mono">
+                                      {metrics.global_efficiency?.toFixed(3) || 'N/A'}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-center font-mono">
+                                      {metrics.mean_clustering_coefficient?.toFixed(3) || 'N/A'}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-center font-mono">
+                                      {metrics.small_worldness?.toFixed(2) || 'N/A'}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-center font-mono">
+                                      {metrics.interhemispheric_connectivity?.toFixed(3) || 'N/A'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

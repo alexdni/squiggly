@@ -6,7 +6,8 @@ Extracts neurological features from preprocessed EEG epochs:
 - Band power (absolute and relative) for all channels
 - Band ratios (theta/beta, alpha/theta)
 - Hemispheric asymmetry indices
-- Coherence analysis (interhemispheric and long-range)
+- wPLI (weighted Phase Lag Index) connectivity analysis
+- Graph-theoretic network metrics (global efficiency, clustering, small-worldness)
 - Complexity measures
 - Risk pattern detection
 """
@@ -14,8 +15,10 @@ Extracts neurological features from preprocessed EEG epochs:
 import numpy as np
 import mne
 from scipy import signal
-from typing import Dict, List, Tuple
+from scipy.signal import hilbert
+from typing import Dict, List, Tuple, Optional
 import logging
+from itertools import combinations
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,6 +53,26 @@ ASYMMETRY_PAIRS = {
     'parietal_alpha': ('P3', 'P4'),
     'frontal_theta': ('F3', 'F4'),
 }
+
+# Connectivity-specific frequency bands (broader for wPLI analysis)
+CONNECTIVITY_BANDS = {
+    'delta': (1, 4),
+    'theta': (4, 8),
+    'alpha': (8, 13),
+    'beta': (13, 30),
+}
+
+# Interhemispheric channel pairs for connectivity analysis
+INTERHEMISPHERIC_PAIRS = [
+    ('Fp1', 'Fp2'),
+    ('F7', 'F8'),
+    ('F3', 'F4'),
+    ('T7', 'T8'),
+    ('C3', 'C4'),
+    ('P7', 'P8'),
+    ('P3', 'P4'),
+    ('O1', 'O2'),
+]
 
 
 class FeatureExtractor:
@@ -370,82 +393,486 @@ class FeatureExtractor:
 
         return asymmetry
 
-    def compute_coherence(self, epochs: mne.Epochs) -> List[Dict]:
+    def _bandpass_filter(self, data: np.ndarray, low: float, high: float) -> np.ndarray:
         """
-        Compute coherence between channel pairs
+        Apply band-pass filter to data.
+
+        Args:
+            data: Signal data (n_epochs, n_channels, n_times) or (n_channels, n_times)
+            low: Low frequency cutoff (Hz)
+            high: High frequency cutoff (Hz)
+
+        Returns:
+            Band-pass filtered data
+        """
+        nyq = self.sfreq / 2
+        low_norm = low / nyq
+        high_norm = high / nyq
+
+        # Ensure frequencies are within valid range
+        low_norm = max(0.001, min(low_norm, 0.99))
+        high_norm = max(low_norm + 0.01, min(high_norm, 0.99))
+
+        # Design butterworth filter
+        b, a = signal.butter(4, [low_norm, high_norm], btype='band')
+
+        # Apply filter
+        return signal.filtfilt(b, a, data, axis=-1)
+
+    def _compute_wpli(self, sig1: np.ndarray, sig2: np.ndarray) -> float:
+        """
+        Compute weighted Phase Lag Index (wPLI) between two signals.
+
+        wPLI is robust to volume conduction and noise, measuring the consistency
+        of phase relationships between signals while weighting by the magnitude
+        of the imaginary component.
+
+        wPLI = |E[Im(S)]| / E[|Im(S)|]
+        where S is the cross-spectrum and Im() is the imaginary part.
+
+        Args:
+            sig1: First signal (n_epochs, n_times)
+            sig2: Second signal (n_epochs, n_times)
+
+        Returns:
+            wPLI value between 0 and 1
+        """
+        n_epochs = sig1.shape[0]
+
+        # Compute analytic signal using Hilbert transform
+        analytic1 = hilbert(sig1, axis=-1)
+        analytic2 = hilbert(sig2, axis=-1)
+
+        # Compute cross-spectrum
+        cross_spectrum = analytic1 * np.conj(analytic2)
+
+        # Get imaginary part of cross-spectrum
+        imag_cross = np.imag(cross_spectrum)
+
+        # Average across time within each epoch
+        imag_mean_per_epoch = np.mean(imag_cross, axis=-1)  # (n_epochs,)
+        imag_abs_mean_per_epoch = np.mean(np.abs(imag_cross), axis=-1)  # (n_epochs,)
+
+        # Average across epochs
+        numerator = np.abs(np.mean(imag_mean_per_epoch))
+        denominator = np.mean(imag_abs_mean_per_epoch)
+
+        if denominator < 1e-10:
+            return 0.0
+
+        wpli = numerator / denominator
+
+        return float(np.clip(wpli, 0, 1))
+
+    def compute_connectivity(self, epochs: mne.Epochs) -> Dict:
+        """
+        Compute wPLI (weighted Phase Lag Index) connectivity between all channel pairs.
+
+        wPLI is preferred over coherence for EEG because it:
+        - Is robust to volume conduction artifacts
+        - Measures true phase-lagged interactions
+        - Is less sensitive to common sources
 
         Args:
             epochs: MNE Epochs object
 
         Returns:
-            List of coherence dictionaries for each pair
+            Dictionary containing:
+            - connectivity_matrices: {band: 2D numpy array of wPLI values}
+            - network_metrics: graph-theoretic metrics per band
+            - pair_data: list of dicts with per-pair wPLI values
         """
-        logger.info("Computing coherence")
+        logger.info("Computing wPLI connectivity")
 
-        # Define channel pairs for analysis
-        pairs = [
-            {'ch1': 'Fp1', 'ch2': 'Fp2', 'type': 'interhemispheric', 'region': 'frontal'},
-            {'ch1': 'F3', 'ch2': 'F4', 'type': 'interhemispheric', 'region': 'frontal'},
-            {'ch1': 'C3', 'ch2': 'C4', 'type': 'interhemispheric', 'region': 'central'},
-            {'ch1': 'P3', 'ch2': 'P4', 'type': 'interhemispheric', 'region': 'parietal'},
-            {'ch1': 'O1', 'ch2': 'O2', 'type': 'interhemispheric', 'region': 'occipital'},
-            {'ch1': 'F3', 'ch2': 'P3', 'type': 'long_range', 'region': 'left'},
-            {'ch1': 'F4', 'ch2': 'P4', 'type': 'long_range', 'region': 'right'},
-        ]
+        data = epochs.get_data()  # (n_epochs, n_channels, n_times)
+        n_epochs, n_channels, n_times = data.shape
+        ch_names = list(epochs.ch_names)
 
-        coherence_results = []
+        logger.info(f"Computing wPLI for {n_channels} channels, {n_epochs} epochs")
 
-        for pair in pairs:
-            ch1, ch2 = pair['ch1'], pair['ch2']
+        # Initialize connectivity matrices for each band
+        connectivity_matrices = {}
 
-            # Check if channels exist
-            if ch1 not in epochs.ch_names or ch2 not in epochs.ch_names:
-                continue
+        for band_name, (low, high) in CONNECTIVITY_BANDS.items():
+            logger.info(f"Processing {band_name} band ({low}-{high} Hz)")
 
-            # Get indices
-            ch1_idx = epochs.ch_names.index(ch1)
-            ch2_idx = epochs.ch_names.index(ch2)
+            # Band-pass filter the data
+            filtered_data = self._bandpass_filter(data, low, high)
 
-            # Get data for both channels
-            data = epochs.get_data()  # (n_epochs, n_channels, n_times)
-            sig1 = data[:, ch1_idx, :]
-            sig2 = data[:, ch2_idx, :]
+            # Initialize connectivity matrix
+            conn_matrix = np.zeros((n_channels, n_channels))
 
-            # Compute coherence for each epoch and average
-            coherence_by_band = {}
+            # Compute wPLI for all channel pairs
+            for i in range(n_channels):
+                for j in range(i + 1, n_channels):
+                    wpli = self._compute_wpli(filtered_data[:, i, :], filtered_data[:, j, :])
+                    conn_matrix[i, j] = wpli
+                    conn_matrix[j, i] = wpli  # Symmetric
 
-            for band_name, (low, high) in BANDS.items():
-                band_coherences = []
+            connectivity_matrices[band_name] = conn_matrix
 
-                for epoch_idx in range(sig1.shape[0]):
-                    # Compute coherence using Welch's method
-                    freqs, coh = signal.coherence(
-                        sig1[epoch_idx],
-                        sig2[epoch_idx],
-                        fs=self.sfreq,
-                        nperseg=int(2 * self.sfreq)
-                    )
+        # Compute network metrics for each band
+        network_metrics = {}
+        for band_name, conn_matrix in connectivity_matrices.items():
+            metrics = self._compute_network_metrics(conn_matrix, ch_names)
+            network_metrics[band_name] = metrics
 
-                    # Extract coherence for this band
-                    freq_idx = np.logical_and(freqs >= low, freqs < high)
-                    if np.any(freq_idx):
-                        band_coh = np.mean(coh[freq_idx])
-                        band_coherences.append(band_coh)
+        # Generate pair-wise data for backwards compatibility and visualization
+        pair_data = self._generate_pair_data(connectivity_matrices, ch_names)
 
-                # Average across epochs
-                coherence_by_band[band_name] = float(np.mean(band_coherences)) if band_coherences else 0.0
-
-            result = {
-                'ch1': ch1,
-                'ch2': ch2,
-                'type': pair['type'],
-                'region': pair['region'],
-                **coherence_by_band
+        # Convert matrices to serializable format
+        matrices_serializable = {
+            band: {
+                'matrix': matrix.tolist(),
+                'channels': ch_names
             }
+            for band, matrix in connectivity_matrices.items()
+        }
 
-            coherence_results.append(result)
+        return {
+            'connectivity_matrices': matrices_serializable,
+            'network_metrics': network_metrics,
+            'pair_data': pair_data,
+        }
 
-        return coherence_results
+    def _compute_network_metrics(self, conn_matrix: np.ndarray, ch_names: List[str]) -> Dict:
+        """
+        Compute graph-theoretic network metrics from connectivity matrix.
+
+        Args:
+            conn_matrix: NxN connectivity matrix (wPLI values)
+            ch_names: List of channel names
+
+        Returns:
+            Dictionary of network metrics
+        """
+        n = conn_matrix.shape[0]
+
+        # Threshold the connectivity matrix to create binary adjacency
+        # Use median as threshold for binary graph
+        threshold = np.median(conn_matrix[np.triu_indices(n, k=1)])
+        adj_matrix = (conn_matrix > threshold).astype(float)
+
+        # Also keep weighted matrix for weighted metrics
+        weighted_matrix = conn_matrix.copy()
+
+        # 1. Global Efficiency
+        # E_global = (1/N(N-1)) * sum(1/d_ij) where d_ij is shortest path
+        global_efficiency = self._compute_global_efficiency(weighted_matrix)
+
+        # 2. Clustering Coefficient (weighted)
+        clustering_coef = self._compute_clustering_coefficient(weighted_matrix)
+
+        # 3. Small-worldness
+        # σ = (C/C_rand) / (L/L_rand) where C=clustering, L=path length
+        small_worldness = self._compute_small_worldness(weighted_matrix, adj_matrix)
+
+        # 4. Interhemispheric Connectivity
+        interhemispheric = self._compute_interhemispheric_connectivity(conn_matrix, ch_names)
+
+        # 5. Node-level metrics
+        node_strength = np.sum(weighted_matrix, axis=1) / (n - 1)  # Normalized strength
+        node_metrics = {ch: float(node_strength[i]) for i, ch in enumerate(ch_names)}
+
+        # 6. Regional connectivity averages
+        regional_connectivity = self._compute_regional_connectivity(conn_matrix, ch_names)
+
+        return {
+            'global_efficiency': float(global_efficiency),
+            'mean_clustering_coefficient': float(np.mean(clustering_coef)),
+            'clustering_by_channel': {ch: float(clustering_coef[i]) for i, ch in enumerate(ch_names)},
+            'small_worldness': float(small_worldness),
+            'interhemispheric_connectivity': float(interhemispheric),
+            'node_strength': node_metrics,
+            'regional_connectivity': regional_connectivity,
+        }
+
+    def _compute_global_efficiency(self, weighted_matrix: np.ndarray) -> float:
+        """
+        Compute global efficiency of the network.
+
+        Global efficiency measures how efficiently information can be exchanged
+        across the network. Lower values post-concussion indicate reduced
+        network integration.
+
+        Args:
+            weighted_matrix: Weighted connectivity matrix
+
+        Returns:
+            Global efficiency value (0-1)
+        """
+        n = weighted_matrix.shape[0]
+
+        # Convert weights to distances (inverse relationship)
+        # Higher connectivity = shorter distance
+        with np.errstate(divide='ignore'):
+            distance_matrix = 1.0 / (weighted_matrix + 1e-10)
+        np.fill_diagonal(distance_matrix, 0)
+
+        # Compute shortest paths using Floyd-Warshall
+        dist = distance_matrix.copy()
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if dist[i, k] + dist[k, j] < dist[i, j]:
+                        dist[i, j] = dist[i, k] + dist[k, j]
+
+        # Global efficiency = mean of inverse shortest paths
+        with np.errstate(divide='ignore', invalid='ignore'):
+            inv_dist = 1.0 / dist
+        np.fill_diagonal(inv_dist, 0)
+        inv_dist = np.nan_to_num(inv_dist, nan=0.0, posinf=0.0)
+
+        global_efficiency = np.sum(inv_dist) / (n * (n - 1))
+
+        return global_efficiency
+
+    def _compute_clustering_coefficient(self, weighted_matrix: np.ndarray) -> np.ndarray:
+        """
+        Compute weighted clustering coefficient for each node.
+
+        Uses the Onnela et al. (2005) definition for weighted networks.
+
+        Args:
+            weighted_matrix: Weighted connectivity matrix
+
+        Returns:
+            Array of clustering coefficients per node
+        """
+        n = weighted_matrix.shape[0]
+        clustering = np.zeros(n)
+
+        # Normalize weights to [0, 1]
+        max_weight = np.max(weighted_matrix)
+        if max_weight > 0:
+            W = weighted_matrix / max_weight
+        else:
+            return clustering
+
+        # Cube root of weights for weighted triangles
+        W_third = np.power(W, 1/3)
+
+        for i in range(n):
+            neighbors = np.where(W[i, :] > 0)[0]
+            neighbors = neighbors[neighbors != i]
+            k = len(neighbors)
+
+            if k >= 2:
+                # Count weighted triangles
+                triangles = 0
+                for j in neighbors:
+                    for h in neighbors:
+                        if j < h:
+                            triangles += W_third[i, j] * W_third[j, h] * W_third[h, i]
+
+                # Normalize by possible triangles
+                clustering[i] = 2 * triangles / (k * (k - 1))
+
+        return clustering
+
+    def _compute_small_worldness(self, weighted_matrix: np.ndarray, adj_matrix: np.ndarray) -> float:
+        """
+        Compute small-worldness index (sigma).
+
+        Small-world networks have high clustering and short path lengths.
+        σ > 1 indicates small-world topology.
+
+        Args:
+            weighted_matrix: Weighted connectivity matrix
+            adj_matrix: Binary adjacency matrix
+
+        Returns:
+            Small-worldness sigma value
+        """
+        n = weighted_matrix.shape[0]
+
+        # Observed clustering
+        C_obs = np.mean(self._compute_clustering_coefficient(weighted_matrix))
+
+        # Observed characteristic path length
+        L_obs = self._compute_characteristic_path_length(weighted_matrix)
+
+        # Generate random network with same degree distribution
+        # Using configuration model approximation
+        k = np.sum(adj_matrix, axis=1)  # Degree sequence
+        p = np.sum(k) / (n * (n - 1))  # Connection probability
+
+        # Expected clustering for random network: C_rand ≈ p
+        C_rand = max(p, 1e-10)
+
+        # Expected path length for random network: L_rand ≈ ln(n)/ln(k_mean)
+        k_mean = np.mean(k)
+        if k_mean > 1:
+            L_rand = np.log(n) / np.log(k_mean)
+        else:
+            L_rand = float('inf')
+
+        # Small-worldness: σ = (C/C_rand) / (L/L_rand)
+        if C_rand > 0 and L_rand > 0 and L_obs > 0:
+            gamma = C_obs / C_rand  # Normalized clustering
+            lambd = L_obs / L_rand  # Normalized path length
+            sigma = gamma / lambd if lambd > 0 else 0
+        else:
+            sigma = 0
+
+        return sigma
+
+    def _compute_characteristic_path_length(self, weighted_matrix: np.ndarray) -> float:
+        """
+        Compute characteristic path length of the network.
+
+        Args:
+            weighted_matrix: Weighted connectivity matrix
+
+        Returns:
+            Mean shortest path length
+        """
+        n = weighted_matrix.shape[0]
+
+        # Convert weights to distances
+        with np.errstate(divide='ignore'):
+            distance_matrix = 1.0 / (weighted_matrix + 1e-10)
+        np.fill_diagonal(distance_matrix, 0)
+
+        # Floyd-Warshall for shortest paths
+        dist = distance_matrix.copy()
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if dist[i, k] + dist[k, j] < dist[i, j]:
+                        dist[i, j] = dist[i, k] + dist[k, j]
+
+        # Mean path length (excluding self-connections and infinite paths)
+        mask = ~np.eye(n, dtype=bool)
+        finite_paths = dist[mask]
+        finite_paths = finite_paths[np.isfinite(finite_paths)]
+
+        if len(finite_paths) > 0:
+            return np.mean(finite_paths)
+        return float('inf')
+
+    def _compute_interhemispheric_connectivity(self, conn_matrix: np.ndarray, ch_names: List[str]) -> float:
+        """
+        Compute mean interhemispheric connectivity.
+
+        Measures the strength of connections between left and right hemisphere,
+        which is particularly relevant for concussion assessment.
+
+        Args:
+            conn_matrix: Connectivity matrix
+            ch_names: List of channel names
+
+        Returns:
+            Mean interhemispheric wPLI
+        """
+        interhemispheric_values = []
+
+        for left_ch, right_ch in INTERHEMISPHERIC_PAIRS:
+            if left_ch in ch_names and right_ch in ch_names:
+                left_idx = ch_names.index(left_ch)
+                right_idx = ch_names.index(right_ch)
+                interhemispheric_values.append(conn_matrix[left_idx, right_idx])
+
+        if interhemispheric_values:
+            return float(np.mean(interhemispheric_values))
+        return 0.0
+
+    def _compute_regional_connectivity(self, conn_matrix: np.ndarray, ch_names: List[str]) -> Dict:
+        """
+        Compute mean connectivity within and between brain regions.
+
+        Args:
+            conn_matrix: Connectivity matrix
+            ch_names: List of channel names
+
+        Returns:
+            Dictionary of regional connectivity values
+        """
+        regional = {}
+
+        # Within-region connectivity
+        for region, channels in CHANNEL_GROUPS.items():
+            if region in ['left', 'right']:
+                continue  # Skip hemisphere groupings
+
+            indices = [ch_names.index(ch) for ch in channels if ch in ch_names]
+            if len(indices) >= 2:
+                # Extract submatrix for this region
+                submatrix = conn_matrix[np.ix_(indices, indices)]
+                # Get upper triangle (excluding diagonal)
+                n = len(indices)
+                upper_tri = submatrix[np.triu_indices(n, k=1)]
+                if len(upper_tri) > 0:
+                    regional[f'{region}_within'] = float(np.mean(upper_tri))
+
+        # Between-region connectivity (frontal-posterior)
+        frontal_idx = [ch_names.index(ch) for ch in CHANNEL_GROUPS['frontal'] if ch in ch_names]
+        posterior_idx = [ch_names.index(ch) for ch in
+                        CHANNEL_GROUPS['parietal'] + CHANNEL_GROUPS['occipital']
+                        if ch in ch_names]
+
+        if frontal_idx and posterior_idx:
+            fp_values = [conn_matrix[i, j] for i in frontal_idx for j in posterior_idx]
+            regional['frontal_posterior'] = float(np.mean(fp_values))
+
+        return regional
+
+    def _generate_pair_data(self, connectivity_matrices: Dict[str, np.ndarray], ch_names: List[str]) -> List[Dict]:
+        """
+        Generate pair-wise connectivity data for visualization and backwards compatibility.
+
+        Args:
+            connectivity_matrices: Dictionary of connectivity matrices per band
+            ch_names: List of channel names
+
+        Returns:
+            List of dictionaries with per-pair connectivity values
+        """
+        n = len(ch_names)
+        pair_data = []
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                ch1, ch2 = ch_names[i], ch_names[j]
+
+                # Determine pair type
+                pair_type = 'other'
+                region = 'mixed'
+
+                if (ch1, ch2) in INTERHEMISPHERIC_PAIRS or (ch2, ch1) in INTERHEMISPHERIC_PAIRS:
+                    pair_type = 'interhemispheric'
+                    # Determine region from channel names
+                    if ch1.startswith('F') or ch2.startswith('F'):
+                        region = 'frontal'
+                    elif ch1.startswith('C') or ch2.startswith('C'):
+                        region = 'central'
+                    elif ch1.startswith('P') or ch2.startswith('P'):
+                        region = 'parietal'
+                    elif ch1.startswith('O') or ch2.startswith('O'):
+                        region = 'occipital'
+                    elif ch1.startswith('T') or ch2.startswith('T'):
+                        region = 'temporal'
+                elif ch1 in CHANNEL_GROUPS['left'] and ch2 in CHANNEL_GROUPS['left']:
+                    pair_type = 'intrahemispheric'
+                    region = 'left'
+                elif ch1 in CHANNEL_GROUPS['right'] and ch2 in CHANNEL_GROUPS['right']:
+                    pair_type = 'intrahemispheric'
+                    region = 'right'
+
+                # Get wPLI values for each band
+                band_values = {}
+                for band_name, matrix in connectivity_matrices.items():
+                    band_values[band_name] = float(matrix[i, j])
+
+                pair_data.append({
+                    'ch1': ch1,
+                    'ch2': ch2,
+                    'type': pair_type,
+                    'region': region,
+                    **band_values
+                })
+
+        return pair_data
 
     def compute_lzc(self, epochs: mne.Epochs) -> Dict[str, Dict[str, float]]:
         """
@@ -627,13 +1054,13 @@ def extract_features(
 
     # Extract features for EO condition if available
     band_power_eo = None
-    coherence_eo = None
+    connectivity_eo = None
     lzc_eo = None
     alpha_peak_eo = None
     if epochs_eo is not None:
         logger.info("Extracting features for Eyes Open condition")
         band_power_eo = extractor.compute_band_power(epochs_eo)
-        coherence_eo = extractor.compute_coherence(epochs_eo)
+        connectivity_eo = extractor.compute_connectivity(epochs_eo)
         lzc_eo = extractor.compute_lzc(epochs_eo)
         alpha_peak_eo = extractor.compute_alpha_peak(epochs_eo)
     else:
@@ -641,13 +1068,13 @@ def extract_features(
 
     # Extract features for EC condition if available
     band_power_ec = None
-    coherence_ec = None
+    connectivity_ec = None
     lzc_ec = None
     alpha_peak_ec = None
     if epochs_ec is not None:
         logger.info("Extracting features for Eyes Closed condition")
         band_power_ec = extractor.compute_band_power(epochs_ec)
-        coherence_ec = extractor.compute_coherence(epochs_ec)
+        connectivity_ec = extractor.compute_connectivity(epochs_ec)
         lzc_ec = extractor.compute_lzc(epochs_ec)
         alpha_peak_ec = extractor.compute_alpha_peak(epochs_ec)
     else:
@@ -666,9 +1093,9 @@ def extract_features(
             'eo': band_power_eo,
             'ec': band_power_ec,
         },
-        'coherence': {
-            'eo': coherence_eo,
-            'ec': coherence_ec,
+        'connectivity': {
+            'eo': connectivity_eo,
+            'ec': connectivity_ec,
         },
         'lzc': {
             'eo': lzc_eo,
