@@ -957,8 +957,8 @@ def generate_connectivity_graph(
                 # Line width proportional to connection strength
                 linewidths.append(1 + 4 * wpli)
 
-    # Create colormap for connections - use hot colormap for better contrast
-    cmap = plt.cm.hot  # black -> red -> yellow -> white
+    # Create colormap for connections - blue (low) to red (high)
+    cmap = plt.cm.coolwarm  # blue -> white -> red
 
     if lines:
         # Use data-adaptive normalization for better color contrast
@@ -1089,8 +1089,8 @@ def generate_connectivity_grid(
     if n_rows == 1:
         axes = axes.reshape(1, -1)
 
-    # Colormap for connections - use a more contrasting colormap
-    cmap = plt.cm.hot  # hot colormap: black -> red -> yellow -> white
+    # Colormap for connections - blue (low) to red (high)
+    cmap = plt.cm.coolwarm  # blue -> white -> red
 
     # First pass: collect all wPLI values to determine data-adaptive normalization
     all_wpli_values = []
