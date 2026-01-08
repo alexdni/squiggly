@@ -4,7 +4,8 @@
       "Bash(openspec list:*)",
       "Bash(openspec show:*)",
       "Bash(openspec validate:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

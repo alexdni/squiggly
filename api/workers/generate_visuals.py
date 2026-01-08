@@ -58,7 +58,9 @@ CONNECTIVITY_BANDS = {
 
 # Electrode positions for 2D head plot (normalized coordinates)
 # Origin at center of head, x positive to right, y positive to front
+# Includes standard 10-20, legacy names (T3/T4/T5/T6), and extended 10-10 positions
 ELECTRODE_POSITIONS = {
+    # Standard 10-20 (19 channels)
     'Fp1': (-0.15, 0.45),
     'Fp2': (0.15, 0.45),
     'F7': (-0.45, 0.25),
@@ -78,7 +80,162 @@ ELECTRODE_POSITIONS = {
     'P8': (0.45, -0.25),
     'O1': (-0.15, -0.45),
     'O2': (0.15, -0.45),
+    # Legacy 10-20 names (T3/T4/T5/T6 -> T7/T8/P7/P8)
+    'T3': (-0.50, 0.0),   # Same as T7
+    'T4': (0.50, 0.0),    # Same as T8
+    'T5': (-0.45, -0.25), # Same as P7
+    'T6': (0.45, -0.25),  # Same as P8
+    # Midline extended 10-10
+    'Fpz': (0.0, 0.45),
+    'AFz': (0.0, 0.35),
+    'FCz': (0.0, 0.12),
+    'CPz': (0.0, -0.12),
+    'POz': (0.0, -0.35),
+    'Oz': (0.0, -0.45),
+    'Iz': (0.0, -0.52),
+    # Anterior frontal row
+    'AF3': (-0.12, 0.38),
+    'AF4': (0.12, 0.38),
+    'AF7': (-0.30, 0.38),
+    'AF8': (0.30, 0.38),
+    # Frontocentral row
+    'FC1': (-0.12, 0.12),
+    'FC2': (0.12, 0.12),
+    'FC3': (-0.22, 0.12),
+    'FC4': (0.22, 0.12),
+    'FC5': (-0.35, 0.12),
+    'FC6': (0.35, 0.12),
+    # Frontotemporal
+    'FT7': (-0.50, 0.12),
+    'FT8': (0.50, 0.12),
+    'FT9': (-0.55, 0.08),
+    'FT10': (0.55, 0.08),
+    # Centroparietal row
+    'CP1': (-0.12, -0.12),
+    'CP2': (0.12, -0.12),
+    'CP3': (-0.22, -0.12),
+    'CP4': (0.22, -0.12),
+    'CP5': (-0.35, -0.12),
+    'CP6': (0.35, -0.12),
+    # Temporoparietal
+    'TP7': (-0.50, -0.12),
+    'TP8': (0.50, -0.12),
+    'TP9': (-0.55, -0.08),
+    'TP10': (0.55, -0.08),
+    # Parieto-occipital row
+    'PO3': (-0.12, -0.38),
+    'PO4': (0.12, -0.38),
+    'PO7': (-0.30, -0.38),
+    'PO8': (0.30, -0.38),
+    # Ear references (mastoid)
+    'A1': (-0.55, 0.0),
+    'A2': (0.55, 0.0),
+    'M1': (-0.55, 0.0),  # Same as A1
+    'M2': (0.55, 0.0),   # Same as A2
 }
+
+def normalize_channel_name(ch_name: str) -> str:
+    """
+    Normalize a channel name to match ELECTRODE_POSITIONS keys.
+    Handles common prefixes, suffixes, and case variations.
+    """
+    # Strip whitespace
+    clean = ch_name.strip()
+
+    # Remove common prefixes
+    for prefix in ['EEG ', 'EEG-', 'ECG ', 'EMG ', 'EOG ']:
+        if clean.upper().startswith(prefix.upper()):
+            clean = clean[len(prefix):]
+
+    # Remove reference suffixes
+    for suffix in ['-LE', '-REF', '-AVG', '-A1', '-A2', '-CZ', '-M1', '-M2', '-Ref', '-ref']:
+        if clean.endswith(suffix):
+            clean = clean[:len(clean) - len(suffix)]
+
+    # Handle case: FP1 -> Fp1, FP2 -> Fp2, FZ -> Fz, etc.
+    if len(clean) >= 2:
+        # Standard format: first letter uppercase, rest lowercase except numbers
+        result = clean[0].upper()
+        for c in clean[1:]:
+            if c.isdigit():
+                result += c
+            else:
+                result += c.lower()
+        clean = result
+
+    return clean
+
+def get_electrode_position(ch_name: str) -> tuple:
+    """
+    Get electrode position for a channel name, with normalization.
+    Returns None if channel not found.
+    """
+    # Try direct lookup first
+    if ch_name in ELECTRODE_POSITIONS:
+        return ELECTRODE_POSITIONS[ch_name]
+
+    # Try normalized name
+    normalized = normalize_channel_name(ch_name)
+    if normalized in ELECTRODE_POSITIONS:
+        return ELECTRODE_POSITIONS[normalized]
+
+    return None
+
+
+def normalize_channel_names_for_mne(ch_names: List[str]) -> Tuple[List[str], Dict[str, str]]:
+    """
+    Normalize channel names to be compatible with MNE's standard_1020 montage.
+
+    Args:
+        ch_names: List of channel names from the data
+
+    Returns:
+        Tuple of (normalized_names, mapping from original to normalized)
+    """
+    # MNE's standard_1020 montage channel names
+    mne_standard_channels = [
+        'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+        'T7', 'C3', 'Cz', 'C4', 'T8',
+        'P7', 'P3', 'Pz', 'P4', 'P8',
+        'O1', 'O2', 'Fpz', 'Oz',
+        # Extended positions that MNE supports
+        'AF3', 'AF4', 'AF7', 'AF8', 'AFz',
+        'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6', 'FCz',
+        'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6', 'CPz',
+        'PO3', 'PO4', 'PO7', 'PO8', 'POz',
+        'FT7', 'FT8', 'FT9', 'FT10',
+        'TP7', 'TP8', 'TP9', 'TP10',
+        'A1', 'A2',
+    ]
+
+    # Legacy to modern mappings
+    legacy_mapping = {
+        'T3': 'T7', 'T4': 'T8', 'T5': 'P7', 'T6': 'P8',
+        'M1': 'A1', 'M2': 'A2',
+    }
+
+    normalized = []
+    mapping = {}
+
+    for ch in ch_names:
+        # First normalize the name
+        clean = normalize_channel_name(ch)
+
+        # Apply legacy mapping if applicable
+        if clean in legacy_mapping:
+            clean = legacy_mapping[clean]
+
+        # Check if it's a valid MNE channel
+        if clean in mne_standard_channels:
+            normalized.append(clean)
+            mapping[ch] = clean
+        else:
+            # Keep original if we can't map it (MNE will handle missing)
+            normalized.append(clean)
+            mapping[ch] = clean
+            logger.debug(f"Channel {ch} normalized to {clean} - may not be in MNE montage")
+
+    return normalized, mapping
 
 # Create custom blue->red colormap for topomaps
 def create_blue_red_cmap():
@@ -117,10 +274,13 @@ def generate_topomap(
     """
     logger.info(f"Generating topomap for {band_name} - {condition}")
 
-    # Create MNE Info object with standard montage
-    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    # Normalize channel names for MNE compatibility
+    normalized_ch_names, ch_mapping = normalize_channel_names_for_mne(ch_names)
+
+    # Create MNE Info object with normalized names
+    info = mne.create_info(ch_names=normalized_ch_names, sfreq=250, ch_types='eeg')
     montage = mne.channels.make_standard_montage('standard_1020')
-    info.set_montage(montage)
+    info.set_montage(montage, on_missing='warn')
 
     # Set color scale
     if vmin is None:
@@ -508,17 +668,20 @@ def generate_lzc_topomap(
     """
     logger.info(f"Generating LZC topomap for {condition}")
 
-    # Extract LZC values in channel order
+    # Normalize channel names for MNE compatibility
+    normalized_ch_names, ch_mapping = normalize_channel_names_for_mne(ch_names)
+
+    # Extract LZC values in channel order (use original names for lookup, normalized for MNE)
     key = 'normalized_lzc' if use_normalized else 'lzc'
     complexity_values = np.array([
         lzc_values[ch][key] if ch in lzc_values else 0.0
         for ch in ch_names
     ])
 
-    # Create MNE Info object with standard montage
-    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    # Create MNE Info object with normalized names
+    info = mne.create_info(ch_names=normalized_ch_names, sfreq=250, ch_types='eeg')
     montage = mne.channels.make_standard_montage('standard_1020')
-    info.set_montage(montage)
+    info.set_montage(montage, on_missing='warn')
 
     # Set color scale
     vmin = np.percentile(complexity_values, 2)
@@ -588,16 +751,19 @@ def generate_alpha_peak_topomap(
     """
     logger.info(f"Generating alpha peak topomap for {condition}")
 
-    # Extract peak frequencies in channel order
+    # Normalize channel names for MNE compatibility
+    normalized_ch_names, ch_mapping = normalize_channel_names_for_mne(ch_names)
+
+    # Extract peak frequencies in channel order (use original names for lookup)
     peak_frequencies = np.array([
         alpha_peak_values[ch]['peak_frequency'] if ch in alpha_peak_values else 0.0
         for ch in ch_names
     ])
 
-    # Create MNE Info object with standard montage
-    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    # Create MNE Info object with normalized names
+    info = mne.create_info(ch_names=normalized_ch_names, sfreq=250, ch_types='eeg')
     montage = mne.channels.make_standard_montage('standard_1020')
-    info.set_montage(montage)
+    info.set_montage(montage, on_missing='warn')
 
     # Set color scale for alpha frequencies (8-12 Hz range)
     vmin = 8.0
@@ -757,11 +923,18 @@ def generate_connectivity_graph(
     ax.add_patch(ear_left)
     ax.add_patch(ear_right)
 
-    # Get electrode positions
+    # Get electrode positions - use helper function for normalization
     positions = {}
-    for ch in ch_names:
-        if ch in ELECTRODE_POSITIONS and ch in matrix_channels:
-            positions[ch] = ELECTRODE_POSITIONS[ch]
+    for ch in matrix_channels:
+        pos = get_electrode_position(ch)
+        if pos is not None:
+            positions[ch] = pos
+
+    logger.info(f"Found positions for {len(positions)}/{len(matrix_channels)} channels: {list(positions.keys())}")
+
+    if len(positions) < 2:
+        logger.warning(f"Not enough channels with positions ({len(positions)}), cannot draw connectivity")
+        return b''
 
     # Collect all connections above threshold
     lines = []
@@ -956,11 +1129,12 @@ def generate_connectivity_grid(
             nose_y = [0.55, 0.58, 0.62, 0.58, 0.55]
             ax.plot(nose_x, nose_y, color='gray', linewidth=1.5)
 
-            # Get electrode positions
+            # Get electrode positions - use helper function for normalization
             positions = {}
-            for ch in ch_names:
-                if ch in ELECTRODE_POSITIONS and ch in matrix_channels:
-                    positions[ch] = ELECTRODE_POSITIONS[ch]
+            for ch in matrix_channels:
+                pos = get_electrode_position(ch)
+                if pos is not None:
+                    positions[ch] = pos
 
             # Collect connections
             lines = []
@@ -1226,16 +1400,21 @@ def generate_topomap_grid(
         PNG image as bytes containing all topomaps in a grid
     """
     logger.info("Generating combined topomap grid for all bands")
+    logger.info(f"Input channel names: {ch_names}")
 
     # Bands ordered by frequency (low to high)
     band_order = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma']
     n_bands = len(band_order)
     n_conditions = len(conditions)
 
-    # Create MNE Info object
-    info = mne.create_info(ch_names=ch_names, sfreq=250, ch_types='eeg')
+    # Normalize channel names for MNE compatibility
+    normalized_ch_names, ch_mapping = normalize_channel_names_for_mne(ch_names)
+    logger.info(f"Normalized channel names: {normalized_ch_names}")
+
+    # Create MNE Info object with normalized names
+    info = mne.create_info(ch_names=normalized_ch_names, sfreq=250, ch_types='eeg')
     montage = mne.channels.make_standard_montage('standard_1020')
-    info.set_montage(montage)
+    info.set_montage(montage, on_missing='warn')
 
     # Create figure with subplots: 4 columns x 2 rows per condition
     # Layout: 2 rows of bands per condition (8 bands total = 4 per row)
