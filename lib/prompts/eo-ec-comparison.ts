@@ -1,11 +1,12 @@
 export const EO_EC_COMPARISON_SYSTEM_PROMPT = `You are an expert neurophysiologist and quantitative EEG (qEEG) specialist with over 20 years of clinical and research experience. Your role is to provide comprehensive, educational interpretations of EEG state changes from Eyes Open (EO) to Eyes Closed (EC) conditions.
 
 IMPORTANT GUIDELINES:
-1. This is for EDUCATIONAL purposes only - do not provide clinical diagnoses or treatment recommendations
+1. This is for EDUCATIONAL purposes only - do not provide clinical diagnoses
 2. Focus specifically on the TRANSITION and REACTIVITY patterns from EO to EC
 3. Frame observations in terms of patterns commonly discussed in research literature
 4. Reference well-known qEEG reactivity patterns and biomarkers from peer-reviewed literature
-5. When patterns suggest clinical significance, note that professional evaluation is needed
+5. When discussing possible correlations with clinical conditions, emphasize these are PATTERNS seen in research, not diagnoses
+6. Always recommend professional evaluation for any concerning patterns
 
 KEY CONCEPTS FOR EO→EC ANALYSIS:
 - Alpha Reactivity: The hallmark EEG change when eyes close is increased posterior alpha power (the "alpha blocking" effect in reverse - alpha appears with eyes closed)
@@ -13,6 +14,16 @@ KEY CONCEPTS FOR EO→EC ANALYSIS:
 - Global vs Regional: Compare whole-brain vs posterior-specific changes
 - Arousal Regulation: Beta/gamma changes may indicate arousal shifts
 - Complexity Changes: LZC typically decreases slightly in EC (more rhythmic activity)
+- Network Connectivity: wPLI measures phase-based connectivity between brain regions
+
+CLINICAL CORRELATIONS (for educational discussion only):
+- Reduced alpha reactivity (<30%): Associated with cognitive decline, depression, some neurodegenerative conditions
+- Elevated theta/beta ratio: Research links to attention difficulties (ADHD phenotype), but not diagnostic
+- Persistent high beta in EC: May indicate anxiety, hypervigilance, difficulty relaxing
+- Slowed IAF (<9 Hz): Associated with cognitive processing concerns, aging, some neurological conditions
+- Reduced connectivity/efficiency: May indicate integration difficulties seen in various conditions
+- Elevated frontal theta: Can be associated with emotional regulation challenges
+- Asymmetry patterns: FAA shifts associated with mood regulation in research literature
 
 OUTPUT FORMAT:
 Structure your response with the following sections (use ## headers):
@@ -45,6 +56,14 @@ If LZC data is available:
 - Expected: slight decrease in complexity (more rhythmic alpha)
 - Regional variations in complexity change
 
+## Network Connectivity
+If connectivity data is available:
+- Global efficiency changes EO→EC (integration capacity)
+- Clustering coefficient changes (local processing)
+- Small-worldness (balance of integration and segregation)
+- Interhemispheric connectivity (cross-hemisphere communication)
+- Band-specific connectivity patterns (alpha connectivity often increases in EC)
+
 ## Alpha Topography
 Analysis of the spatial distribution of alpha changes:
 - Does the "center of mass" shift posteriorly in EC (as expected)?
@@ -57,8 +76,15 @@ If alpha peak data is available:
 - Expected: IAF should be similar or slightly higher in EC
 - Note any significant shift in peak frequency between conditions
 
+## Possible Clinical Correlations
+Based on the observed patterns, discuss what conditions or phenotypes these patterns have been ASSOCIATED with in research literature. Be clear that:
+- These are correlations observed in research, NOT diagnoses
+- Many patterns are non-specific and can appear in various conditions
+- Individual variation is substantial
+- Professional evaluation is essential for any clinical concerns
+
 ## Observations
-Integration of all findings, overall assessment of EO→EC regulatory capacity, and any patterns warranting professional follow-up. Include the educational disclaimer.`;
+Integration of all findings, overall assessment of EO→EC regulatory capacity, and any patterns warranting professional follow-up. Include the educational disclaimer that this analysis is for informational purposes only and does not constitute medical advice or diagnosis.`;
 
 export interface EOECComparisonPayload {
   recording_info: {
@@ -87,6 +113,19 @@ export interface EOECComparisonPayload {
   // LZC complexity data
   eo_lzc?: Record<string, number>;
   ec_lzc?: Record<string, number>;
+  // Network connectivity metrics by band
+  eo_network_metrics?: Record<string, {
+    global_efficiency: number;
+    mean_clustering_coefficient: number;
+    small_worldness: number;
+    interhemispheric_connectivity: number;
+  }>;
+  ec_network_metrics?: Record<string, {
+    global_efficiency: number;
+    mean_clustering_coefficient: number;
+    small_worldness: number;
+    interhemispheric_connectivity: number;
+  }>;
   client_metadata?: {
     age?: number;
     gender?: string;
@@ -100,8 +139,10 @@ export interface EOECInterpretationContent {
   arousal_shift: string;
   theta_beta_dynamics: string;
   complexity_shift: string;
+  network_connectivity: string;
   alpha_topography: string;
   individual_alpha_frequency: string;
+  possible_clinical_correlations: string;
   observations: string;
 }
 
@@ -303,6 +344,54 @@ export function buildEOECComparisonPrompt(data: EOECComparisonPayload): string {
     }
   }
 
+  // Network Connectivity comparison
+  if (data.eo_network_metrics || data.ec_network_metrics) {
+    prompt += `## Network Connectivity Metrics (wPLI-based)\n`;
+    const connectivityBands = ['delta', 'theta', 'alpha', 'beta'];
+
+    for (const band of connectivityBands) {
+      const eoMetrics = data.eo_network_metrics?.[band];
+      const ecMetrics = data.ec_network_metrics?.[band];
+
+      if (eoMetrics || ecMetrics) {
+        prompt += `\n**${band.charAt(0).toUpperCase() + band.slice(1)} Band:**\n`;
+
+        if (eoMetrics && ecMetrics) {
+          // Both conditions available - show comparison
+          const geChange = ((ecMetrics.global_efficiency - eoMetrics.global_efficiency) / eoMetrics.global_efficiency * 100) || 0;
+          const ccChange = ((ecMetrics.mean_clustering_coefficient - eoMetrics.mean_clustering_coefficient) / eoMetrics.mean_clustering_coefficient * 100) || 0;
+          const swChange = ((ecMetrics.small_worldness - eoMetrics.small_worldness) / eoMetrics.small_worldness * 100) || 0;
+          const ihChange = ((ecMetrics.interhemispheric_connectivity - eoMetrics.interhemispheric_connectivity) / eoMetrics.interhemispheric_connectivity * 100) || 0;
+
+          prompt += `- Global Efficiency: EO=${eoMetrics.global_efficiency.toFixed(3)}, EC=${ecMetrics.global_efficiency.toFixed(3)} (${geChange >= 0 ? '+' : ''}${geChange.toFixed(1)}%)\n`;
+          prompt += `- Clustering Coef: EO=${eoMetrics.mean_clustering_coefficient.toFixed(3)}, EC=${ecMetrics.mean_clustering_coefficient.toFixed(3)} (${ccChange >= 0 ? '+' : ''}${ccChange.toFixed(1)}%)\n`;
+          prompt += `- Small-worldness: EO=${eoMetrics.small_worldness.toFixed(2)}, EC=${ecMetrics.small_worldness.toFixed(2)} (${swChange >= 0 ? '+' : ''}${swChange.toFixed(1)}%)\n`;
+          prompt += `- Interhemispheric: EO=${eoMetrics.interhemispheric_connectivity.toFixed(3)}, EC=${ecMetrics.interhemispheric_connectivity.toFixed(3)} (${ihChange >= 0 ? '+' : ''}${ihChange.toFixed(1)}%)\n`;
+        } else if (eoMetrics) {
+          // Only EO
+          prompt += `- Global Efficiency (EO): ${eoMetrics.global_efficiency.toFixed(3)}\n`;
+          prompt += `- Clustering Coef (EO): ${eoMetrics.mean_clustering_coefficient.toFixed(3)}\n`;
+          prompt += `- Small-worldness (EO): ${eoMetrics.small_worldness.toFixed(2)}\n`;
+          prompt += `- Interhemispheric (EO): ${eoMetrics.interhemispheric_connectivity.toFixed(3)}\n`;
+        } else if (ecMetrics) {
+          // Only EC
+          prompt += `- Global Efficiency (EC): ${ecMetrics.global_efficiency.toFixed(3)}\n`;
+          prompt += `- Clustering Coef (EC): ${ecMetrics.mean_clustering_coefficient.toFixed(3)}\n`;
+          prompt += `- Small-worldness (EC): ${ecMetrics.small_worldness.toFixed(2)}\n`;
+          prompt += `- Interhemispheric (EC): ${ecMetrics.interhemispheric_connectivity.toFixed(3)}\n`;
+        }
+      }
+    }
+
+    // Add interpretation guidance
+    prompt += `\n**Interpretation Notes:**\n`;
+    prompt += `- Global Efficiency: Higher = better integration across brain regions\n`;
+    prompt += `- Clustering Coefficient: Higher = stronger local processing\n`;
+    prompt += `- Small-worldness: >1 indicates optimal balance of integration and segregation\n`;
+    prompt += `- Interhemispheric: Connectivity between left and right hemisphere\n`;
+    prompt += `- Alpha connectivity typically increases in EC (relaxed, synchronized state)\n\n`;
+  }
+
   // Alpha Peak Frequency comparison
   if (data.eo_alpha_peak && data.ec_alpha_peak) {
     prompt += `## Individual Alpha Frequency (IAF) Comparison\n`;
@@ -353,7 +442,7 @@ export function buildEOECComparisonPrompt(data: EOECComparisonPayload): string {
     prompt += `\n`;
   }
 
-  prompt += `Please provide your expert interpretation focusing on EO→EC regulatory capacity, alpha reactivity patterns, arousal regulation, and any atypical findings. Avoid diagnostic labels.`;
+  prompt += `Please provide your expert interpretation focusing on EO→EC regulatory capacity, alpha reactivity patterns, arousal regulation, network connectivity changes, and any atypical findings. When discussing possible clinical correlations, be clear these are research associations, not diagnoses, and recommend professional evaluation for any concerning patterns.`;
 
   return prompt;
 }

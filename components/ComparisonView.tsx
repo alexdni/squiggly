@@ -46,8 +46,10 @@ interface EOECInterpretationContent {
   arousal_shift: string;
   theta_beta_dynamics: string;
   complexity_shift: string;
+  network_connectivity: string;
   alpha_topography: string;
   individual_alpha_frequency: string;
+  possible_clinical_correlations: string;
   observations: string;
 }
 
@@ -57,6 +59,23 @@ interface EOECInterpretation {
   eo_recording_id: string;
   ec_recording_id: string;
   content: EOECInterpretationContent;
+}
+
+interface AnalysisVisuals {
+  topomap_grid?: string;
+  lzc_topomap_EO?: string;
+  lzc_topomap_EC?: string;
+  connectivity_grid?: string;
+  network_metrics?: string;
+  spectrogram_EO?: string;
+  spectrogram_EC?: string;
+  alpha_peak_topomap_EO?: string;
+  alpha_peak_topomap_EC?: string;
+}
+
+interface ComparisonVisuals {
+  eo: AnalysisVisuals;
+  ec: AnalysisVisuals;
 }
 
 interface ComparisonViewProps {
@@ -79,6 +98,9 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const [aiInterpretation, setAiInterpretation] = useState<EOECInterpretation | null>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Visual comparisons state
+  const [comparisonVisuals, setComparisonVisuals] = useState<ComparisonVisuals | null>(null);
 
   useEffect(() => {
     fetchRecordingsAndAnalyses();
@@ -181,6 +203,11 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
       const data = await response.json();
       setComparisonResult(data.comparison);
+
+      // Set visual comparisons if available
+      if (data.visuals) {
+        setComparisonVisuals(data.visuals);
+      }
 
       // Try to fetch cached AI interpretation
       fetchCachedAIInterpretation(eoRecId, ecRecId);
@@ -511,6 +538,316 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
             </div>
           </div>
 
+          {/* Visual Comparisons Section */}
+          {comparisonVisuals && (comparisonVisuals.eo.topomap_grid || comparisonVisuals.ec.topomap_grid ||
+            comparisonVisuals.eo.connectivity_grid || comparisonVisuals.ec.connectivity_grid ||
+            comparisonVisuals.eo.lzc_topomap_EO || comparisonVisuals.ec.lzc_topomap_EC) && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                Visual Comparisons: EO vs EC
+              </h2>
+              <p className="text-sm text-gray-800 mb-6">
+                Side-by-side visualizations showing differences between Eyes Open (EO) and Eyes Closed (EC) conditions.
+              </p>
+
+              {/* Topographic Maps Comparison */}
+              {(comparisonVisuals.eo.topomap_grid || comparisonVisuals.ec.topomap_grid) && (
+                <div className="mb-8">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Band Power Topographic Maps
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Spatial distribution of power across frequency bands for each recording.
+                  </p>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {comparisonVisuals.eo.topomap_grid && (
+                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
+                          EO Recording
+                        </h4>
+                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                          <img
+                            src={comparisonVisuals.eo.topomap_grid}
+                            alt="EO Band Power Topographic Maps"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {comparisonVisuals.ec.topomap_grid && (
+                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
+                          EC Recording
+                        </h4>
+                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                          <img
+                            src={comparisonVisuals.ec.topomap_grid}
+                            alt="EC Band Power Topographic Maps"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* LZC Complexity Comparison */}
+              {((comparisonVisuals.eo.lzc_topomap_EO || comparisonVisuals.eo.lzc_topomap_EC) ||
+                (comparisonVisuals.ec.lzc_topomap_EO || comparisonVisuals.ec.lzc_topomap_EC)) && (
+                <div className="mb-8">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Signal Complexity (Lempel-Ziv)
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Higher LZC (red) indicates more complex signals. Lower LZC (blue) indicates more regular patterns.
+                    Complexity typically decreases in EC as alpha rhythms become more dominant.
+                  </p>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* EO Recording LZC */}
+                    {(comparisonVisuals.eo.lzc_topomap_EO || comparisonVisuals.eo.lzc_topomap_EC) && (
+                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
+                          EO Recording
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          {comparisonVisuals.eo.lzc_topomap_EO && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.eo.lzc_topomap_EO}
+                                  alt="EO Recording - LZC Eyes Open"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {comparisonVisuals.eo.lzc_topomap_EC && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.eo.lzc_topomap_EC}
+                                  alt="EO Recording - LZC Eyes Closed"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {/* EC Recording LZC */}
+                    {(comparisonVisuals.ec.lzc_topomap_EO || comparisonVisuals.ec.lzc_topomap_EC) && (
+                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
+                          EC Recording
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          {comparisonVisuals.ec.lzc_topomap_EO && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.ec.lzc_topomap_EO}
+                                  alt="EC Recording - LZC Eyes Open"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {comparisonVisuals.ec.lzc_topomap_EC && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.ec.lzc_topomap_EC}
+                                  alt="EC Recording - LZC Eyes Closed"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Brain Connectivity Comparison */}
+              {(comparisonVisuals.eo.connectivity_grid || comparisonVisuals.ec.connectivity_grid) && (
+                <div className="mb-8">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Brain Connectivity (wPLI)
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Weighted Phase Lag Index connectivity between electrode sites. Line color and thickness indicate connection strength.
+                    Alpha connectivity typically increases in EC (relaxed, synchronized state).
+                  </p>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {comparisonVisuals.eo.connectivity_grid && (
+                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
+                          EO Recording
+                        </h4>
+                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                          <img
+                            src={comparisonVisuals.eo.connectivity_grid}
+                            alt="EO Brain Connectivity"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {comparisonVisuals.ec.connectivity_grid && (
+                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
+                          EC Recording
+                        </h4>
+                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                          <img
+                            src={comparisonVisuals.ec.connectivity_grid}
+                            alt="EC Brain Connectivity"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Network Metrics Comparison */}
+              {(comparisonVisuals.eo.network_metrics || comparisonVisuals.ec.network_metrics) && (
+                <div className="mb-8">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Network Metrics
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Graph-theoretic metrics comparing EO vs EC. Global efficiency measures integration,
+                    clustering coefficient measures local processing, small-worldness indicates optimal network organization.
+                  </p>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {comparisonVisuals.eo.network_metrics && (
+                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
+                          EO Recording
+                        </h4>
+                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                          <img
+                            src={comparisonVisuals.eo.network_metrics}
+                            alt="EO Network Metrics"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {comparisonVisuals.ec.network_metrics && (
+                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
+                          EC Recording
+                        </h4>
+                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                          <img
+                            src={comparisonVisuals.ec.network_metrics}
+                            alt="EC Network Metrics"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Individual Alpha Frequency Comparison */}
+              {((comparisonVisuals.eo.alpha_peak_topomap_EO || comparisonVisuals.eo.alpha_peak_topomap_EC) ||
+                (comparisonVisuals.ec.alpha_peak_topomap_EO || comparisonVisuals.ec.alpha_peak_topomap_EC)) && (
+                <div className="mb-8">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Individual Alpha Frequency (IAF)
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Peak alpha frequency (8-12 Hz) at each electrode site. Higher IAF is associated with
+                    better cognitive performance and neural efficiency.
+                  </p>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* EO Recording IAF */}
+                    {(comparisonVisuals.eo.alpha_peak_topomap_EO || comparisonVisuals.eo.alpha_peak_topomap_EC) && (
+                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
+                          EO Recording
+                        </h4>
+                        <div className="space-y-4">
+                          {comparisonVisuals.eo.alpha_peak_topomap_EO && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.eo.alpha_peak_topomap_EO}
+                                  alt="EO Recording - IAF Eyes Open"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {comparisonVisuals.eo.alpha_peak_topomap_EC && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.eo.alpha_peak_topomap_EC}
+                                  alt="EO Recording - IAF Eyes Closed"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {/* EC Recording IAF */}
+                    {(comparisonVisuals.ec.alpha_peak_topomap_EO || comparisonVisuals.ec.alpha_peak_topomap_EC) && (
+                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
+                          EC Recording
+                        </h4>
+                        <div className="space-y-4">
+                          {comparisonVisuals.ec.alpha_peak_topomap_EO && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.ec.alpha_peak_topomap_EO}
+                                  alt="EC Recording - IAF Eyes Open"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {comparisonVisuals.ec.alpha_peak_topomap_EC && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                <img
+                                  src={comparisonVisuals.ec.alpha_peak_topomap_EC}
+                                  alt="EC Recording - IAF Eyes Closed"
+                                  className="w-full h-auto"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* AI Analysis Section */}
           <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 border border-purple-200">
             <div className="flex items-center justify-between mb-4">
@@ -634,6 +971,14 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   </div>
                 )}
 
+                {/* Network Connectivity */}
+                {aiInterpretation.content.network_connectivity && (
+                  <div className="bg-white rounded-lg p-4 border border-purple-100">
+                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Network Connectivity</h3>
+                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.network_connectivity}</p>
+                  </div>
+                )}
+
                 {/* Alpha Topography */}
                 {aiInterpretation.content.alpha_topography && (
                   <div className="bg-white rounded-lg p-4 border border-purple-100">
@@ -647,6 +992,15 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   <div className="bg-white rounded-lg p-4 border border-purple-100">
                     <h3 className="text-lg font-semibold text-purple-900 mb-2">Individual Alpha Frequency</h3>
                     <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.individual_alpha_frequency}</p>
+                  </div>
+                )}
+
+                {/* Possible Clinical Correlations */}
+                {aiInterpretation.content.possible_clinical_correlations && (
+                  <div className="bg-white rounded-lg p-4 border border-blue-200 bg-blue-50">
+                    <h3 className="text-lg font-semibold text-blue-900 mb-2">Possible Clinical Correlations</h3>
+                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.possible_clinical_correlations}</p>
+                    <p className="text-xs text-blue-600 mt-3 italic">Note: These are research-based associations, not diagnoses. Professional evaluation is recommended.</p>
                   </div>
                 )}
 

@@ -307,6 +307,43 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
     }
 
+    // Add network connectivity metrics if available
+    // Structure: connectivity.eo.network_metrics[band] = { global_efficiency, mean_clustering_coefficient, small_worldness, interhemispheric_connectivity }
+    if (eoAnalysis.results?.connectivity?.eo?.network_metrics) {
+      const eoNetworkMetrics: Record<string, { global_efficiency: number; mean_clustering_coefficient: number; small_worldness: number; interhemispheric_connectivity: number }> = {};
+      for (const [band, metrics] of Object.entries(eoAnalysis.results.connectivity.eo.network_metrics)) {
+        const m = metrics as any;
+        if (m && typeof m.global_efficiency === 'number') {
+          eoNetworkMetrics[band] = {
+            global_efficiency: m.global_efficiency || 0,
+            mean_clustering_coefficient: m.mean_clustering_coefficient || 0,
+            small_worldness: m.small_worldness || 0,
+            interhemispheric_connectivity: m.interhemispheric_connectivity || 0,
+          };
+        }
+      }
+      if (Object.keys(eoNetworkMetrics).length > 0) {
+        payload.eo_network_metrics = eoNetworkMetrics;
+      }
+    }
+    if (ecAnalysis.results?.connectivity?.ec?.network_metrics) {
+      const ecNetworkMetrics: Record<string, { global_efficiency: number; mean_clustering_coefficient: number; small_worldness: number; interhemispheric_connectivity: number }> = {};
+      for (const [band, metrics] of Object.entries(ecAnalysis.results.connectivity.ec.network_metrics)) {
+        const m = metrics as any;
+        if (m && typeof m.global_efficiency === 'number') {
+          ecNetworkMetrics[band] = {
+            global_efficiency: m.global_efficiency || 0,
+            mean_clustering_coefficient: m.mean_clustering_coefficient || 0,
+            small_worldness: m.small_worldness || 0,
+            interhemispheric_connectivity: m.interhemispheric_connectivity || 0,
+          };
+        }
+      }
+      if (Object.keys(ecNetworkMetrics).length > 0) {
+        payload.ec_network_metrics = ecNetworkMetrics;
+      }
+    }
+
     // Add client metadata if available
     if (project?.client_metadata) {
       payload.client_metadata = {
@@ -330,14 +367,17 @@ export async function POST(request: Request, { params }: RouteParams) {
       );
 
       // Map the raw content to our EO-EC structure
+      // The rawContent uses generic field names, map to our specific EO-EC fields
       interpretationContent = {
         summary: rawContent.summary || '',
-        alpha_reactivity: rawContent.amplitude_patterns || '',
-        arousal_shift: rawContent.frequency_ratios || '',
-        theta_beta_dynamics: rawContent.asymmetry_analysis || '',
-        complexity_shift: rawContent.complexity_connectivity || '',
-        alpha_topography: rawContent.peak_alpha_frequency || '',
-        individual_alpha_frequency: '',
+        alpha_reactivity: rawContent.amplitude_patterns || rawContent.alpha_reactivity || '',
+        arousal_shift: rawContent.frequency_ratios || rawContent.arousal_shift || '',
+        theta_beta_dynamics: rawContent.asymmetry_analysis || rawContent.theta_beta_dynamics || '',
+        complexity_shift: rawContent.complexity_connectivity || rawContent.complexity_shift || '',
+        network_connectivity: rawContent.network_connectivity || '',
+        alpha_topography: rawContent.peak_alpha_frequency || rawContent.alpha_topography || '',
+        individual_alpha_frequency: rawContent.individual_alpha_frequency || '',
+        possible_clinical_correlations: rawContent.possible_clinical_correlations || '',
         observations: rawContent.observations || '',
       };
     } catch (error: any) {

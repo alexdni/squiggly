@@ -100,9 +100,17 @@ export async function GET(
     // Compute comparison
     const comparison = computeComparison(eoAnalysis, ecAnalysis);
 
+    // Extract visual URLs from both analyses for side-by-side display
+    const eoVisuals = (eoAnalysis.results as any)?.visuals || {};
+    const ecVisuals = (ecAnalysis.results as any)?.visuals || {};
+
     return NextResponse.json({
       success: true,
       comparison,
+      visuals: {
+        eo: eoVisuals,
+        ec: ecVisuals,
+      },
     });
   } catch (error: any) {
     console.error('Error in GET /api/projects/:id/compare:', error);

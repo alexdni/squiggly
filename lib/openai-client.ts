@@ -21,6 +21,15 @@ export interface AIInterpretationContent {
   asymmetry_analysis: string;
   complexity_connectivity: string;
   observations: string;
+  // Extended fields for EO-EC comparison
+  alpha_reactivity?: string;
+  arousal_shift?: string;
+  theta_beta_dynamics?: string;
+  complexity_shift?: string;
+  network_connectivity?: string;
+  alpha_topography?: string;
+  individual_alpha_frequency?: string;
+  possible_clinical_correlations?: string;
 }
 
 export interface AIInterpretation {
@@ -87,17 +96,36 @@ function parseInterpretationResponse(content: string): AIInterpretationContent {
     asymmetry_analysis: '',
     complexity_connectivity: '',
     observations: '',
+    // Extended fields for EO-EC comparison
+    alpha_reactivity: '',
+    arousal_shift: '',
+    theta_beta_dynamics: '',
+    complexity_shift: '',
+    network_connectivity: '',
+    alpha_topography: '',
+    individual_alpha_frequency: '',
+    possible_clinical_correlations: '',
   };
 
   // Try to parse sections based on headers
   // Includes patterns for both standard EEG interpretation and EO-EC comparison
   const sectionPatterns: { key: keyof AIInterpretationContent; patterns: RegExp[] }[] = [
     { key: 'summary', patterns: [/##?\s*Summary[:\s]*/i, /##?\s*Overview[:\s]*/i] },
-    { key: 'amplitude_patterns', patterns: [/##?\s*Amplitude\s*Patterns?[:\s]*/i, /##?\s*Band\s*Power[:\s]*/i, /##?\s*Alpha\s*Reactivity[:\s]*/i] },
-    { key: 'frequency_ratios', patterns: [/##?\s*Frequency\s*Ratios?[:\s]*/i, /##?\s*Ratios?[:\s]*/i, /##?\s*Arousal\s*Shift[:\s]*/i, /##?\s*Theta.?Beta\s*Dynamics[:\s]*/i] },
-    { key: 'peak_alpha_frequency', patterns: [/##?\s*Peak\s*Alpha[:\s]*/i, /##?\s*Individual\s*Alpha[:\s]*/i, /##?\s*IAF[:\s]*/i, /##?\s*Alpha\s*Peak[:\s]*/i, /##?\s*Alpha\s*Topography[:\s]*/i] },
+    // Standard EEG patterns
+    { key: 'amplitude_patterns', patterns: [/##?\s*Amplitude\s*Patterns?[:\s]*/i, /##?\s*Band\s*Power[:\s]*/i] },
+    { key: 'frequency_ratios', patterns: [/##?\s*Frequency\s*Ratios?[:\s]*/i, /##?\s*Ratios?[:\s]*/i] },
+    { key: 'peak_alpha_frequency', patterns: [/##?\s*Peak\s*Alpha[:\s]*/i, /##?\s*Alpha\s*Peak[:\s]*/i] },
     { key: 'asymmetry_analysis', patterns: [/##?\s*Asymmetry[:\s]*/i, /##?\s*Hemispheric[:\s]*/i] },
-    { key: 'complexity_connectivity', patterns: [/##?\s*Complexity[:\s]*/i, /##?\s*Connectivity[:\s]*/i, /##?\s*LZC[:\s]*/i, /##?\s*Complexity\s*Shift[:\s]*/i] },
+    { key: 'complexity_connectivity', patterns: [/##?\s*Complexity[:\s]*/i, /##?\s*LZC[:\s]*/i] },
+    // EO-EC comparison specific patterns
+    { key: 'alpha_reactivity', patterns: [/##?\s*Alpha\s*Reactivity[:\s]*/i] },
+    { key: 'arousal_shift', patterns: [/##?\s*Arousal\s*Shift[:\s]*/i] },
+    { key: 'theta_beta_dynamics', patterns: [/##?\s*Theta.?Beta\s*Dynamics[:\s]*/i, /##?\s*Theta\/Beta\s*Dynamics[:\s]*/i] },
+    { key: 'complexity_shift', patterns: [/##?\s*Complexity\s*Shift[:\s]*/i] },
+    { key: 'network_connectivity', patterns: [/##?\s*Network\s*Connectivity[:\s]*/i, /##?\s*Connectivity[:\s]*/i] },
+    { key: 'alpha_topography', patterns: [/##?\s*Alpha\s*Topography[:\s]*/i] },
+    { key: 'individual_alpha_frequency', patterns: [/##?\s*Individual\s*Alpha\s*Frequency[:\s]*/i, /##?\s*IAF[:\s]*/i] },
+    { key: 'possible_clinical_correlations', patterns: [/##?\s*Possible\s*Clinical\s*Correlations?[:\s]*/i, /##?\s*Clinical\s*Correlations?[:\s]*/i] },
     { key: 'observations', patterns: [/##?\s*Observations?[:\s]*/i, /##?\s*Clinical\s*Observations?[:\s]*/i, /##?\s*Additional[:\s]*/i] },
   ];
 
