@@ -277,16 +277,43 @@ function applyBiquad(signal: number[], b: number[], a: number[]): number[] {
 /**
  * Apply forward-backward filtering (zero-phase) to avoid phase distortion
  * This is equivalent to scipy's filtfilt
+ * Includes edge padding to minimize startup transients
  */
 function filtfilt(signal: number[], b: number[], a: number[]): number[] {
+  const n = signal.length;
+  if (n < 10) return signal;
+
+  // Pad length - use 3x the filter order (second order = 6 samples min)
+  // But for better results, use a larger pad based on signal length
+  const padLen = Math.min(Math.floor(n / 4), 250); // Up to 1 second at 250Hz
+
+  // Create padded signal with reflected edges (like scipy's filtfilt)
+  const padded: number[] = new Array(n + 2 * padLen);
+
+  // Reflect the beginning
+  for (let i = 0; i < padLen; i++) {
+    padded[i] = 2 * signal[0] - signal[padLen - i];
+  }
+  // Copy original signal
+  for (let i = 0; i < n; i++) {
+    padded[padLen + i] = signal[i];
+  }
+  // Reflect the end
+  for (let i = 0; i < padLen; i++) {
+    padded[padLen + n + i] = 2 * signal[n - 1] - signal[n - 2 - i];
+  }
+
   // Forward pass
-  let filtered = applyBiquad(signal, b, a);
+  let filtered = applyBiquad(padded, b, a);
   // Reverse
   filtered = filtered.reverse();
   // Backward pass
   filtered = applyBiquad(filtered, b, a);
   // Reverse again
-  return filtered.reverse();
+  filtered = filtered.reverse();
+
+  // Remove padding and return original length
+  return filtered.slice(padLen, padLen + n);
 }
 
 /**

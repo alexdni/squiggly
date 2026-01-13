@@ -63,26 +63,31 @@ export async function POST(
       );
     }
 
-    // Check that we have at least ONE condition (EO or EC)
-    const hasEO = recording.eo_start !== null && recording.eo_end !== null;
-    const hasEC = recording.ec_start !== null && recording.ec_end !== null;
+    // Check segment labels - if none provided, use entire recording as EO (baseline)
+    let hasEO = recording.eo_start !== null && recording.eo_end !== null;
+    let hasEC = recording.ec_start !== null && recording.ec_end !== null;
+
+    // Default segment times (will be overridden if segments are labeled)
+    let eoStart = recording.eo_start;
+    let eoEnd = recording.eo_end;
+    let ecStart = recording.ec_start;
+    let ecEnd = recording.ec_end;
 
     if (!hasEO && !hasEC) {
-      return NextResponse.json(
-        {
-          error: 'Recording segments not labeled (EO/EC times missing)',
-          message: 'Please label the segments or use the auto-detect feature',
-          recordingId: recording.id
-        },
-        { status: 400 }
-      );
+      // No segments labeled - use entire recording as EO (eyes open / baseline)
+      console.log(`Recording ${recording.id} has no segment labels - using entire recording as baseline`);
+      eoStart = 0;
+      eoEnd = recording.duration_seconds;
+      hasEO = true;
     }
 
-    // Log warning if only one condition is present
+    // Log info about which conditions are present
     if (hasEO && !hasEC) {
-      console.log(`Warning: Recording ${recording.id} has only EO data, no EC data`);
+      console.log(`Recording ${recording.id} has only EO data (${eoStart}s - ${eoEnd}s)`);
     } else if (hasEC && !hasEO) {
-      console.log(`Warning: Recording ${recording.id} has only EC data, no EO data`);
+      console.log(`Recording ${recording.id} has only EC data (${ecStart}s - ${ecEnd}s)`);
+    } else if (hasEO && hasEC) {
+      console.log(`Recording ${recording.id} has both EO (${eoStart}s - ${eoEnd}s) and EC (${ecStart}s - ${ecEnd}s) data`);
     }
 
     // Update status to processing
@@ -104,8 +109,14 @@ export async function POST(
       // Simulate processing time
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Generate mock analysis results
-      const mockResults = generateMockResults(analysis.recording);
+      // Generate mock analysis results with corrected segment times
+      const mockResults = generateMockResults({
+        ...recording,
+        eo_start: eoStart,
+        eo_end: eoEnd,
+        ec_start: ecStart,
+        ec_end: ecEnd,
+      });
 
       // Update analysis with results
       await (supabase as any)
@@ -132,10 +143,10 @@ export async function POST(
           {
             analysisId: params.id,
             filePath: recording.file_path,
-            eoStart: recording.eo_start,
-            eoEnd: recording.eo_end,
-            ecStart: recording.ec_start,
-            ecEnd: recording.ec_end,
+            eoStart: eoStart,
+            eoEnd: eoEnd,
+            ecStart: ecStart,
+            ecEnd: ecEnd,
           },
           workerConfig
         );
@@ -221,13 +232,17 @@ function generateMockResults(recording: any) {
     'lowgamma',
   ];
 
+  // Calculate epochs (handle null EC segment)
+  const hasEO = recording.eo_start !== null && recording.eo_end !== null;
+  const hasEC = recording.ec_start !== null && recording.ec_end !== null;
+
   // QC Report
   const qc_report = {
     artifact_rejection_rate: Math.random() * 20 + 5, // 5-25%
     bad_channels: [], // No bad channels for mock data
     ica_components_removed: Math.floor(Math.random() * 3 + 1), // 1-3 components
-    final_epochs_eo: Math.floor((recording.eo_end - recording.eo_start) / 2), // Assume 2s epochs
-    final_epochs_ec: Math.floor((recording.ec_end - recording.ec_start) / 2),
+    final_epochs_eo: hasEO ? Math.floor((recording.eo_end - recording.eo_start) / 2) : 0, // Assume 2s epochs
+    final_epochs_ec: hasEC ? Math.floor((recording.ec_end - recording.ec_start) / 2) : 0,
   };
 
   // Band Power Analysis
