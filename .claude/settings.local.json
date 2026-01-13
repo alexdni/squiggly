@@ -12,7 +12,8 @@
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "/home/deepdrill/src/DivergenceReactApp"
+      "/home/deepdrill/src/DivergenceReactApp",
+      "/home/deepdrill/src/DivergenceWebapp"
     ]
   }
 }

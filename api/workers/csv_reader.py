@@ -234,13 +234,10 @@ class CSVReader:
             # This is more robust than 'constant' for signals with slow drift
             data[i, :] = scipy_signal.detrend(data[i, :], type='linear')
 
-        # Scale and convert to volts
-        # Divergence/Flex CSV data from the mobile app is ~100x larger than actual microvolts
-        # due to how the BrainBit SDK values are processed (1e6 multiplication on values
-        # that aren't in standard Volts). We divide by 100 to get proper µV, then convert to V.
-        DIVERGENCE_SCALE_FACTOR = 100
-        logger.info(f"Applying scale factor 1/{DIVERGENCE_SCALE_FACTOR} to convert to proper µV")
-        data_volts = data / DIVERGENCE_SCALE_FACTOR * 1e-6  # Raw -> µV -> V
+        # Convert to volts
+        # Divergence/Flex CSV data is already in microvolts (after the mobile app's
+        # 1e6 multiplication). We just need to convert µV to V.
+        data_volts = data * 1e-6  # µV -> V
 
         # Create MNE info structure with appropriate channel types
         info = mne.create_info(

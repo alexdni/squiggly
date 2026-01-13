@@ -214,45 +214,129 @@ export async function readCSVFile(file: File): Promise<CSVData> {
 }
 
 /**
- * Scaling factor for Divergence/Flex CSV data
- * The BrainBit SDK returns values that, after the mobile app's 1e6 multiplication,
- * are ~100x larger than actual microvolts. This appears to be because the SDK
- * returns values in a unit that's 100x smaller than Volts (possibly related to
- * ADC resolution or internal scaling).
- *
- * Dividing by 100 brings the values into the correct microvolt range.
+ * Butterworth filter coefficient calculator
+ * Compute biquad (second-order section) coefficients for Butterworth filter
  */
-const DIVERGENCE_CSV_SCALE_FACTOR = 100;
+function butterworthCoeffs(
+  filterType: 'lowpass' | 'highpass',
+  cutoffHz: number,
+  sampleRate: number
+): { b: number[], a: number[] } {
+  const w0 = Math.tan(Math.PI * cutoffHz / sampleRate);
+  const w0sq = w0 * w0;
+  const sqrt2 = Math.SQRT2;
 
-/**
- * Apply linear detrend to a signal (remove linear trend + mean)
- * This is better than simple mean subtraction for EEG with drift
- */
-function linearDetrend(signal: number[]): number[] {
-  const n = signal.length;
-  if (n < 2) return signal;
+  let b0: number, b1: number, b2: number;
+  let a0: number, a1: number, a2: number;
 
-  // Calculate linear regression: y = mx + b
-  // Using least squares method
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-  for (let i = 0; i < n; i++) {
-    sumX += i;
-    sumY += signal[i];
-    sumXY += i * signal[i];
-    sumX2 += i * i;
+  if (filterType === 'lowpass') {
+    a0 = 1 + sqrt2 * w0 + w0sq;
+    a1 = 2 * (w0sq - 1);
+    a2 = 1 - sqrt2 * w0 + w0sq;
+    b0 = w0sq;
+    b1 = 2 * w0sq;
+    b2 = w0sq;
+  } else {
+    // highpass
+    a0 = 1 + sqrt2 * w0 + w0sq;
+    a1 = 2 * (w0sq - 1);
+    a2 = 1 - sqrt2 * w0 + w0sq;
+    b0 = 1;
+    b1 = -2;
+    b2 = 1;
   }
 
-  const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-  const b = (sumY - m * sumX) / n;
-
-  // Subtract the linear trend
-  return signal.map((val, i) => val - (m * i + b));
+  // Normalize
+  return {
+    b: [b0 / a0, b1 / a0, b2 / a0],
+    a: [1, a1 / a0, a2 / a0]
+  };
 }
 
 /**
- * Extract a time window from the signals and apply detrending + scaling
- * Detrending is applied per-window to remove drift within the viewed segment
- * Scaling converts from the CSV's raw units to proper microvolts
+ * Apply a biquad (second-order IIR) filter to a signal
+ * Uses direct form II transposed for numerical stability
+ */
+function applyBiquad(signal: number[], b: number[], a: number[]): number[] {
+  if (signal.length < 3) return signal;
+
+  const output: number[] = new Array(signal.length);
+  let z1 = 0, z2 = 0;
+
+  for (let i = 0; i < signal.length; i++) {
+    const x = signal[i];
+    const y = b[0] * x + z1;
+    z1 = b[1] * x - a[1] * y + z2;
+    z2 = b[2] * x - a[2] * y;
+    output[i] = y;
+  }
+
+  return output;
+}
+
+/**
+ * Apply forward-backward filtering (zero-phase) to avoid phase distortion
+ * This is equivalent to scipy's filtfilt
+ */
+function filtfilt(signal: number[], b: number[], a: number[]): number[] {
+  // Forward pass
+  let filtered = applyBiquad(signal, b, a);
+  // Reverse
+  filtered = filtered.reverse();
+  // Backward pass
+  filtered = applyBiquad(filtered, b, a);
+  // Reverse again
+  return filtered.reverse();
+}
+
+/**
+ * Notch filter coefficients for power line noise removal
+ */
+function notchCoeffs(notchFreq: number, sampleRate: number, Q: number = 30): { b: number[], a: number[] } {
+  const w0 = (2 * Math.PI * notchFreq) / sampleRate;
+  const alpha = Math.sin(w0) / (2 * Q);
+
+  const b0 = 1;
+  const b1 = -2 * Math.cos(w0);
+  const b2 = 1;
+  const a0 = 1 + alpha;
+  const a1 = -2 * Math.cos(w0);
+  const a2 = 1 - alpha;
+
+  return {
+    b: [b0 / a0, b1 / a0, b2 / a0],
+    a: [1, a1 / a0, a2 / a0]
+  };
+}
+
+/**
+ * Apply the full prefilteredEEG processing pipeline
+ * Matches the DivergenceWebapp/biofeedback-core processing:
+ * 1. Highpass at 1 Hz (removes DC and slow drift)
+ * 2. Lowpass at 45 Hz (removes high-frequency noise, muscle artifact)
+ * 3. Notch at 60 Hz (removes power line interference)
+ */
+function prefilterEEG(signal: number[], sampleRate: number): number[] {
+  if (signal.length < 10) return signal;
+
+  // 1. Highpass filter at 1 Hz to remove DC offset and slow drift
+  const hpCoeffs = butterworthCoeffs('highpass', 1, sampleRate);
+  let filtered = filtfilt(signal, hpCoeffs.b, hpCoeffs.a);
+
+  // 2. Lowpass filter at 45 Hz to remove high-frequency noise
+  const lpCoeffs = butterworthCoeffs('lowpass', 45, sampleRate);
+  filtered = filtfilt(filtered, lpCoeffs.b, lpCoeffs.a);
+
+  // 3. Notch filter at 60 Hz to remove power line noise
+  const notch = notchCoeffs(60, sampleRate, 30);
+  filtered = filtfilt(filtered, notch.b, notch.a);
+
+  return filtered;
+}
+
+/**
+ * Extract a time window from the signals and apply prefilteredEEG processing
+ * Matches the DivergenceWebapp signal processing pipeline
  */
 export function extractTimeWindow(
   signals: number[][],
@@ -265,10 +349,8 @@ export function extractTimeWindow(
 
   return signals.map((channelData) => {
     const windowData = channelData.slice(startSample, endSample);
-    // Apply linear detrend to remove DC offset and slow drift
-    const detrended = linearDetrend(windowData);
-    // Scale to proper microvolts
-    return detrended.map(v => v / DIVERGENCE_CSV_SCALE_FACTOR);
+    // Apply full prefilteredEEG pipeline (highpass, lowpass, notch)
+    return prefilterEEG(windowData, sampleRate);
   });
 }
 
