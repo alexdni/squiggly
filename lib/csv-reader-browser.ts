@@ -156,17 +156,32 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
   const duration = (timestamps[timestamps.length - 1] - timestamps[0]) / timeScale;
 
   // Convert channel data to array format [channel][sample]
-  const signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
+  let signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
 
-  // Debug: Log signal statistics
-  console.log('CSV Signal Stats:');
+  // Detrend each channel (remove DC offset / mean)
+  // This is critical for Divergence/Flex device data which has massive DC offsets
+  // that would otherwise make the signal appear as flat lines at extreme values.
+  // This matches the mobile app's prefilteredEEG pipeline which applies detrending first.
+  console.log('CSV: Applying detrending (DC offset removal) to all channels');
+  signals = signals.map((channelSignal, idx) => {
+    // Calculate mean
+    const sum = channelSignal.reduce((acc, val) => acc + val, 0);
+    const mean = sum / channelSignal.length;
+
+    // Log the DC offset being removed
+    console.log(`  ${channelNames[idx]}: DC offset = ${mean.toFixed(2)}`);
+
+    // Subtract mean from each sample
+    return channelSignal.map(val => val - mean);
+  });
+
+  // Debug: Log signal statistics (after detrending)
+  console.log('CSV Signal Stats (after detrending):');
   signals.forEach((sig, idx) => {
-    const nonZero = sig.filter(v => v !== 0);
-    if (nonZero.length > 0) {
-      const min = Math.min(...nonZero);
-      const max = Math.max(...nonZero);
-      const mean = nonZero.reduce((a, b) => a + b, 0) / nonZero.length;
-      console.log(`  ${channelNames[idx]}: min=${min.toFixed(2)}, max=${max.toFixed(2)}, mean=${mean.toFixed(2)}, samples=${sig.length}`);
+    if (sig.length > 0) {
+      const min = Math.min(...sig);
+      const max = Math.max(...sig);
+      console.log(`  ${channelNames[idx]}: min=${min.toFixed(2)} µV, max=${max.toFixed(2)} µV, range=${(max-min).toFixed(2)} µV, samples=${sig.length}`);
     }
   });
 
