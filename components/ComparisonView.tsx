@@ -178,14 +178,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       );
 
       setAnalyzedRecordings(recordingsWithAnalyses);
-
-      // Auto-select first two if exactly two recordings
-      if (recordingsWithAnalyses.length === 2) {
-        setSelectedAId(recordingsWithAnalyses[0].id);
-        setSelectedBId(recordingsWithAnalyses[1].id);
-        // Auto-fetch comparison
-        await fetchComparison(recordingsWithAnalyses[0].id, recordingsWithAnalyses[1].id);
-      }
     } catch (err: any) {
       console.error('Error fetching recordings:', err);
       setError(err.message || 'Failed to load recordings');
