@@ -3,10 +3,14 @@
 EEG Analysis Orchestrator
 
 Main script that orchestrates the full EEG analysis pipeline:
-1. Downloads EDF file from Supabase storage
-2. Preprocesses the data
+1. Downloads EEG file (EDF or CSV) from Supabase storage
+2. Preprocesses the data (with appropriate reader for file type)
 3. Extracts features
 4. Uploads results back to Supabase
+
+Supports:
+- Standard EDF files
+- CSV files from Divergence/Flex device recordings
 
 Can be run as a standalone script or worker process
 """
@@ -43,15 +47,15 @@ logger = logging.getLogger(__name__)
 
 def download_from_supabase(file_path: str, supabase_url: str, supabase_key: str) -> str:
     """
-    Download EDF file from Supabase storage
+    Download EEG file (EDF or CSV) from Supabase storage
 
     Args:
-        file_path: Path in Supabase storage (e.g., 'recordings/uuid/file.edf')
+        file_path: Path in Supabase storage (e.g., 'recordings/uuid/file.edf' or 'recordings/uuid/file.csv')
         supabase_url: Supabase project URL
         supabase_key: Supabase service role key
 
     Returns:
-        Path to downloaded temporary file
+        Path to downloaded temporary file (preserves original extension)
     """
     try:
         from supabase import create_client, Client
@@ -70,8 +74,13 @@ def download_from_supabase(file_path: str, supabase_url: str, supabase_key: str)
         # Download file
         response = supabase.storage.from_(bucket_name).download(object_path)
 
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.edf')
+        # Extract original file extension from the storage path
+        _, file_ext = os.path.splitext(object_path)
+        if not file_ext:
+            file_ext = '.edf'  # Default to EDF if no extension found
+
+        # Save to temporary file with correct extension
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
         temp_file.write(response)
         temp_file.close()
 
