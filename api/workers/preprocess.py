@@ -296,6 +296,17 @@ class EEGPreprocessor:
         """
         n_components = n_components or self.ica_n_components
 
+        # ICA components cannot exceed the number of channels
+        n_channels = len(raw.ch_names)
+        if n_components > n_channels:
+            logger.info(f"Reducing ICA components from {n_components} to {n_channels} (number of channels)")
+            n_components = n_channels
+
+        # Need at least 2 components for ICA to be meaningful
+        if n_components < 2:
+            logger.warning(f"Too few channels ({n_channels}) for ICA, skipping artifact removal")
+            return raw.copy(), 0
+
         logger.info(f"Running ICA with {n_components} components")
 
         # Fit ICA
