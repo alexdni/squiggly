@@ -1,7 +1,7 @@
 # EEG Signal Processing
 mne==1.8.0
 numpy>=1.26.0,<2.0.0
-scipy>=1.13.0
+scipy>=1.13.0,<1.14.0  # MNE 1.8.0 requires sph_harm which was removed in scipy 1.14.0
 pandas>=2.1.0
 
 # Artifact Detection & Complexity
