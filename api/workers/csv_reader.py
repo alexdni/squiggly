@@ -4,11 +4,20 @@ CSV Reader Module for EEG Data
 
 Handles reading and converting CSV files with EEG data to MNE Raw format
 for compatibility with existing preprocessing pipeline.
+
+This module is designed specifically for Divergence/Flex device recordings
+which require detrending (DC offset removal) as the raw device data contains
+significant baseline drift that must be removed before filtering.
+
+The signal processing matches the mobile app's prefilteredEEG pipeline:
+1. Detrend (subtract mean from each channel)
+2. Downstream filtering is handled by the preprocessing pipeline
 """
 
 import numpy as np
 import pandas as pd
 import mne
+from scipy import signal as scipy_signal
 from typing import Tuple, List
 import logging
 
@@ -214,6 +223,16 @@ class CSVReader:
                     channel_data[:] = 0.0
 
                 data[i, :] = channel_data
+
+        # Detrend each channel (remove DC offset / mean)
+        # This matches the mobile app's prefilteredEEG pipeline which applies
+        # detrending as the first step before any filtering.
+        # Critical for Divergence/Flex device data which has significant baseline drift.
+        logger.info("Applying detrending (DC offset removal) to all channels")
+        for i in range(data.shape[0]):
+            # Use scipy.signal.detrend with type='constant' to subtract mean
+            # This is equivalent to the mobile app's detrend operator
+            data[i, :] = scipy_signal.detrend(data[i, :], type='constant')
 
         # Convert to volts (assuming data is in microvolts)
         # You may need to adjust this based on your data units

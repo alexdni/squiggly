@@ -6,9 +6,13 @@
       "Bash(openspec validate:*)",
       "Bash(npm run build:*)",
       "Bash(python3:*)",
-      "Bash(source venv/bin/activate)"
+      "Bash(source venv/bin/activate)",
+      "Bash(grep:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "/home/deepdrill/src/DivergenceReactApp"
+    ]
   }
 }

@@ -108,9 +108,10 @@ class EEGPreprocessor:
 
         if ext_lower == '.csv':
             logger.info(f"Loading CSV file: {file_path}")
-            # Load CSV file (already preprocessed by csv_reader)
+            # Load CSV file - csv_reader applies detrending (DC offset removal)
+            # to match the mobile app's prefilteredEEG pipeline
             raw = load_csv_as_raw(file_path)
-            logger.info(f"Loaded CSV data: {raw.info['sfreq']} Hz, {len(raw.ch_names)} channels, {raw.times[-1]:.1f}s duration")
+            logger.info(f"Loaded CSV data (detrended): {raw.info['sfreq']} Hz, {len(raw.ch_names)} channels, {raw.times[-1]:.1f}s duration")
             return raw
         elif ext_lower == '.edf':
             return self.load_edf(file_path)
