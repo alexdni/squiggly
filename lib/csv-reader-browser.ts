@@ -156,32 +156,19 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
   const duration = (timestamps[timestamps.length - 1] - timestamps[0]) / timeScale;
 
   // Convert channel data to array format [channel][sample]
-  let signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
+  // Note: Detrending is NOT applied here - it's applied per visualization window
+  // in extractTimeWindow() to properly remove drift in each viewed segment.
+  // The raw signal data (with DC offset) is preserved.
+  const signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
 
-  // Detrend each channel (remove DC offset / mean)
-  // This is critical for Divergence/Flex device data which has massive DC offsets
-  // that would otherwise make the signal appear as flat lines at extreme values.
-  // This matches the mobile app's prefilteredEEG pipeline which applies detrending first.
-  console.log('CSV: Applying detrending (DC offset removal) to all channels');
-  signals = signals.map((channelSignal, idx) => {
-    // Calculate mean
-    const sum = channelSignal.reduce((acc, val) => acc + val, 0);
-    const mean = sum / channelSignal.length;
-
-    // Log the DC offset being removed
-    console.log(`  ${channelNames[idx]}: DC offset = ${mean.toFixed(2)}`);
-
-    // Subtract mean from each sample
-    return channelSignal.map(val => val - mean);
-  });
-
-  // Debug: Log signal statistics (after detrending)
-  console.log('CSV Signal Stats (after detrending):');
+  // Debug: Log raw signal statistics
+  console.log('CSV Raw Signal Stats:');
   signals.forEach((sig, idx) => {
     if (sig.length > 0) {
       const min = Math.min(...sig);
       const max = Math.max(...sig);
-      console.log(`  ${channelNames[idx]}: min=${min.toFixed(2)} µV, max=${max.toFixed(2)} µV, range=${(max-min).toFixed(2)} µV, samples=${sig.length}`);
+      const mean = sig.reduce((a, b) => a + b, 0) / sig.length;
+      console.log(`  ${channelNames[idx]}: DC offset=${mean.toFixed(0)}, range=${(max-min).toFixed(0)}, samples=${sig.length}`);
     }
   });
 
@@ -227,7 +214,45 @@ export async function readCSVFile(file: File): Promise<CSVData> {
 }
 
 /**
- * Extract a time window from the signals
+ * Scaling factor for Divergence/Flex CSV data
+ * The BrainBit SDK returns values that, after the mobile app's 1e6 multiplication,
+ * are ~100x larger than actual microvolts. This appears to be because the SDK
+ * returns values in a unit that's 100x smaller than Volts (possibly related to
+ * ADC resolution or internal scaling).
+ *
+ * Dividing by 100 brings the values into the correct microvolt range.
+ */
+const DIVERGENCE_CSV_SCALE_FACTOR = 100;
+
+/**
+ * Apply linear detrend to a signal (remove linear trend + mean)
+ * This is better than simple mean subtraction for EEG with drift
+ */
+function linearDetrend(signal: number[]): number[] {
+  const n = signal.length;
+  if (n < 2) return signal;
+
+  // Calculate linear regression: y = mx + b
+  // Using least squares method
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += signal[i];
+    sumXY += i * signal[i];
+    sumX2 += i * i;
+  }
+
+  const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const b = (sumY - m * sumX) / n;
+
+  // Subtract the linear trend
+  return signal.map((val, i) => val - (m * i + b));
+}
+
+/**
+ * Extract a time window from the signals and apply detrending + scaling
+ * Detrending is applied per-window to remove drift within the viewed segment
+ * Scaling converts from the CSV's raw units to proper microvolts
  */
 export function extractTimeWindow(
   signals: number[][],
@@ -238,9 +263,13 @@ export function extractTimeWindow(
   const startSample = Math.floor(startTime * sampleRate);
   const endSample = Math.floor((startTime + duration) * sampleRate);
 
-  return signals.map((channelData) =>
-    channelData.slice(startSample, endSample)
-  );
+  return signals.map((channelData) => {
+    const windowData = channelData.slice(startSample, endSample);
+    // Apply linear detrend to remove DC offset and slow drift
+    const detrended = linearDetrend(windowData);
+    // Scale to proper microvolts
+    return detrended.map(v => v / DIVERGENCE_CSV_SCALE_FACTOR);
+  });
 }
 
 /**

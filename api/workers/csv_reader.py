@@ -230,13 +230,17 @@ class CSVReader:
         # Critical for Divergence/Flex device data which has significant baseline drift.
         logger.info("Applying detrending (DC offset removal) to all channels")
         for i in range(data.shape[0]):
-            # Use scipy.signal.detrend with type='constant' to subtract mean
-            # This is equivalent to the mobile app's detrend operator
-            data[i, :] = scipy_signal.detrend(data[i, :], type='constant')
+            # Use scipy.signal.detrend with type='linear' to remove both DC offset and linear drift
+            # This is more robust than 'constant' for signals with slow drift
+            data[i, :] = scipy_signal.detrend(data[i, :], type='linear')
 
-        # Convert to volts (assuming data is in microvolts)
-        # You may need to adjust this based on your data units
-        data_volts = data * 1e-6  # Convert µV to V
+        # Scale and convert to volts
+        # Divergence/Flex CSV data from the mobile app is ~100x larger than actual microvolts
+        # due to how the BrainBit SDK values are processed (1e6 multiplication on values
+        # that aren't in standard Volts). We divide by 100 to get proper µV, then convert to V.
+        DIVERGENCE_SCALE_FACTOR = 100
+        logger.info(f"Applying scale factor 1/{DIVERGENCE_SCALE_FACTOR} to convert to proper µV")
+        data_volts = data / DIVERGENCE_SCALE_FACTOR * 1e-6  # Raw -> µV -> V
 
         # Create MNE info structure with appropriate channel types
         info = mne.create_info(
