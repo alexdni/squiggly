@@ -258,13 +258,13 @@ export interface ExportLog {
 }
 
 export interface ComparisonResult {
-  eo_recording_id: string;
-  ec_recording_id: string;
+  recording_a_id: string;
+  recording_b_id: string;
   power_deltas: {
-    absolute: Record<string, Record<string, number>>;  // channel -> band -> delta
-    percent: Record<string, Record<string, number>>;   // channel -> band -> percent change
+    absolute: Record<string, Record<string, number>>;  // channel -> band -> delta (B - A)
+    percent: Record<string, Record<string, number>>;   // channel -> band -> percent change (B - A)
   };
-  coherence_deltas: Record<string, Record<string, number>>;  // pair -> band -> delta
+  coherence_deltas: Record<string, Record<string, number>>;  // pair -> band -> delta (B - A)
   asymmetry_deltas: {
     pai: Record<string, Record<string, number>>;  // pair -> band -> delta
     faa: number;
@@ -272,8 +272,8 @@ export interface ComparisonResult {
   };
   summary_metrics: {
     mean_alpha_change_percent: number;
-    alpha_blocking_eo: number;
-    alpha_blocking_ec: number;
+    alpha_blocking_a: number;
+    alpha_blocking_b: number;
     faa_shift: number;
     theta_beta_change: number;
   };

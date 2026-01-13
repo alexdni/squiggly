@@ -31,14 +31,14 @@ export async function GET(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Get query parameters
+    // Get query parameters (support both old and new naming)
     const { searchParams } = new URL(request.url);
-    const eoRecordingId = searchParams.get('eo_id');
-    const ecRecordingId = searchParams.get('ec_id');
+    const recordingAId = searchParams.get('a_id') || searchParams.get('eo_id');
+    const recordingBId = searchParams.get('b_id') || searchParams.get('ec_id');
 
-    if (!eoRecordingId || !ecRecordingId) {
+    if (!recordingAId || !recordingBId) {
       return NextResponse.json(
-        { error: 'Both eo_id and ec_id query parameters are required' },
+        { error: 'Both a_id and b_id query parameters are required' },
         { status: 400 }
       );
     }
@@ -51,7 +51,7 @@ export async function GET(request: Request, { params }: RouteParams) {
       .eq('id', params.id)
       .single();
 
-    const cacheKey = `${eoRecordingId}_${ecRecordingId}`;
+    const cacheKey = `${recordingAId}_${recordingBId}`;
     const cachedInterpretation = project?.comparison_interpretations?.[cacheKey];
 
     if (cachedInterpretation) {
@@ -97,18 +97,19 @@ export async function POST(request: Request, { params }: RouteParams) {
       );
     }
 
-    // Get recording IDs from request body
+    // Get recording IDs from request body (support both old and new naming)
     const body = await request.json();
-    const { eo_id, ec_id } = body;
+    const eo_id = body.a_id || body.eo_id;
+    const ec_id = body.b_id || body.ec_id;
 
     if (!eo_id || !ec_id) {
       return NextResponse.json(
-        { error: 'Both eo_id and ec_id are required in the request body' },
+        { error: 'Both a_id and b_id are required in the request body' },
         { status: 400 }
       );
     }
 
-    // Fetch EO analysis
+    // Fetch Recording A (EO/baseline) analysis
     const { data: eoAnalysis, error: eoError } = await (supabase as any)
       .from('analyses')
       .select(`
@@ -132,12 +133,12 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     if (eoError || !eoAnalysis) {
       return NextResponse.json(
-        { error: 'EO recording analysis not found or not completed' },
+        { error: 'Recording A analysis not found or not completed' },
         { status: 404 }
       );
     }
 
-    // Fetch EC analysis
+    // Fetch Recording B (EC/comparison) analysis
     const { data: ecAnalysis, error: ecError } = await (supabase as any)
       .from('analyses')
       .select(`
@@ -161,7 +162,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     if (ecError || !ecAnalysis) {
       return NextResponse.json(
-        { error: 'EC recording analysis not found or not completed' },
+        { error: 'Recording B analysis not found or not completed' },
         { status: 404 }
       );
     }

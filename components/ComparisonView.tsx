@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-client';
 interface Recording {
   id: string;
   filename: string;
+  created_at: string;
   eo_start: number | null;
   eo_end: number | null;
   ec_start: number | null;
@@ -19,8 +20,8 @@ interface Analysis {
 }
 
 interface ComparisonResult {
-  eo_recording_id: string;
-  ec_recording_id: string;
+  recording_a_id: string;
+  recording_b_id: string;
   power_deltas: {
     absolute: Record<string, Record<string, number>>;
     percent: Record<string, Record<string, number>>;
@@ -33,8 +34,8 @@ interface ComparisonResult {
   };
   summary_metrics: {
     mean_alpha_change_percent: number;
-    alpha_blocking_eo: number;
-    alpha_blocking_ec: number;
+    alpha_blocking_a: number;
+    alpha_blocking_b: number;
     faa_shift: number;
     theta_beta_change: number;
   };
@@ -74,8 +75,8 @@ interface AnalysisVisuals {
 }
 
 interface ComparisonVisuals {
-  eo: AnalysisVisuals;
-  ec: AnalysisVisuals;
+  a: AnalysisVisuals;
+  b: AnalysisVisuals;
 }
 
 interface ComparisonViewProps {
@@ -85,22 +86,51 @@ interface ComparisonViewProps {
 export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const supabase = createClient();
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [eoRecordings, setEoRecordings] = useState<Recording[]>([]);
-  const [ecRecordings, setEcRecordings] = useState<Recording[]>([]);
-  const [selectedEoId, setSelectedEoId] = useState<string>('');
-  const [selectedEcId, setSelectedEcId] = useState<string>('');
+  const [analyzedRecordings, setAnalyzedRecordings] = useState<Recording[]>([]);
+  const [selectedAId, setSelectedAId] = useState<string>('');
+  const [selectedBId, setSelectedBId] = useState<string>('');
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isComparing, setIsComparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // AI Interpretation state
+  // AI Interpretation state (only for EO/EC comparisons)
   const [aiInterpretation, setAiInterpretation] = useState<EOECInterpretation | null>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Visual comparisons state
   const [comparisonVisuals, setComparisonVisuals] = useState<ComparisonVisuals | null>(null);
+
+  // Helper to determine if selected recordings are an EO/EC pair
+  const isEOECComparison = (): boolean => {
+    const recA = analyzedRecordings.find(r => r.id === selectedAId);
+    const recB = analyzedRecordings.find(r => r.id === selectedBId);
+    if (!recA || !recB) return false;
+
+    const aHasEO = recA.eo_start !== null && recA.eo_end !== null;
+    const aHasEC = recA.ec_start !== null && recA.ec_end !== null;
+    const bHasEO = recB.eo_start !== null && recB.eo_end !== null;
+    const bHasEC = recB.ec_start !== null && recB.ec_end !== null;
+
+    // Check if one is EO-only and one is EC-only (or one has both)
+    return (aHasEO && bHasEC) || (aHasEC && bHasEO) || (aHasEO && aHasEC) || (bHasEO && bHasEC);
+  };
+
+  // Get recording label with condition type
+  const getRecordingLabel = (rec: Recording): string => {
+    const hasEO = rec.eo_start !== null && rec.eo_end !== null;
+    const hasEC = rec.ec_start !== null && rec.ec_end !== null;
+    let label = rec.filename;
+    if (hasEO && hasEC) {
+      label += ' (EO+EC)';
+    } else if (hasEO) {
+      label += ' (EO)';
+    } else if (hasEC) {
+      label += ' (EC)';
+    }
+    return label;
+  };
 
   useEffect(() => {
     fetchRecordingsAndAnalyses();
@@ -125,6 +155,11 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
       // Fetch all analyses to check which recordings have completed analyses
       const recordingIds = allRecordings.map((r: Recording) => r.id);
+      if (recordingIds.length === 0) {
+        setAnalyzedRecordings([]);
+        return;
+      }
+
       const { data: analysesData, error: analysesError } = await supabase
         .from('analyses')
         .select('id, recording_id, status')
@@ -138,38 +173,18 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       );
 
       // Filter recordings with completed analyses
-      const recordingsWithAnalyses = allRecordings.filter((r: Recording) =>
+      const recordingsWithAnalyses: Recording[] = allRecordings.filter((r: Recording) =>
         completedRecordingIds.has(r.id)
       );
 
-      // Classify recordings as EO, EC, or BOTH based on segment labels
-      const eoRecs: Recording[] = [];
-      const ecRecs: Recording[] = [];
+      setAnalyzedRecordings(recordingsWithAnalyses);
 
-      recordingsWithAnalyses.forEach((rec: Recording) => {
-        const hasEo = rec.eo_start !== null && rec.eo_end !== null;
-        const hasEc = rec.ec_start !== null && rec.ec_end !== null;
-
-        if (hasEo && !hasEc) {
-          eoRecs.push(rec);
-        } else if (hasEc && !hasEo) {
-          ecRecs.push(rec);
-        } else if (hasEo && hasEc) {
-          // For BOTH recordings, add to both lists
-          eoRecs.push(rec);
-          ecRecs.push(rec);
-        }
-      });
-
-      setEoRecordings(eoRecs);
-      setEcRecordings(ecRecs);
-
-      // Auto-select if only one of each
-      if (eoRecs.length === 1 && ecRecs.length === 1) {
-        setSelectedEoId(eoRecs[0].id);
-        setSelectedEcId(ecRecs[0].id);
+      // Auto-select first two if exactly two recordings
+      if (recordingsWithAnalyses.length === 2) {
+        setSelectedAId(recordingsWithAnalyses[0].id);
+        setSelectedBId(recordingsWithAnalyses[1].id);
         // Auto-fetch comparison
-        await fetchComparison(eoRecs[0].id, ecRecs[0].id);
+        await fetchComparison(recordingsWithAnalyses[0].id, recordingsWithAnalyses[1].id);
       }
     } catch (err: any) {
       console.error('Error fetching recordings:', err);
@@ -179,21 +194,27 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     }
   };
 
-  const fetchComparison = async (eoId?: string, ecId?: string) => {
-    const eoRecId = eoId || selectedEoId;
-    const ecRecId = ecId || selectedEcId;
+  const fetchComparison = async (aId?: string, bId?: string) => {
+    const recAId = aId || selectedAId;
+    const recBId = bId || selectedBId;
 
-    if (!eoRecId || !ecRecId) {
-      setError('Please select both an EO and EC recording');
+    if (!recAId || !recBId) {
+      setError('Please select two recordings to compare');
+      return;
+    }
+
+    if (recAId === recBId) {
+      setError('Please select two different recordings');
       return;
     }
 
     try {
       setIsComparing(true);
       setError(null);
+      setAiInterpretation(null); // Clear previous AI interpretation
 
       const response = await fetch(
-        `/api/projects/${projectId}/compare?eo_id=${eoRecId}&ec_id=${ecRecId}`
+        `/api/projects/${projectId}/compare?a_id=${recAId}&b_id=${recBId}`
       );
 
       if (!response.ok) {
@@ -209,8 +230,8 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
         setComparisonVisuals(data.visuals);
       }
 
-      // Try to fetch cached AI interpretation
-      fetchCachedAIInterpretation(eoRecId, ecRecId);
+      // Try to fetch cached AI interpretation (only for EO/EC comparisons)
+      fetchCachedAIInterpretation(recAId, recBId);
     } catch (err: any) {
       console.error('Error fetching comparison:', err);
       setError(err.message || 'Failed to load comparison');
@@ -223,10 +244,13 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     fetchComparison();
   };
 
-  const fetchCachedAIInterpretation = async (eoId: string, ecId: string) => {
+  const fetchCachedAIInterpretation = async (aId: string, bId: string) => {
+    // AI interpretation is only available for EO/EC comparisons
+    if (!isEOECComparison()) return;
+
     try {
       const response = await fetch(
-        `/api/projects/${projectId}/compare/ai-interpretation?eo_id=${eoId}&ec_id=${ecId}`
+        `/api/projects/${projectId}/compare/ai-interpretation?a_id=${aId}&b_id=${bId}`
       );
       if (response.ok) {
         const data = await response.json();
@@ -238,7 +262,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   };
 
   const handleGenerateAIInterpretation = async () => {
-    if (!selectedEoId || !selectedEcId) return;
+    if (!selectedAId || !selectedBId) return;
 
     setIsGeneratingAI(true);
     setAiError(null);
@@ -252,8 +276,8 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            eo_id: selectedEoId,
-            ec_id: selectedEcId,
+            a_id: selectedAId,
+            b_id: selectedBId,
           }),
         }
       );
@@ -284,7 +308,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     );
   }
 
-  if (eoRecordings.length === 0 && ecRecordings.length === 0) {
+  if (analyzedRecordings.length < 2) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="text-center py-12">
@@ -302,15 +326,21 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
             />
           </svg>
           <h3 className="mt-4 text-lg font-medium text-gray-900">
-            No recordings available for comparison
+            Not enough recordings for comparison
           </h3>
           <p className="mt-2 text-gray-800">
-            You need at least one EO recording and one EC recording with completed analyses to compare.
+            You need at least two recordings with completed analyses to compare.
+            {analyzedRecordings.length === 1 && ' Currently only 1 recording has been analyzed.'}
+            {analyzedRecordings.length === 0 && ' No recordings have been analyzed yet.'}
           </p>
         </div>
       </div>
     );
   }
+
+  // Get selected recording names for display
+  const selectedAName = analyzedRecordings.find(r => r.id === selectedAId)?.filename || 'Recording A';
+  const selectedBName = analyzedRecordings.find(r => r.id === selectedBId)?.filename || 'Recording B';
 
   return (
     <div className="space-y-6">
@@ -319,41 +349,44 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
         <h2 className="text-2xl font-bold text-neuro-dark mb-4">
           Select Recordings to Compare
         </h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Compare any two recordings with completed analyses. Changes are calculated as (Recording B - Recording A).
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* EO Recording Selector */}
+          {/* Recording A Selector */}
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
-              Eyes Open (EO) Recording
+              Recording A (Baseline)
             </label>
             <select
-              value={selectedEoId}
-              onChange={(e) => setSelectedEoId(e.target.value)}
+              value={selectedAId}
+              onChange={(e) => setSelectedAId(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neuro-primary focus:border-transparent text-gray-900"
             >
-              <option value="">-- Select EO Recording --</option>
-              {eoRecordings.map((rec) => (
-                <option key={rec.id} value={rec.id}>
-                  {rec.filename}
+              <option value="">-- Select Recording --</option>
+              {analyzedRecordings.map((rec) => (
+                <option key={rec.id} value={rec.id} disabled={rec.id === selectedBId}>
+                  {getRecordingLabel(rec)}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* EC Recording Selector */}
+          {/* Recording B Selector */}
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
-              Eyes Closed (EC) Recording
+              Recording B (Compare To)
             </label>
             <select
-              value={selectedEcId}
-              onChange={(e) => setSelectedEcId(e.target.value)}
+              value={selectedBId}
+              onChange={(e) => setSelectedBId(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neuro-primary focus:border-transparent text-gray-900"
             >
-              <option value="">-- Select EC Recording --</option>
-              {ecRecordings.map((rec) => (
-                <option key={rec.id} value={rec.id}>
-                  {rec.filename}
+              <option value="">-- Select Recording --</option>
+              {analyzedRecordings.map((rec) => (
+                <option key={rec.id} value={rec.id} disabled={rec.id === selectedAId}>
+                  {getRecordingLabel(rec)}
                 </option>
               ))}
             </select>
@@ -363,7 +396,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
         <div className="mt-6">
           <button
             onClick={handleCompare}
-            disabled={!selectedEoId || !selectedEcId || isComparing}
+            disabled={!selectedAId || !selectedBId || selectedAId === selectedBId || isComparing}
             className="bg-neuro-primary text-white px-6 py-3 rounded-lg hover:bg-neuro-accent transition-colors font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {isComparing ? 'Comparing...' : 'Compare Recordings'}
@@ -417,7 +450,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-800">
-                      Average alpha power change (EC - EO)
+                      Average alpha power change (B - A)
                     </td>
                   </tr>
                   <tr>
@@ -455,7 +488,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-800">
-                      Theta/Beta ratio change (EC - EO)
+                      Theta/Beta ratio change (B - A)
                     </td>
                   </tr>
                 </tbody>
@@ -466,10 +499,10 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
           {/* Power Deltas by Channel */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-              Power Changes by Channel (EC - EO)
+              Power Changes by Channel (B - A)
             </h2>
             <p className="text-sm text-gray-800 mb-4">
-              Percent change in band power from Eyes Open to Eyes Closed
+              Percent change in band power from {selectedAName} to {selectedBName}
             </p>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -539,19 +572,19 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
           </div>
 
           {/* Visual Comparisons Section */}
-          {comparisonVisuals && (comparisonVisuals.eo.topomap_grid || comparisonVisuals.ec.topomap_grid ||
-            comparisonVisuals.eo.connectivity_grid || comparisonVisuals.ec.connectivity_grid ||
-            comparisonVisuals.eo.lzc_topomap_EO || comparisonVisuals.ec.lzc_topomap_EC) && (
+          {comparisonVisuals && (comparisonVisuals.a.topomap_grid || comparisonVisuals.b.topomap_grid ||
+            comparisonVisuals.a.connectivity_grid || comparisonVisuals.b.connectivity_grid ||
+            comparisonVisuals.a.lzc_topomap_EO || comparisonVisuals.b.lzc_topomap_EC) && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                Visual Comparisons: EO vs EC
+                Visual Comparisons
               </h2>
               <p className="text-sm text-gray-800 mb-6">
-                Side-by-side visualizations showing differences between Eyes Open (EO) and Eyes Closed (EC) conditions.
+                Side-by-side visualizations comparing the selected recordings.
               </p>
 
               {/* Topographic Maps Comparison */}
-              {(comparisonVisuals.eo.topomap_grid || comparisonVisuals.ec.topomap_grid) && (
+              {(comparisonVisuals.a.topomap_grid || comparisonVisuals.b.topomap_grid) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Band Power Topographic Maps
@@ -560,28 +593,28 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                     Spatial distribution of power across frequency bands for each recording.
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {comparisonVisuals.eo.topomap_grid && (
+                    {comparisonVisuals.a.topomap_grid && (
                       <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
                         <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          EO Recording
+                          Recording A
                         </h4>
                         <div className="bg-white rounded border border-gray-200 overflow-hidden">
                           <img
-                            src={comparisonVisuals.eo.topomap_grid}
+                            src={comparisonVisuals.a.topomap_grid}
                             alt="EO Band Power Topographic Maps"
                             className="w-full h-auto"
                           />
                         </div>
                       </div>
                     )}
-                    {comparisonVisuals.ec.topomap_grid && (
+                    {comparisonVisuals.b.topomap_grid && (
                       <div className="border border-green-200 rounded-lg p-4 bg-green-50">
                         <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          EC Recording
+                          Recording B
                         </h4>
                         <div className="bg-white rounded border border-gray-200 overflow-hidden">
                           <img
-                            src={comparisonVisuals.ec.topomap_grid}
+                            src={comparisonVisuals.b.topomap_grid}
                             alt="EC Band Power Topographic Maps"
                             className="w-full h-auto"
                           />
@@ -593,42 +626,41 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
               )}
 
               {/* LZC Complexity Comparison */}
-              {((comparisonVisuals.eo.lzc_topomap_EO || comparisonVisuals.eo.lzc_topomap_EC) ||
-                (comparisonVisuals.ec.lzc_topomap_EO || comparisonVisuals.ec.lzc_topomap_EC)) && (
+              {((comparisonVisuals.a.lzc_topomap_EO || comparisonVisuals.a.lzc_topomap_EC) ||
+                (comparisonVisuals.b.lzc_topomap_EO || comparisonVisuals.b.lzc_topomap_EC)) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Signal Complexity (Lempel-Ziv)
                   </h3>
                   <p className="text-sm text-gray-600 mb-4">
                     Higher LZC (red) indicates more complex signals. Lower LZC (blue) indicates more regular patterns.
-                    Complexity typically decreases in EC as alpha rhythms become more dominant.
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* EO Recording LZC */}
-                    {(comparisonVisuals.eo.lzc_topomap_EO || comparisonVisuals.eo.lzc_topomap_EC) && (
+                    {(comparisonVisuals.a.lzc_topomap_EO || comparisonVisuals.a.lzc_topomap_EC) && (
                       <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
                         <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          EO Recording
+                          Recording A
                         </h4>
                         <div className="grid grid-cols-2 gap-4">
-                          {comparisonVisuals.eo.lzc_topomap_EO && (
+                          {comparisonVisuals.a.lzc_topomap_EO && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.eo.lzc_topomap_EO}
+                                  src={comparisonVisuals.a.lzc_topomap_EO}
                                   alt="EO Recording - LZC Eyes Open"
                                   className="w-full h-auto"
                                 />
                               </div>
                             </div>
                           )}
-                          {comparisonVisuals.eo.lzc_topomap_EC && (
+                          {comparisonVisuals.a.lzc_topomap_EC && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.eo.lzc_topomap_EC}
+                                  src={comparisonVisuals.a.lzc_topomap_EC}
                                   alt="EO Recording - LZC Eyes Closed"
                                   className="w-full h-auto"
                                 />
@@ -639,30 +671,30 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                       </div>
                     )}
                     {/* EC Recording LZC */}
-                    {(comparisonVisuals.ec.lzc_topomap_EO || comparisonVisuals.ec.lzc_topomap_EC) && (
+                    {(comparisonVisuals.b.lzc_topomap_EO || comparisonVisuals.b.lzc_topomap_EC) && (
                       <div className="border border-green-200 rounded-lg p-4 bg-green-50">
                         <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          EC Recording
+                          Recording B
                         </h4>
                         <div className="grid grid-cols-2 gap-4">
-                          {comparisonVisuals.ec.lzc_topomap_EO && (
+                          {comparisonVisuals.b.lzc_topomap_EO && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.ec.lzc_topomap_EO}
+                                  src={comparisonVisuals.b.lzc_topomap_EO}
                                   alt="EC Recording - LZC Eyes Open"
                                   className="w-full h-auto"
                                 />
                               </div>
                             </div>
                           )}
-                          {comparisonVisuals.ec.lzc_topomap_EC && (
+                          {comparisonVisuals.b.lzc_topomap_EC && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.ec.lzc_topomap_EC}
+                                  src={comparisonVisuals.b.lzc_topomap_EC}
                                   alt="EC Recording - LZC Eyes Closed"
                                   className="w-full h-auto"
                                 />
@@ -677,38 +709,37 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
               )}
 
               {/* Brain Connectivity Comparison */}
-              {(comparisonVisuals.eo.connectivity_grid || comparisonVisuals.ec.connectivity_grid) && (
+              {(comparisonVisuals.a.connectivity_grid || comparisonVisuals.b.connectivity_grid) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Brain Connectivity (wPLI)
                   </h3>
                   <p className="text-sm text-gray-600 mb-4">
                     Weighted Phase Lag Index connectivity between electrode sites. Line color and thickness indicate connection strength.
-                    Alpha connectivity typically increases in EC (relaxed, synchronized state).
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {comparisonVisuals.eo.connectivity_grid && (
+                    {comparisonVisuals.a.connectivity_grid && (
                       <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
                         <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          EO Recording
+                          Recording A
                         </h4>
                         <div className="bg-white rounded border border-gray-200 overflow-hidden">
                           <img
-                            src={comparisonVisuals.eo.connectivity_grid}
+                            src={comparisonVisuals.a.connectivity_grid}
                             alt="EO Brain Connectivity"
                             className="w-full h-auto"
                           />
                         </div>
                       </div>
                     )}
-                    {comparisonVisuals.ec.connectivity_grid && (
+                    {comparisonVisuals.b.connectivity_grid && (
                       <div className="border border-green-200 rounded-lg p-4 bg-green-50">
                         <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          EC Recording
+                          Recording B
                         </h4>
                         <div className="bg-white rounded border border-gray-200 overflow-hidden">
                           <img
-                            src={comparisonVisuals.ec.connectivity_grid}
+                            src={comparisonVisuals.b.connectivity_grid}
                             alt="EC Brain Connectivity"
                             className="w-full h-auto"
                           />
@@ -720,7 +751,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
               )}
 
               {/* Network Metrics Comparison */}
-              {(comparisonVisuals.eo.network_metrics || comparisonVisuals.ec.network_metrics) && (
+              {(comparisonVisuals.a.network_metrics || comparisonVisuals.b.network_metrics) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Network Metrics
@@ -730,28 +761,28 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                     clustering coefficient measures local processing, small-worldness indicates optimal network organization.
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {comparisonVisuals.eo.network_metrics && (
+                    {comparisonVisuals.a.network_metrics && (
                       <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
                         <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          EO Recording
+                          Recording A
                         </h4>
                         <div className="bg-white rounded border border-gray-200 overflow-hidden">
                           <img
-                            src={comparisonVisuals.eo.network_metrics}
+                            src={comparisonVisuals.a.network_metrics}
                             alt="EO Network Metrics"
                             className="w-full h-auto"
                           />
                         </div>
                       </div>
                     )}
-                    {comparisonVisuals.ec.network_metrics && (
+                    {comparisonVisuals.b.network_metrics && (
                       <div className="border border-green-200 rounded-lg p-4 bg-green-50">
                         <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          EC Recording
+                          Recording B
                         </h4>
                         <div className="bg-white rounded border border-gray-200 overflow-hidden">
                           <img
-                            src={comparisonVisuals.ec.network_metrics}
+                            src={comparisonVisuals.b.network_metrics}
                             alt="EC Network Metrics"
                             className="w-full h-auto"
                           />
@@ -763,8 +794,8 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
               )}
 
               {/* Individual Alpha Frequency Comparison */}
-              {((comparisonVisuals.eo.alpha_peak_topomap_EO || comparisonVisuals.eo.alpha_peak_topomap_EC) ||
-                (comparisonVisuals.ec.alpha_peak_topomap_EO || comparisonVisuals.ec.alpha_peak_topomap_EC)) && (
+              {((comparisonVisuals.a.alpha_peak_topomap_EO || comparisonVisuals.a.alpha_peak_topomap_EC) ||
+                (comparisonVisuals.b.alpha_peak_topomap_EO || comparisonVisuals.b.alpha_peak_topomap_EC)) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Individual Alpha Frequency (IAF)
@@ -775,30 +806,30 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* EO Recording IAF */}
-                    {(comparisonVisuals.eo.alpha_peak_topomap_EO || comparisonVisuals.eo.alpha_peak_topomap_EC) && (
+                    {(comparisonVisuals.a.alpha_peak_topomap_EO || comparisonVisuals.a.alpha_peak_topomap_EC) && (
                       <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
                         <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          EO Recording
+                          Recording A
                         </h4>
                         <div className="space-y-4">
-                          {comparisonVisuals.eo.alpha_peak_topomap_EO && (
+                          {comparisonVisuals.a.alpha_peak_topomap_EO && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.eo.alpha_peak_topomap_EO}
+                                  src={comparisonVisuals.a.alpha_peak_topomap_EO}
                                   alt="EO Recording - IAF Eyes Open"
                                   className="w-full h-auto"
                                 />
                               </div>
                             </div>
                           )}
-                          {comparisonVisuals.eo.alpha_peak_topomap_EC && (
+                          {comparisonVisuals.a.alpha_peak_topomap_EC && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.eo.alpha_peak_topomap_EC}
+                                  src={comparisonVisuals.a.alpha_peak_topomap_EC}
                                   alt="EO Recording - IAF Eyes Closed"
                                   className="w-full h-auto"
                                 />
@@ -809,30 +840,30 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                       </div>
                     )}
                     {/* EC Recording IAF */}
-                    {(comparisonVisuals.ec.alpha_peak_topomap_EO || comparisonVisuals.ec.alpha_peak_topomap_EC) && (
+                    {(comparisonVisuals.b.alpha_peak_topomap_EO || comparisonVisuals.b.alpha_peak_topomap_EC) && (
                       <div className="border border-green-200 rounded-lg p-4 bg-green-50">
                         <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          EC Recording
+                          Recording B
                         </h4>
                         <div className="space-y-4">
-                          {comparisonVisuals.ec.alpha_peak_topomap_EO && (
+                          {comparisonVisuals.b.alpha_peak_topomap_EO && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.ec.alpha_peak_topomap_EO}
+                                  src={comparisonVisuals.b.alpha_peak_topomap_EO}
                                   alt="EC Recording - IAF Eyes Open"
                                   className="w-full h-auto"
                                 />
                               </div>
                             </div>
                           )}
-                          {comparisonVisuals.ec.alpha_peak_topomap_EC && (
+                          {comparisonVisuals.b.alpha_peak_topomap_EC && (
                             <div>
                               <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
                               <div className="bg-white rounded border border-gray-200 overflow-hidden">
                                 <img
-                                  src={comparisonVisuals.ec.alpha_peak_topomap_EC}
+                                  src={comparisonVisuals.b.alpha_peak_topomap_EC}
                                   alt="EC Recording - IAF Eyes Closed"
                                   className="w-full h-auto"
                                 />
@@ -848,7 +879,8 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
             </div>
           )}
 
-          {/* AI Analysis Section */}
+          {/* AI Analysis Section - Only for EO/EC comparisons */}
+          {isEOECComparison() && (
           <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 border border-purple-200">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -868,7 +900,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   </svg>
                 </div>
                 <h2 className="text-2xl font-bold text-purple-900">
-                  AI Analysis - EO to EC Transition
+                  AI Analysis - EO/EC Comparison
                 </h2>
               </div>
               <div className="flex gap-2">
@@ -1017,10 +1049,11 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
             {/* No interpretation yet */}
             {!aiInterpretation && !isGeneratingAI && (
               <div className="text-center py-8 text-purple-700">
-                <p>Click &quot;Generate AI Analysis&quot; to get an expert interpretation of the EO to EC transition patterns.</p>
+                <p>Click &quot;Generate AI Analysis&quot; to get an expert interpretation of the EO/EC comparison patterns.</p>
               </div>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

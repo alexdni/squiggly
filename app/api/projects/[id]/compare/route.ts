@@ -4,8 +4,8 @@ import { checkProjectPermission } from '@/lib/rbac';
 import type { ComparisonResult, Analysis } from '@/types/database';
 
 /**
- * Compare EO and EC recordings within a project
- * GET /api/projects/:id/compare?eo_id=<recording_id>&ec_id=<recording_id>
+ * Compare any two recordings within a project
+ * GET /api/projects/:id/compare?a_id=<recording_id>&b_id=<recording_id>
  */
 export async function GET(
   request: Request,
@@ -38,18 +38,25 @@ export async function GET(
 
     // Get query parameters
     const { searchParams } = new URL(request.url);
-    const eoRecordingId = searchParams.get('eo_id');
-    const ecRecordingId = searchParams.get('ec_id');
+    const recordingAId = searchParams.get('a_id');
+    const recordingBId = searchParams.get('b_id');
 
-    if (!eoRecordingId || !ecRecordingId) {
+    if (!recordingAId || !recordingBId) {
       return NextResponse.json(
-        { error: 'Both eo_id and ec_id query parameters are required' },
+        { error: 'Both a_id and b_id query parameters are required' },
+        { status: 400 }
+      );
+    }
+
+    if (recordingAId === recordingBId) {
+      return NextResponse.json(
+        { error: 'Cannot compare a recording with itself' },
         { status: 400 }
       );
     }
 
     // Fetch analyses for both recordings
-    const { data: eoAnalysis, error: eoError } = await (supabase as any)
+    const { data: analysisA, error: errorA } = await (supabase as any)
       .from('analyses')
       .select(`
         *,
@@ -59,21 +66,21 @@ export async function GET(
           condition_type
         )
       `)
-      .eq('recording_id', eoRecordingId)
+      .eq('recording_id', recordingAId)
       .eq('recording.project_id', params.id)
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
 
-    if (eoError || !eoAnalysis) {
+    if (errorA || !analysisA) {
       return NextResponse.json(
-        { error: 'EO recording analysis not found or not completed' },
+        { error: 'Recording A analysis not found or not completed' },
         { status: 404 }
       );
     }
 
-    const { data: ecAnalysis, error: ecError } = await (supabase as any)
+    const { data: analysisB, error: errorB } = await (supabase as any)
       .from('analyses')
       .select(`
         *,
@@ -83,33 +90,33 @@ export async function GET(
           condition_type
         )
       `)
-      .eq('recording_id', ecRecordingId)
+      .eq('recording_id', recordingBId)
       .eq('recording.project_id', params.id)
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
 
-    if (ecError || !ecAnalysis) {
+    if (errorB || !analysisB) {
       return NextResponse.json(
-        { error: 'EC recording analysis not found or not completed' },
+        { error: 'Recording B analysis not found or not completed' },
         { status: 404 }
       );
     }
 
-    // Compute comparison
-    const comparison = computeComparison(eoAnalysis, ecAnalysis);
+    // Compute comparison (B - A)
+    const comparison = computeComparison(analysisA, analysisB);
 
     // Extract visual URLs from both analyses for side-by-side display
-    const eoVisuals = (eoAnalysis.results as any)?.visuals || {};
-    const ecVisuals = (ecAnalysis.results as any)?.visuals || {};
+    const visualsA = (analysisA.results as any)?.visuals || {};
+    const visualsB = (analysisB.results as any)?.visuals || {};
 
     return NextResponse.json({
       success: true,
       comparison,
       visuals: {
-        eo: eoVisuals,
-        ec: ecVisuals,
+        a: visualsA,
+        b: visualsB,
       },
     });
   } catch (error: any) {
@@ -122,16 +129,16 @@ export async function GET(
 }
 
 /**
- * Compute comparison metrics between EO and EC analyses
+ * Compute comparison metrics between two analyses (B - A)
  */
 function computeComparison(
-  eoAnalysis: Analysis,
-  ecAnalysis: Analysis
+  analysisA: Analysis,
+  analysisB: Analysis
 ): ComparisonResult {
-  const eoResults = eoAnalysis.results;
-  const ecResults = ecAnalysis.results;
+  const resultsA = analysisA.results;
+  const resultsB = analysisB.results;
 
-  if (!eoResults || !ecResults) {
+  if (!resultsA || !resultsB) {
     throw new Error('Both analyses must have results');
   }
 
@@ -144,22 +151,25 @@ function computeComparison(
   const bands = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'];
 
   // Get band_power from the actual Python worker structure
-  const eoBandPower = (eoResults as any).band_power?.eo || {};
-  const ecBandPower = (ecResults as any).band_power?.ec || {};
+  // Try to use the primary condition data (eo or ec) from each analysis
+  const bandPowerA = (resultsA as any).band_power?.eo || (resultsA as any).band_power?.ec || {};
+  const bandPowerB = (resultsB as any).band_power?.eo || (resultsB as any).band_power?.ec || {};
 
-  // For each channel, compute power changes
-  const channels = Object.keys(eoBandPower);
+  // For each channel, compute power changes (B - A)
+  const channelsA = Object.keys(bandPowerA);
+  const channelsB = Object.keys(bandPowerB);
+  const channels = [...new Set([...channelsA, ...channelsB])];
 
   channels.forEach((channel) => {
     powerDeltas.absolute[channel] = {};
     powerDeltas.percent[channel] = {};
 
     bands.forEach((band) => {
-      const eoPower = eoBandPower[channel]?.[band]?.absolute || 0;
-      const ecPower = ecBandPower[channel]?.[band]?.absolute || 0;
+      const powerA = bandPowerA[channel]?.[band]?.absolute || 0;
+      const powerB = bandPowerB[channel]?.[band]?.absolute || 0;
 
-      const delta = ecPower - eoPower;
-      const percentChange = eoPower !== 0 ? (delta / eoPower) * 100 : 0;
+      const delta = powerB - powerA;
+      const percentChange = powerA !== 0 ? (delta / powerA) * 100 : 0;
 
       powerDeltas.absolute[channel][band] = delta;
       powerDeltas.percent[channel][band] = percentChange;
@@ -169,33 +179,33 @@ function computeComparison(
   // Compute coherence deltas
   const coherenceDeltas: Record<string, Record<string, number>> = {};
 
-  const eoCoherence = (eoResults as any).coherence?.eo || [];
-  const ecCoherence = (ecResults as any).coherence?.ec || [];
+  const coherenceA = (resultsA as any).coherence?.eo || (resultsA as any).coherence?.ec || [];
+  const coherenceB = (resultsB as any).coherence?.eo || (resultsB as any).coherence?.ec || [];
 
   // Build a map for easy lookup
   const coherenceMap: Record<string, any> = {};
-  eoCoherence.forEach((item: any) => {
+  coherenceA.forEach((item: any) => {
     const key = `${item.ch1}-${item.ch2}`;
-    coherenceMap[key] = { eo: item };
+    coherenceMap[key] = { a: item };
   });
-  ecCoherence.forEach((item: any) => {
+  coherenceB.forEach((item: any) => {
     const key = `${item.ch1}-${item.ch2}`;
     if (coherenceMap[key]) {
-      coherenceMap[key].ec = item;
+      coherenceMap[key].b = item;
     } else {
-      coherenceMap[key] = { ec: item };
+      coherenceMap[key] = { b: item };
     }
   });
 
   Object.keys(coherenceMap).forEach((pairKey) => {
     coherenceDeltas[pairKey] = {};
-    const eo = coherenceMap[pairKey].eo || {};
-    const ec = coherenceMap[pairKey].ec || {};
+    const a = coherenceMap[pairKey].a || {};
+    const b = coherenceMap[pairKey].b || {};
 
     bands.forEach((band) => {
-      const eoCoh = eo[band] || 0;
-      const ecCoh = ec[band] || 0;
-      coherenceDeltas[pairKey][band] = ecCoh - eoCoh;
+      const cohA = a[band] || 0;
+      const cohB = b[band] || 0;
+      coherenceDeltas[pairKey][band] = cohB - cohA;
     });
   });
 
@@ -207,13 +217,13 @@ function computeComparison(
   };
 
   // Get asymmetry from Python structure
-  const eoAsymmetry = (eoResults as any).asymmetry || {};
-  const ecAsymmetry = (ecResults as any).asymmetry || {};
+  const asymmetryA = (resultsA as any).asymmetry || {};
+  const asymmetryB = (resultsB as any).asymmetry || {};
 
   // Simple FAA and alpha gradient (these are single values in Python output)
-  const eoFaa = eoAsymmetry.frontal_alpha || 0;
-  const ecFaa = ecAsymmetry.frontal_alpha || 0;
-  asymmetryDeltas.faa = ecFaa - eoFaa;
+  const faaA = asymmetryA.frontal_alpha || 0;
+  const faaB = asymmetryB.frontal_alpha || 0;
+  asymmetryDeltas.faa = faaB - faaA;
 
   // Compute summary metrics
   let totalAlphaChange = 0;
@@ -233,29 +243,28 @@ function computeComparison(
     ? totalAlphaChange / alphaChannelCount
     : 0;
 
-  // For alpha blocking and theta/beta, we need to compute from band power
-  // Alpha blocking is typically measured in occipital regions (O1, O2)
-  const alphaBlockingEo = 0;  // Would need to calculate from occipital alpha power EO
-  const alphaBlockingEc = 0;  // Would need to calculate from occipital alpha power EC
+  // For alpha blocking, we could compute from occipital regions (O1, O2)
+  const alphaBlockingA = 0;
+  const alphaBlockingB = 0;
 
   // Theta/Beta ratio from band_ratios in Python output
-  const eoRatios = (eoResults as any).band_ratios || {};
-  const ecRatios = (ecResults as any).band_ratios || {};
+  const ratiosA = (resultsA as any).band_ratios || {};
+  const ratiosB = (resultsB as any).band_ratios || {};
 
-  const thetaBetaEo = eoRatios.theta_beta_ratio?.frontal_avg || 0;
-  const thetaBetaEc = ecRatios.theta_beta_ratio?.frontal_avg || 0;
-  const thetaBetaChange = thetaBetaEc - thetaBetaEo;
+  const thetaBetaA = ratiosA.theta_beta_ratio?.frontal_avg || 0;
+  const thetaBetaB = ratiosB.theta_beta_ratio?.frontal_avg || 0;
+  const thetaBetaChange = thetaBetaB - thetaBetaA;
 
   return {
-    eo_recording_id: eoAnalysis.recording_id,
-    ec_recording_id: ecAnalysis.recording_id,
+    recording_a_id: analysisA.recording_id,
+    recording_b_id: analysisB.recording_id,
     power_deltas: powerDeltas,
     coherence_deltas: coherenceDeltas,
     asymmetry_deltas: asymmetryDeltas,
     summary_metrics: {
       mean_alpha_change_percent: meanAlphaChangePercent,
-      alpha_blocking_eo: alphaBlockingEo,
-      alpha_blocking_ec: alphaBlockingEc,
+      alpha_blocking_a: alphaBlockingA,
+      alpha_blocking_b: alphaBlockingB,
       faa_shift: asymmetryDeltas.faa,
       theta_beta_change: thetaBetaChange,
     },
