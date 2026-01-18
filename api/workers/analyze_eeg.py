@@ -3,14 +3,16 @@
 EEG Analysis Orchestrator
 
 Main script that orchestrates the full EEG analysis pipeline:
-1. Downloads EEG file (EDF or CSV) from Supabase storage
+1. Downloads EEG file (EDF or CSV) from storage (Supabase or local)
 2. Preprocesses the data (with appropriate reader for file type)
 3. Extracts features
-4. Uploads results back to Supabase
+4. Uploads results back to storage
 
 Supports:
 - Standard EDF files
 - CSV files from Divergence/Flex device recordings
+- Supabase storage (cloud mode)
+- Local filesystem storage (Docker mode)
 
 Can be run as a standalone script or worker process
 """
@@ -37,12 +39,43 @@ from generate_visuals import (
     generate_alpha_peak_topomap,
     compress_png
 )
+from local_storage import (
+    is_local_storage_mode,
+    download_local_file,
+    upload_local_file,
+    get_local_file_url,
+    ensure_storage_directories
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def download_file(file_path: str, supabase_url: str = None, supabase_key: str = None) -> tuple:
+    """
+    Download EEG file from storage (Supabase or local)
+
+    Args:
+        file_path: Path in storage (e.g., 'projectId/file.edf')
+        supabase_url: Supabase project URL (only needed for Supabase mode)
+        supabase_key: Supabase service role key (only needed for Supabase mode)
+
+    Returns:
+        Tuple of (local_file_path, is_temp_file)
+        - local_file_path: Path to the file on local filesystem
+        - is_temp_file: True if file should be deleted after use
+    """
+    if is_local_storage_mode():
+        # Local mode: file is already on local filesystem
+        local_path = download_local_file(file_path)
+        return local_path, False  # Don't delete local files
+    else:
+        # Supabase mode: download to temp file
+        temp_path = download_from_supabase(file_path, supabase_url, supabase_key)
+        return temp_path, True  # Delete temp file after use
 
 
 def download_from_supabase(file_path: str, supabase_url: str, supabase_key: str) -> str:
@@ -93,6 +126,42 @@ def download_from_supabase(file_path: str, supabase_url: str, supabase_key: str)
     except Exception as e:
         logger.error(f"Failed to download file: {e}")
         raise
+
+
+def upload_visual(
+    png_bytes: bytes,
+    file_name: str,
+    analysis_id: str,
+    supabase_url: str = None,
+    supabase_key: str = None
+) -> Optional[str]:
+    """
+    Upload a visual asset (PNG) to storage (Supabase or local)
+
+    Args:
+        png_bytes: PNG image as bytes
+        file_name: Name for the file (e.g., 'topomap_alpha1_EO.png')
+        analysis_id: Analysis UUID
+        supabase_url: Supabase project URL (only needed for Supabase mode)
+        supabase_key: Supabase service role key (only needed for Supabase mode)
+
+    Returns:
+        URL of uploaded file, or None if failed
+    """
+    if is_local_storage_mode():
+        # Local mode: save to local filesystem
+        try:
+            file_path = f"{analysis_id}/{file_name}"
+            upload_local_file(png_bytes, 'visuals', file_path, 'image/png')
+            return get_local_file_url('visuals', file_path)
+        except Exception as e:
+            logger.error(f"Failed to save visual {file_name} locally: {e}")
+            return None
+    else:
+        # Supabase mode: upload to Supabase storage
+        return upload_visual_to_supabase(
+            png_bytes, file_name, analysis_id, supabase_url, supabase_key
+        )
 
 
 def convert_numpy_types(obj):

@@ -1,0 +1,32 @@
+version: '3.8'
+
+# Development configuration with hot-reload support
+
+services:
+  squiggly-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: squiggly-dev
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+      - "5432:5432"
+    environment:
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - DEPLOYMENT_MODE=docker
+      - DATABASE_MODE=postgres
+      - STORAGE_MODE=local
+      - AUTH_MODE=local
+      - NODE_ENV=development
+    volumes:
+      - .:/app:cached
+      - /app/node_modules
+      - /app/.next
+      - squiggly-dev-data:/data
+    restart: unless-stopped
+
+volumes:
+  squiggly-dev-data:
+    driver: local

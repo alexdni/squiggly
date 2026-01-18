@@ -3,18 +3,36 @@
 Flask server for EEG Analysis Worker
 
 Provides HTTP endpoints for Vercel/Supabase to call.
-Deploy this to Railway, Render, or any platform that supports Python.
+Deploy this to Railway, Render, Docker, or any platform that supports Python.
+
+Supports both Supabase storage (cloud) and local filesystem storage (Docker mode).
 """
 
 from flask import Flask, request, jsonify
 import os
 import logging
 import tempfile
-from analyze_eeg import analyze_eeg_file, download_from_supabase, upload_results_to_supabase, upload_visual_to_supabase, mark_analysis_failed
+from analyze_eeg import (
+    analyze_eeg_file,
+    download_file,
+    download_from_supabase,
+    upload_results_to_supabase,
+    upload_visual_to_supabase,
+    upload_visual,
+    mark_analysis_failed
+)
+from local_storage import is_local_storage_mode, ensure_storage_directories
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Ensure storage directories exist on startup
+if is_local_storage_mode():
+    ensure_storage_directories()
+    logger.info("Running in local storage mode")
+else:
+    logger.info("Running in Supabase storage mode")
 
 # Authentication token (optional)
 AUTH_TOKEN = os.getenv('WORKER_AUTH_TOKEN', '')
@@ -41,6 +59,7 @@ def health():
         'status': 'healthy',
         'service': 'eeg-analysis-worker',
         'version': '1.0.0',
+        'storage_mode': 'local' if is_local_storage_mode() else 'supabase',
         'timestamp': datetime.utcnow().isoformat()
     })
 
@@ -69,11 +88,11 @@ def analyze():
     try:
         data = request.json
 
-        # Validate required fields
-        required_fields = [
-            'analysis_id', 'file_path',
-            'supabase_url', 'supabase_key'
-        ]
+        # Validate required fields (supabase_url/key only required in Supabase mode)
+        required_fields = ['analysis_id', 'file_path']
+
+        if not is_local_storage_mode():
+            required_fields.extend(['supabase_url', 'supabase_key'])
 
         for field in required_fields:
             if field not in data:
@@ -81,8 +100,8 @@ def analyze():
 
         analysis_id = data['analysis_id']
         file_path = data['file_path']
-        supabase_url = data['supabase_url']
-        supabase_key = data['supabase_key']
+        supabase_url = data.get('supabase_url')
+        supabase_key = data.get('supabase_key')
 
         # EO/EC times are optional (one or both can be provided)
         eo_start = float(data['eo_start']) if data.get('eo_start') is not None else None
@@ -102,8 +121,8 @@ def analyze():
 
         logger.info(f"Starting analysis for: {analysis_id}")
 
-        # Download EDF file from Supabase
-        local_file = download_from_supabase(file_path, supabase_url, supabase_key)
+        # Download EEG file from storage (Supabase or local)
+        local_file, is_temp = download_file(file_path, supabase_url, supabase_key)
 
         try:
             # Run analysis
@@ -116,14 +135,14 @@ def analyze():
                 config=data.get('config', {})
             )
 
-            # Upload visualizations to Supabase Storage
+            # Upload visualizations to storage
             if 'visuals' in results and results['visuals']:
-                logger.info("Uploading visualization assets to Supabase Storage")
+                logger.info("Uploading visualization assets to storage")
                 visual_urls = {}
 
                 for visual_name, png_bytes in results['visuals'].items():
                     file_name = f'{visual_name}.png'
-                    url = upload_visual_to_supabase(
+                    url = upload_visual(
                         png_bytes,
                         file_name,
                         analysis_id,
@@ -142,7 +161,7 @@ def analyze():
                 # Ensure visuals is not present or is empty dict if no visuals generated
                 results['visuals'] = {}
 
-            # Upload results
+            # Upload results to database
             upload_results_to_supabase(
                 analysis_id,
                 results,
@@ -159,8 +178,8 @@ def analyze():
             })
 
         finally:
-            # Clean up temp file
-            if os.path.exists(local_file):
+            # Clean up temp file (only if it was downloaded from Supabase)
+            if is_temp and os.path.exists(local_file):
                 os.unlink(local_file)
 
     except Exception as e:

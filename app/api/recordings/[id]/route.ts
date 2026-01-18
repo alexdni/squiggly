@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { checkProjectPermission } from '@/lib/rbac';
+import { getStorageClient, isLocalStorageMode } from '@/lib/storage';
+import { getAuthClient } from '@/lib/auth';
 
 interface RecordingData {
   id: string;
@@ -18,13 +20,25 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Get authenticated user (works for both Supabase and local auth)
+    let userId: string;
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (isLocalStorageMode()) {
+      const authClient = getAuthClient();
+      const { user, error } = await authClient.getUser();
+      if (error || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      userId = user.id;
+    } else {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      userId = user.id;
     }
 
     const recordingId = params.id;
@@ -48,7 +62,7 @@ export async function DELETE(
     // Check permission
     const hasPermission = await checkProjectPermission(
       typedRecording.project_id,
-      user.id,
+      userId,
       'recording:delete'
     );
 
@@ -64,19 +78,18 @@ export async function DELETE(
 
     const typedAnalyses = analyses as AnalysisData[] | null;
 
+    const storage = getStorageClient();
+
     if (typedAnalyses && typedAnalyses.length > 0) {
       // Delete visual assets from storage for each analysis
       for (const analysis of typedAnalyses) {
         const analysisId = analysis.id;
         try {
-          const { data: files } = await supabase
-            .storage
-            .from('visuals')
-            .list(analysisId);
+          const files = await storage.list('visuals', analysisId);
 
           if (files && files.length > 0) {
             const filePaths = files.map(f => `${analysisId}/${f.name}`);
-            await supabase.storage.from('visuals').remove(filePaths);
+            await storage.remove('visuals', filePaths);
           }
         } catch (storageError) {
           console.error(`Error deleting visuals for analysis ${analysisId}:`, storageError);
@@ -94,10 +107,10 @@ export async function DELETE(
     // Delete EDF file from storage
     if (typedRecording.file_path) {
       try {
-        const { error: storageError } = await supabase
-          .storage
-          .from('recordings')
-          .remove([typedRecording.file_path]);
+        const { error: storageError } = await storage.remove(
+          'recordings',
+          [typedRecording.file_path]
+        );
 
         if (storageError) {
           console.error('Error deleting file from storage:', storageError);

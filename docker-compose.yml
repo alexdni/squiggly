@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  squiggly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: squiggly
+    ports:
+      - "3000:3000"
+    environment:
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - DEPLOYMENT_MODE=docker
+      - DATABASE_MODE=postgres
+      - STORAGE_MODE=local
+      - AUTH_MODE=local
+      - NODE_ENV=production
+    volumes:
+      - squiggly-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  squiggly-data:
+    driver: local
