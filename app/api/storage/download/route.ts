@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       const ext = tokenData.path.split('.').pop()?.toLowerCase();
       const contentType = getContentType(ext);
 
-      return new NextResponse(data, {
+      return new NextResponse(new Uint8Array(data), {
         headers: {
           'Content-Type': contentType,
           'Content-Disposition': `attachment; filename="${tokenData.path.split('/').pop()}"`,

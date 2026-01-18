@@ -1,8 +1,8 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
+import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
-import { getStorageClient, isLocalStorageMode } from '@/lib/storage';
-import { getAuthClient } from '@/lib/auth';
 
 interface RecordingData {
   id: string;
@@ -20,33 +20,20 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Get authenticated user (works for both Supabase and local auth)
-    let userId: string;
-    const supabase = await createClient();
+    const user = await getCurrentUser();
 
-    if (isLocalStorageMode()) {
-      const authClient = getAuthClient();
-      const { user, error } = await authClient.getUser();
-      if (error || !user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      userId = user.id;
-    } else {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      userId = user.id;
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const recordingId = params.id;
+    const db = getDatabaseClient();
+    const storage = getStorageClient();
 
     // Fetch recording to get project_id and file_path
-    const { data: recording, error: fetchError } = await supabase
+    const { data: recording, error: fetchError } = await db
       .from('recordings')
-      .select('*, project_id, file_path')
+      .select('id, project_id, file_path')
       .eq('id', recordingId)
       .single();
 
@@ -62,7 +49,7 @@ export async function DELETE(
     // Check permission
     const hasPermission = await checkProjectPermission(
       typedRecording.project_id,
-      userId,
+      user.id,
       'recording:delete'
     );
 
@@ -70,15 +57,14 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Delete associated analyses first (cascade should handle this, but being explicit)
-    const { data: analyses } = await supabase
+    // Delete associated analyses first
+    const { data: analyses } = await db
       .from('analyses')
       .select('id')
-      .eq('recording_id', recordingId);
+      .eq('recording_id', recordingId)
+      .execute();
 
     const typedAnalyses = analyses as AnalysisData[] | null;
-
-    const storage = getStorageClient();
 
     if (typedAnalyses && typedAnalyses.length > 0) {
       // Delete visual assets from storage for each analysis
@@ -98,10 +84,9 @@ export async function DELETE(
       }
 
       // Delete analyses
-      await supabase
-        .from('analyses')
-        .delete()
-        .eq('recording_id', recordingId);
+      for (const analysis of typedAnalyses) {
+        await db.from('analyses').delete().eq('id', analysis.id).execute();
+      }
     }
 
     // Delete EDF file from storage
@@ -122,10 +107,11 @@ export async function DELETE(
     }
 
     // Delete recording from database
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await db
       .from('recordings')
       .delete()
-      .eq('id', recordingId);
+      .eq('id', recordingId)
+      .execute();
 
     if (deleteError) {
       console.error('Error deleting recording:', deleteError);

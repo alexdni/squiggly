@@ -1,6 +1,7 @@
-import { createClient } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import AnalysisDetailsClient from '@/components/AnalysisDetailsClient';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 
 interface AnalysisPageProps {
   params: {
@@ -9,45 +10,38 @@ interface AnalysisPageProps {
 }
 
 export default async function AnalysisPage({ params }: AnalysisPageProps) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     redirect('/login');
   }
 
-  // Fetch analysis with recording and project data
-  const { data: analysis, error } = await supabase
+  const db = getDatabaseClient();
+
+  // Fetch analysis
+  const { data: analysis, error: analysisError } = await db
     .from('analyses')
-    .select(`
-      *,
-      recording:recordings (
-        id,
-        filename,
-        file_path,
-        file_size,
-        duration_seconds,
-        sampling_rate,
-        n_channels,
-        montage,
-        reference,
-        eo_start,
-        eo_end,
-        ec_start,
-        ec_end,
-        project_id,
-        created_at
-      )
-    `)
+    .select('*')
     .eq('id', params.id)
     .single();
 
-  if (error || !analysis) {
+  if (analysisError || !analysis) {
     redirect('/projects');
   }
 
-  return <AnalysisDetailsClient analysis={analysis} user={user} />;
+  // Fetch recording data separately
+  const analysisRecord = analysis as Record<string, unknown>;
+  const { data: recording } = await db
+    .from('recordings')
+    .select('*')
+    .eq('id', analysisRecord.recording_id)
+    .single();
+
+  // Combine the data in the format expected by the client component
+  const analysisWithRecording = {
+    ...(analysis as Record<string, unknown>),
+    recording: recording || null,
+  } as any;
+
+  return <AnalysisDetailsClient analysis={analysisWithRecording} user={user as any} />;
 }

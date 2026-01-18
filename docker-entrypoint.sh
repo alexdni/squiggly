@@ -28,41 +28,40 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
     # Initialize database
     chown -R postgres:postgres "$PGDATA"
     chmod 700 "$PGDATA"
-    su - postgres -s /bin/bash -c "initdb -D $PGDATA"
+    su - postgres -s /bin/bash -c "/usr/lib/postgresql/*/bin/initdb -D $PGDATA"
 
     # Configure PostgreSQL
     echo "host all all 127.0.0.1/32 md5" >> "$PGDATA/pg_hba.conf"
     echo "local all all trust" >> "$PGDATA/pg_hba.conf"
 
+    # Find PostgreSQL bin directory
+    PG_BIN=$(dirname $(ls -d /usr/lib/postgresql/*/bin/postgres | head -1))
+
     # Start PostgreSQL temporarily for setup
-    su - postgres -s /bin/bash -c "pg_ctl -D $PGDATA -l /tmp/postgres.log start"
+    su - postgres -s /bin/bash -c "$PG_BIN/pg_ctl -D $PGDATA -l /tmp/postgres.log start"
     sleep 3
 
     # Create database and user
-    su - postgres -s /bin/bash -c "psql -c \"CREATE USER squiggly WITH PASSWORD 'squiggly';\""
-    su - postgres -s /bin/bash -c "psql -c \"CREATE DATABASE squiggly OWNER squiggly;\""
-    su - postgres -s /bin/bash -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE squiggly TO squiggly;\""
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -c \"CREATE USER squiggly WITH PASSWORD 'squiggly';\""
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -c \"CREATE DATABASE squiggly OWNER squiggly;\""
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -c \"GRANT ALL PRIVILEGES ON DATABASE squiggly TO squiggly;\""
 
-    # Apply schema
+    # Apply schema (includes users table for local auth)
     echo "Applying database schema..."
-    su - postgres -s /bin/bash -c "psql -d squiggly -f /app/scripts/schema.sql"
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -d squiggly -f /app/scripts/schema.sql"
 
-    # Create users table for local auth
-    su - postgres -s /bin/bash -c "psql -d squiggly -c \"
-        CREATE TABLE IF NOT EXISTS users (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            email TEXT UNIQUE NOT NULL,
-            name TEXT,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    # Grant permissions to squiggly user
+    echo "Granting permissions..."
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -d squiggly -c \"
+        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO squiggly;
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO squiggly;
+        GRANT USAGE ON SCHEMA public TO squiggly;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO squiggly;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO squiggly;
     \""
 
     # Stop PostgreSQL (supervisor will start it)
-    su - postgres -s /bin/bash -c "pg_ctl -D $PGDATA stop"
+    su - postgres -s /bin/bash -c "$PG_BIN/pg_ctl -D $PGDATA stop"
 
     echo "PostgreSQL initialized successfully"
 else

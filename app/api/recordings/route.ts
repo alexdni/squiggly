@@ -1,6 +1,8 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
-import { checkProjectPermission } from '@/lib/rbac';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
+import { getStorageClient } from '@/lib/storage';
+import { checkProjectPermission, canAccessRecording } from '@/lib/rbac';
 import { validateEDFMontage } from '@/lib/edf-validator';
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
 
@@ -16,19 +18,22 @@ interface RecordingMetadata {
   }>;
 }
 
-// POST /api/recordings - Create recording and validate montage
+// POST /api/recordings - Create recording and validate montage, or create analysis for existing recording
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
+
+    // Handle creating analysis for existing recording
+    if (body.recordingId && body.createAnalysis) {
+      return await createAnalysisForRecording(body.recordingId, user.id);
+    }
+
     const {
       projectId,
       filename,
@@ -61,15 +66,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const db = getDatabaseClient();
+    const storage = getStorageClient();
+
     // Check for duplicates (filename + size + recent timestamp)
     const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
-    const { data: existingRecordings } = await supabase
+    const { data: existingRecordings } = await db
       .from('recordings')
       .select('id')
       .eq('project_id', projectId)
       .eq('filename', filename)
       .eq('file_size', fileSize)
-      .gte('created_at', oneHourAgo);
+      .gte('created_at', oneHourAgo)
+      .execute();
 
     if (existingRecordings && existingRecordings.length > 0) {
       return NextResponse.json(
@@ -81,21 +90,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Download file from Supabase Storage for validation
-    const { data: fileData, error: downloadError } = await supabase
-      .storage
-      .from('recordings')
-      .download(filePath);
-
-    if (downloadError || !fileData) {
+    // Download file from storage for validation
+    let fileBuffer: Buffer;
+    try {
+      fileBuffer = await storage.download('recordings', filePath);
+    } catch (downloadError) {
+      console.error('Failed to download file for validation:', downloadError);
       return NextResponse.json(
         { error: 'Failed to download file for validation' },
         { status: 500 }
       );
     }
-
-    // Convert to buffer for validation
-    const buffer = Buffer.from(await fileData.arrayBuffer());
 
     // Detect file type from extension
     const fileExtension = filename.toLowerCase().split('.').pop();
@@ -104,10 +109,10 @@ export async function POST(request: Request) {
     if (fileExtension === 'csv') {
       console.log('[Recording] Validating CSV file');
       const { validateCSVFile } = await import('@/lib/csv-validator');
-      validationResult = await validateCSVFile(buffer);
+      validationResult = await validateCSVFile(fileBuffer);
     } else if (fileExtension === 'edf') {
       console.log('[Recording] Validating EDF file');
-      validationResult = await validateEDFMontage(buffer);
+      validationResult = await validateEDFMontage(fileBuffer);
     } else {
       return NextResponse.json(
         {
@@ -120,11 +125,11 @@ export async function POST(request: Request) {
 
     if (!validationResult.valid) {
       // Delete uploaded file from storage
-      await supabase.storage.from('recordings').remove([filePath]);
+      await storage.remove('recordings', [filePath]);
 
       return NextResponse.json(
         {
-          error: `Invalid ${fileExtension.toUpperCase()} file`,
+          error: `Invalid ${fileExtension?.toUpperCase()} file`,
           message: validationResult.error,
         },
         { status: 400 }
@@ -143,75 +148,41 @@ export async function POST(request: Request) {
 
     if (!useManual) {
       console.log(`[Auto-detect] Attempting auto-detection for file: ${filename}`);
-      console.log(`[Auto-detect] useManual flag: ${useManual}`);
 
       // First, try to detect from filename
-      // Use word boundary regex to match EO/EC as standalone words
       const isEOFile = /\beo\b/i.test(filename);
       const isECFile = /\bec\b/i.test(filename);
 
-      console.log(`[Auto-detect] Filename check - isEOFile: ${isEOFile}, isECFile: ${isECFile}`);
-
-      // If filename indicates entire file is EO or EC, set times accordingly
       if (isEOFile && !isECFile) {
-        // Entire file is Eyes Open
         finalEoStart = 0;
         finalEoEnd = metadata.duration_seconds;
         finalEoLabel = 'EO';
-        console.log(`[Auto-detect] ✓ Auto-detected EO file from filename: ${filename}, duration: ${metadata.duration_seconds}s`);
+        console.log(`[Auto-detect] ✓ Auto-detected EO file from filename`);
       } else if (isECFile && !isEOFile) {
-        // Entire file is Eyes Closed
         finalEcStart = 0;
         finalEcEnd = metadata.duration_seconds;
         finalEcLabel = 'EC';
-        console.log(`[Auto-detect] ✓ Auto-detected EC file from filename: ${filename}, duration: ${metadata.duration_seconds}s`);
-      } else {
-        // Filename detection failed, try EDF annotations
-        console.log(`[Auto-detect] Filename detection failed (both or neither matched), checking annotations...`);
-        console.log(`[Auto-detect] Number of annotations: ${metadata.annotations?.length || 0}`);
+        console.log(`[Auto-detect] ✓ Auto-detected EC file from filename`);
+      } else if (metadata.annotations && metadata.annotations.length > 0) {
+        const eoAnnotation = metadata.annotations.find((ann) =>
+          ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
+        );
+        const ecAnnotation = metadata.annotations.find((ann) =>
+          ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
+        );
 
-        if (metadata.annotations && metadata.annotations.length > 0) {
-          console.log(`[Auto-detect] Available annotations:`, metadata.annotations.map(a => a.description));
+        if (eoAnnotation) {
+          finalEoStart = eoAnnotation.onset;
+          finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
+          finalEoLabel = eoAnnotation.description;
+        }
 
-          const eoAnnotation = metadata.annotations.find((ann) =>
-            ['EO', 'eo', 'eyes open', 'Eyes Open', 'EYES OPEN'].includes(ann.description)
-          );
-          const ecAnnotation = metadata.annotations.find((ann) =>
-            ['EC', 'ec', 'eyes closed', 'Eyes Closed', 'EYES CLOSED'].includes(ann.description)
-          );
-
-          if (eoAnnotation) {
-            finalEoStart = eoAnnotation.onset;
-            finalEoEnd = eoAnnotation.onset + eoAnnotation.duration;
-            finalEoLabel = eoAnnotation.description;
-            console.log(`[Auto-detect] ✓ Found EO annotation: onset=${eoAnnotation.onset}s, duration=${eoAnnotation.duration}s`);
-          }
-
-          if (ecAnnotation) {
-            finalEcStart = ecAnnotation.onset;
-            finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
-            finalEcLabel = ecAnnotation.description;
-            console.log(`[Auto-detect] ✓ Found EC annotation: onset=${ecAnnotation.onset}s, duration=${ecAnnotation.duration}s`);
-          }
-
-          if (!eoAnnotation && !ecAnnotation) {
-            console.log(`[Auto-detect] ✗ No matching EO/EC annotations found`);
-          }
-        } else {
-          console.log(`[Auto-detect] ✗ No annotations in EDF file`);
+        if (ecAnnotation) {
+          finalEcStart = ecAnnotation.onset;
+          finalEcEnd = ecAnnotation.onset + ecAnnotation.duration;
+          finalEcLabel = ecAnnotation.description;
         }
       }
-
-      // Final check
-      const hasEO = finalEoStart !== undefined && finalEoEnd !== undefined;
-      const hasEC = finalEcStart !== undefined && finalEcEnd !== undefined;
-      console.log(`[Auto-detect] Final result - hasEO: ${hasEO}, hasEC: ${hasEC}`);
-
-      if (!hasEO && !hasEC) {
-        console.log(`[Auto-detect] ✗ Auto-detection completely failed - no segments labeled`);
-      }
-    } else {
-      console.log(`[Auto-detect] Manual mode enabled, skipping auto-detection`);
     }
 
     // Determine condition type based on EO/EC segments
@@ -223,8 +194,6 @@ export async function POST(request: Request) {
       conditionType = 'EO';
     } else if (hasEC && !hasEO) {
       conditionType = 'EC';
-    } else if (hasEO && hasEC) {
-      conditionType = 'BOTH';
     }
 
     // Create recording entry
@@ -241,26 +210,17 @@ export async function POST(request: Request) {
       condition_type: conditionType,
       eo_label: finalEoLabel || null,
       ec_label: finalEcLabel || null,
-      eo_start: finalEoStart ?? null,  // Use ?? to preserve 0 values
+      eo_start: finalEoStart ?? null,
       eo_end: finalEoEnd ?? null,
       ec_start: finalEcStart ?? null,
       ec_end: finalEcEnd ?? null,
       uploaded_by: user.id,
     };
 
-    console.log(`[Recording] Saving to database with EO/EC times:`, {
-      eo_label: recordingData.eo_label,
-      eo_start: recordingData.eo_start,
-      eo_end: recordingData.eo_end,
-      ec_label: recordingData.ec_label,
-      ec_start: recordingData.ec_start,
-      ec_end: recordingData.ec_end,
-    });
-
-    const { data: recording, error: insertError } = await supabase
+    const { data: recording, error: insertError } = await db
       .from('recordings')
       .insert(recordingData)
-      .select()
+      .select('*')
       .single();
 
     if (insertError) {
@@ -277,18 +237,16 @@ export async function POST(request: Request) {
       config: DEFAULT_ANALYSIS_CONFIG,
     };
 
-    const { data: analysis, error: analysisError } = await supabase
+    const { data: analysis, error: analysisError } = await db
       .from('analyses')
       .insert(analysisData)
-      .select()
+      .select('*')
       .single();
 
     if (analysisError) {
       console.error('Error creating analysis:', analysisError);
-      // Don't fail the request, just log the error
     }
 
-    // Cast analysis to any to avoid TypeScript type issues
     const analysisResult = analysis as any;
 
     // Automatically trigger analysis processing
@@ -299,8 +257,6 @@ export async function POST(request: Request) {
 
         const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysisResult.id}/process`;
 
-        // Call the analysis processing endpoint asynchronously
-        // Don't await to avoid blocking the upload response
         fetch(analysisProcessUrl, {
           method: 'POST',
           headers: {
@@ -315,7 +271,6 @@ export async function POST(request: Request) {
         analysisStarted = true;
       } catch (triggerError) {
         console.error('[Auto-Analysis] Error triggering analysis:', triggerError);
-        // Continue anyway - user can manually trigger later
       }
     }
 
@@ -334,24 +289,134 @@ export async function POST(request: Request) {
   }
 }
 
-// GET /api/recordings - List recordings for a project
+// Helper function to create analysis for an existing recording
+async function createAnalysisForRecording(recordingId: string, userId: string) {
+  const db = getDatabaseClient();
+
+  // Check if user can access this recording
+  const canAccess = await canAccessRecording(recordingId, userId);
+  if (!canAccess) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Check if an analysis already exists
+  const { data: existingAnalyses } = await db
+    .from('analyses')
+    .select('id')
+    .eq('recording_id', recordingId)
+    .execute();
+
+  if (existingAnalyses && existingAnalyses.length > 0) {
+    // Return existing analysis
+    return NextResponse.json({
+      analysis: existingAnalyses[0],
+      message: 'Analysis already exists',
+    });
+  }
+
+  // Create new analysis
+  const analysisData: any = {
+    recording_id: recordingId,
+    status: 'pending',
+    config: DEFAULT_ANALYSIS_CONFIG,
+  };
+
+  const { data: analysis, error: analysisError } = await db
+    .from('analyses')
+    .insert(analysisData)
+    .select('*')
+    .single();
+
+  if (analysisError) {
+    console.error('Error creating analysis:', analysisError);
+    return NextResponse.json(
+      { error: 'Failed to create analysis' },
+      { status: 500 }
+    );
+  }
+
+  // Trigger analysis processing
+  const analysisResult = analysis as any;
+  if (analysisResult) {
+    try {
+      const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysisResult.id}/process`;
+      fetch(analysisProcessUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).catch((err) => {
+        console.error(`Failed to trigger analysis:`, err);
+      });
+    } catch (triggerError) {
+      console.error('Error triggering analysis:', triggerError);
+    }
+  }
+
+  return NextResponse.json({
+    analysis: analysisResult,
+    message: 'Analysis created',
+  });
+}
+
+// GET /api/recordings - List recordings for a project or get a specific recording
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get('projectId');
+    const projectId = searchParams.get('projectId') || searchParams.get('project_id');
+    const recordingId = searchParams.get('recordingId') || searchParams.get('recording_id');
+    const includeAnalyses = searchParams.get('include_analyses') === 'true';
 
+    const db = getDatabaseClient();
+
+    // Handle fetching by recording_id
+    if (recordingId) {
+      // Check if user can access this recording
+      const canAccess = await canAccessRecording(recordingId, user.id);
+      if (!canAccess) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+
+      const { data: recording, error } = await db
+        .from('recordings')
+        .select('*')
+        .eq('id', recordingId)
+        .single();
+
+      if (error || !recording) {
+        return NextResponse.json(
+          { error: 'Recording not found' },
+          { status: 404 }
+        );
+      }
+
+      let analyses: any[] = [];
+      if (includeAnalyses) {
+        const { data: analysesData } = await db
+          .from('analyses')
+          .select('*')
+          .eq('recording_id', recordingId)
+          .order('created_at', { ascending: false })
+          .execute();
+        analyses = analysesData || [];
+      }
+
+      return NextResponse.json({
+        recordings: [{
+          ...recording,
+          analyses: includeAnalyses ? analyses : undefined,
+        }],
+      });
+    }
+
+    // Handle fetching by project_id
     if (!projectId) {
       return NextResponse.json(
-        { error: 'projectId is required' },
+        { error: 'projectId or recordingId is required' },
         { status: 400 }
       );
     }
@@ -367,17 +432,34 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: recordings, error } = await supabase
+    const { data: recordings, error } = await db
       .from('recordings')
       .select('*')
       .eq('project_id', projectId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .execute();
 
     if (error) {
       throw error;
     }
 
-    return NextResponse.json({ recordings });
+    // Optionally include analyses for each recording
+    let recordingsWithAnalyses = recordings || [];
+    if (includeAnalyses && recordingsWithAnalyses.length > 0) {
+      recordingsWithAnalyses = await Promise.all(
+        recordingsWithAnalyses.map(async (rec: any) => {
+          const { data: analyses } = await db
+            .from('analyses')
+            .select('*')
+            .eq('recording_id', rec.id)
+            .order('created_at', { ascending: false })
+            .execute();
+          return { ...rec, analyses: analyses || [] };
+        })
+      );
+    }
+
+    return NextResponse.json({ recordings: recordingsWithAnalyses });
   } catch (error) {
     console.error('Error fetching recordings:', error);
     return NextResponse.json(

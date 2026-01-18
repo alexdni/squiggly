@@ -22,6 +22,7 @@ from analyze_eeg import (
     mark_analysis_failed
 )
 from local_storage import is_local_storage_mode, ensure_storage_directories
+from local_database import upload_results_to_local_db, mark_analysis_failed_local
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -162,12 +163,15 @@ def analyze():
                 results['visuals'] = {}
 
             # Upload results to database
-            upload_results_to_supabase(
-                analysis_id,
-                results,
-                supabase_url,
-                supabase_key
-            )
+            if is_local_storage_mode():
+                upload_results_to_local_db(analysis_id, results)
+            else:
+                upload_results_to_supabase(
+                    analysis_id,
+                    results,
+                    supabase_url,
+                    supabase_key
+                )
 
             logger.info(f"Analysis complete: {analysis_id}")
 
@@ -187,13 +191,16 @@ def analyze():
 
         # Try to mark as failed in database
         try:
-            if 'analysis_id' in data and 'supabase_url' in data and 'supabase_key' in data:
-                mark_analysis_failed(
-                    data['analysis_id'],
-                    str(e),
-                    data['supabase_url'],
-                    data['supabase_key']
-                )
+            if 'analysis_id' in data:
+                if is_local_storage_mode():
+                    mark_analysis_failed_local(data['analysis_id'], str(e))
+                elif 'supabase_url' in data and 'supabase_key' in data:
+                    mark_analysis_failed(
+                        data['analysis_id'],
+                        str(e),
+                        data['supabase_url'],
+                        data['supabase_key']
+                    )
         except Exception as db_error:
             logger.error(f"Failed to update database: {db_error}")
 

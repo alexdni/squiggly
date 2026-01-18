@@ -19,6 +19,8 @@ COPY . .
 
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1
+# Set auth mode at build time for client-side detection
+ENV NEXT_PUBLIC_AUTH_MODE=local
 RUN npm run build
 
 # ============================================
@@ -55,8 +57,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor \
     libopenblas0 \
     libgomp1 \
-    postgresql-15 \
-    postgresql-contrib-15 \
+    postgresql \
+    postgresql-contrib \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -89,7 +91,8 @@ COPY api/workers ./api/workers
 # Copy scripts and configuration
 COPY scripts ./scripts
 COPY docker ./docker
-COPY supabase/schema.sql ./scripts/schema.sql
+# Copy Docker-specific schema (not Supabase schema which has auth.users references)
+COPY scripts/schema-docker.sql ./scripts/schema.sql
 
 # Create data directories
 RUN mkdir -p /data/storage/recordings /data/storage/visuals /data/storage/exports /data/postgres
@@ -106,6 +109,7 @@ ENV DEPLOYMENT_MODE=docker
 ENV DATABASE_MODE=postgres
 ENV STORAGE_MODE=local
 ENV AUTH_MODE=local
+ENV NEXT_PUBLIC_AUTH_MODE=local
 ENV STORAGE_PATH=/data/storage
 ENV DATABASE_URL=postgresql://squiggly:squiggly@localhost:5432/squiggly
 ENV WORKER_MODE=http

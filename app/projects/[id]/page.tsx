@@ -1,6 +1,7 @@
-import { createClient } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import ProjectDetailsClient from '@/components/ProjectDetailsClient';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 
 interface ProjectPageProps {
   params: {
@@ -9,18 +10,15 @@ interface ProjectPageProps {
 }
 
 export default async function ProjectPage({ params }: ProjectPageProps) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     redirect('/login');
   }
 
   // Fetch project details
-  const { data: project, error } = await supabase
+  const db = getDatabaseClient();
+  const { data: project, error } = await db
     .from('projects')
     .select('*')
     .eq('id', params.id)
@@ -30,5 +28,5 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     redirect('/projects');
   }
 
-  return <ProjectDetailsClient project={project} user={user} />;
+  return <ProjectDetailsClient project={project as any} user={user as any} />;
 }

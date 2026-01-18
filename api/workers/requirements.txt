@@ -26,3 +26,6 @@ python-dotenv==1.0.0
 # Web Server
 Flask==3.0.0
 gunicorn==21.2.0
+
+# Database (for local/Docker mode)
+psycopg2-binary==2.9.9

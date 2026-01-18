@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 import { submitAnalysisJob, getWorkerConfig } from '@/lib/worker-client';
 
 /**
@@ -16,34 +17,18 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Fetch analysis and recording data
-    const { data: analysis, error: fetchError } = await (supabase as any)
+    const db = getDatabaseClient();
+
+    // Fetch analysis
+    const { data: analysis, error: fetchError } = await db
       .from('analyses')
-      .select(`
-        *,
-        recording:recordings (
-          id,
-          filename,
-          file_path,
-          duration_seconds,
-          sampling_rate,
-          n_channels,
-          eo_start,
-          eo_end,
-          ec_start,
-          ec_end
-        )
-      `)
+      .select('*')
       .eq('id', params.id)
       .single();
 
@@ -54,9 +39,26 @@ export async function POST(
       );
     }
 
+    const analysisData = analysis as any;
+
+    // Fetch recording
+    const { data: recording, error: recordingError } = await db
+      .from('recordings')
+      .select('id, filename, file_path, duration_seconds, sampling_rate, n_channels, eo_start, eo_end, ec_start, ec_end')
+      .eq('id', analysisData.recording_id)
+      .single();
+
+    if (recordingError || !recording) {
+      return NextResponse.json(
+        { error: 'Recording not found' },
+        { status: 400 }
+      );
+    }
+
+    const recordingData = recording as any;
+
     // Validate required recording data
-    const recording = analysis.recording;
-    if (!recording || !recording.file_path) {
+    if (!recordingData.file_path) {
       return NextResponse.json(
         { error: 'Recording file path not found' },
         { status: 400 }
@@ -64,40 +66,41 @@ export async function POST(
     }
 
     // Check segment labels - if none provided, use entire recording as EO (baseline)
-    let hasEO = recording.eo_start !== null && recording.eo_end !== null;
-    let hasEC = recording.ec_start !== null && recording.ec_end !== null;
+    let hasEO = recordingData.eo_start !== null && recordingData.eo_end !== null;
+    let hasEC = recordingData.ec_start !== null && recordingData.ec_end !== null;
 
     // Default segment times (will be overridden if segments are labeled)
-    let eoStart = recording.eo_start;
-    let eoEnd = recording.eo_end;
-    let ecStart = recording.ec_start;
-    let ecEnd = recording.ec_end;
+    let eoStart = recordingData.eo_start;
+    let eoEnd = recordingData.eo_end;
+    let ecStart = recordingData.ec_start;
+    let ecEnd = recordingData.ec_end;
 
     if (!hasEO && !hasEC) {
       // No segments labeled - use entire recording as EO (eyes open / baseline)
-      console.log(`Recording ${recording.id} has no segment labels - using entire recording as baseline`);
+      console.log(`Recording ${recordingData.id} has no segment labels - using entire recording as baseline`);
       eoStart = 0;
-      eoEnd = recording.duration_seconds;
+      eoEnd = recordingData.duration_seconds;
       hasEO = true;
     }
 
     // Log info about which conditions are present
     if (hasEO && !hasEC) {
-      console.log(`Recording ${recording.id} has only EO data (${eoStart}s - ${eoEnd}s)`);
+      console.log(`Recording ${recordingData.id} has only EO data (${eoStart}s - ${eoEnd}s)`);
     } else if (hasEC && !hasEO) {
-      console.log(`Recording ${recording.id} has only EC data (${ecStart}s - ${ecEnd}s)`);
+      console.log(`Recording ${recordingData.id} has only EC data (${ecStart}s - ${ecEnd}s)`);
     } else if (hasEO && hasEC) {
-      console.log(`Recording ${recording.id} has both EO (${eoStart}s - ${eoEnd}s) and EC (${ecStart}s - ${ecEnd}s) data`);
+      console.log(`Recording ${recordingData.id} has both EO (${eoStart}s - ${eoEnd}s) and EC (${ecStart}s - ${ecEnd}s) data`);
     }
 
     // Update status to processing
-    await (supabase as any)
+    await db
       .from('analyses')
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
       })
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .execute();
 
     const workerConfig = getWorkerConfig();
 
@@ -111,7 +114,7 @@ export async function POST(
 
       // Generate mock analysis results with corrected segment times
       const mockResults = generateMockResults({
-        ...recording,
+        ...recordingData,
         eo_start: eoStart,
         eo_end: eoEnd,
         ec_start: ecStart,
@@ -119,14 +122,15 @@ export async function POST(
       });
 
       // Update analysis with results
-      await (supabase as any)
+      await db
         .from('analyses')
         .update({
           status: 'completed',
           results: mockResults,
           completed_at: new Date().toISOString(),
         })
-        .eq('id', params.id);
+        .eq('id', params.id)
+        .execute();
 
       return NextResponse.json({
         success: true,
@@ -142,7 +146,7 @@ export async function POST(
         const result = await submitAnalysisJob(
           {
             analysisId: params.id,
-            filePath: recording.file_path,
+            filePath: recordingData.file_path,
             eoStart: eoStart,
             eoEnd: eoEnd,
             ecStart: ecStart,
@@ -161,14 +165,15 @@ export async function POST(
         console.error('Worker submission failed:', workerError);
 
         // Mark as failed
-        await (supabase as any)
+        await db
           .from('analyses')
           .update({
             status: 'failed',
             error_log: `Worker submission failed: ${workerError.message}`,
             completed_at: new Date().toISOString(),
           })
-          .eq('id', params.id);
+          .eq('id', params.id)
+          .execute();
 
         return NextResponse.json(
           { error: 'Failed to submit job to worker', details: workerError.message },
@@ -180,15 +185,16 @@ export async function POST(
     console.error('Error processing analysis:', error);
 
     // Update status to failed
-    const supabase = await createClient();
-    await (supabase as any)
+    const db = getDatabaseClient();
+    await db
       .from('analyses')
       .update({
         status: 'failed',
         error_log: error.message,
         completed_at: new Date().toISOString(),
       })
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .execute();
 
     return NextResponse.json(
       { error: 'Failed to process analysis' },

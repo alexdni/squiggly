@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase-client';
 import { useRouter } from 'next/navigation';
-import type { User } from '@supabase/supabase-js';
 
 interface DashboardClientProps {
-  user: User;
+  user: { id: string; email: string };
 }
 
 interface Project {
@@ -19,7 +17,6 @@ interface Project {
 
 export default function DashboardClient({ user }: DashboardClientProps) {
   const router = useRouter();
-  const supabase = createClient();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -41,8 +38,9 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/');
+    router.refresh();
   };
 
   return (

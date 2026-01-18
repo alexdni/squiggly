@@ -1,31 +1,15 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
 import { checkProjectPermission } from '@/lib/rbac';
-import { getStorageClient, isLocalStorageMode } from '@/lib/storage';
-import { getAuthClient } from '@/lib/auth';
+import { getStorageClient } from '@/lib/storage';
 
 // POST /api/upload/init - Generate signed URL for upload
 export async function POST(request: Request) {
   try {
-    // Get authenticated user (works for both Supabase and local auth)
-    let userId: string;
+    const user = await getCurrentUser();
 
-    if (isLocalStorageMode()) {
-      const authClient = getAuthClient();
-      const { user, error } = await authClient.getUser();
-      if (error || !user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      userId = user.id;
-    } else {
-      const supabase = await createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      userId = user.id;
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
@@ -41,7 +25,7 @@ export async function POST(request: Request) {
     // Check if user has permission to upload to this project
     const hasPermission = await checkProjectPermission(
       projectId,
-      userId,
+      user.id,
       'recording:create'
     );
 

@@ -27,7 +27,6 @@ import {
   filterValidChannels,
   type CSVData,
 } from '@/lib/csv-reader-browser';
-import { createClient } from '@/lib/supabase-client';
 
 // Register Chart.js components
 ChartJS.register(
@@ -291,17 +290,26 @@ export default function RawEEGViewer({
       setIsLoading(true);
       setError(null);
 
-      const supabase = createClient();
-
       // Detect file type from extension
       const fileExtension = filePath.toLowerCase().split('.').pop();
 
-      // Download the file from Supabase storage
-      const { data, error: downloadError } = await supabase.storage
-        .from('recordings')
-        .download(filePath);
+      // Download the file via API (works for both Supabase and local storage)
+      // First get a signed URL, then download
+      const signedUrlResponse = await fetch(`/api/recordings/${recordingId || 'unknown'}/download?path=${encodeURIComponent(filePath)}`);
 
-      if (downloadError) throw downloadError;
+      let data: Blob;
+      if (signedUrlResponse.ok) {
+        const { signedUrl } = await signedUrlResponse.json();
+        const downloadResponse = await fetch(signedUrl);
+        if (!downloadResponse.ok) throw new Error('Failed to download file');
+        data = await downloadResponse.blob();
+      } else {
+        // Fallback: try direct download through storage API
+        const token = btoa(JSON.stringify({ bucket: 'recordings', path: filePath, expires: Date.now() + 60000 }));
+        const downloadResponse = await fetch(`/api/storage/download?token=${token}`);
+        if (!downloadResponse.ok) throw new Error('Failed to download file');
+        data = await downloadResponse.blob();
+      }
 
       if (fileExtension === 'csv') {
         // Parse CSV file - convert Blob to text first

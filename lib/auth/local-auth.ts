@@ -70,28 +70,33 @@ export class LocalAuthClient implements AuthClient {
   async getUser(): Promise<{ user: User | null; error: Error | null }> {
     try {
       const cookieStore = await cookies();
-      const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+      const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
-      if (!sessionToken) {
+      if (!sessionCookie) {
         return { user: null, error: null };
       }
 
-      // Check session validity
-      const sessionData = sessions.get(sessionToken);
-      if (!sessionData || sessionData.expiresAt < Date.now()) {
-        sessions.delete(sessionToken);
+      // Parse the JSON cookie value
+      let cookieData: { token: string; expires: number; userId: string };
+      try {
+        cookieData = JSON.parse(sessionCookie);
+      } catch {
         return { user: null, error: null };
       }
 
-      // Fetch user from database
+      // Check if session is expired based on cookie data
+      if (cookieData.expires < Date.now()) {
+        return { user: null, error: null };
+      }
+
+      // Fetch user from database using userId from cookie
       const pgPool = await getPool();
       const result = await pgPool.query(
         'SELECT id, email, name, role, created_at FROM users WHERE id = $1',
-        [sessionData.userId]
+        [cookieData.userId]
       );
 
       if (result.rows.length === 0) {
-        sessions.delete(sessionToken);
         return { user: null, error: null };
       }
 
@@ -167,9 +172,14 @@ export class LocalAuthClient implements AuthClient {
         expiresAt,
       });
 
-      // Set session cookie
+      // Set session cookie with JSON containing token and expiration (for middleware)
       const cookieStore = await cookies();
-      cookieStore.set(SESSION_COOKIE_NAME, sessionToken, {
+      const cookieValue = JSON.stringify({
+        token: sessionToken,
+        expires: expiresAt,
+        userId: row.id,
+      });
+      cookieStore.set(SESSION_COOKIE_NAME, cookieValue, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
@@ -198,10 +208,15 @@ export class LocalAuthClient implements AuthClient {
   async signOut(): Promise<{ error: Error | null }> {
     try {
       const cookieStore = await cookies();
-      const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+      const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
-      if (sessionToken) {
-        sessions.delete(sessionToken);
+      if (sessionCookie) {
+        try {
+          const cookieData = JSON.parse(sessionCookie);
+          sessions.delete(cookieData.token);
+        } catch {
+          // Old format or invalid cookie, just delete it
+        }
       }
 
       cookieStore.delete(SESSION_COOKIE_NAME);
@@ -253,9 +268,14 @@ export class LocalAuthClient implements AuthClient {
         expiresAt,
       });
 
-      // Set session cookie
+      // Set session cookie with JSON containing token and expiration (for middleware)
       const cookieStore = await cookies();
-      cookieStore.set(SESSION_COOKIE_NAME, sessionToken, {
+      const cookieValue = JSON.stringify({
+        token: sessionToken,
+        expires: expiresAt,
+        userId: row.id,
+      });
+      cookieStore.set(SESSION_COOKIE_NAME, cookieValue, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',

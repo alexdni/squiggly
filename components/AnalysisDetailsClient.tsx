@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
-import type { User } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
 
 // Dynamically import RawEEGViewer to avoid SSR issues with Chart.js
@@ -52,7 +50,7 @@ interface Analysis {
 
 interface AnalysisDetailsClientProps {
   analysis: Analysis;
-  user: User;
+  user: { id: string; email: string };
 }
 
 interface AIInterpretationContent {
@@ -76,7 +74,6 @@ export default function AnalysisDetailsClient({
   user,
 }: AnalysisDetailsClientProps) {
   const router = useRouter();
-  const supabase = createClient();
   const [analysis, setAnalysis] = useState(initialAnalysis);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pollingElapsed, setPollingElapsed] = useState(0);
@@ -108,37 +105,20 @@ export default function AnalysisDetailsClient({
           return;
         }
 
-        const { data } = await (supabase as any)
-          .from('analyses')
-          .select(`
-            *,
-            recording:recordings (
-              id,
-              filename,
-              file_path,
-              file_size,
-              duration_seconds,
-              sampling_rate,
-              n_channels,
-              montage,
-              reference,
-              eo_start,
-              eo_end,
-              ec_start,
-              ec_end,
-              project_id,
-              created_at
-            )
-          `)
-          .eq('id', analysis.id)
-          .single();
-
-        if (data) {
-          setAnalysis(data);
-          if (data.status !== 'processing' && data.status !== 'pending') {
-            clearInterval(interval);
-            setPollingElapsed(0);
+        try {
+          const response = await fetch(`/api/analyses/${analysis.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data) {
+              setAnalysis(data);
+              if (data.status !== 'processing' && data.status !== 'pending') {
+                clearInterval(interval);
+                setPollingElapsed(0);
+              }
+            }
           }
+        } catch (err) {
+          console.error('Error polling analysis:', err);
         }
       }, POLL_INTERVAL_MS);
 
@@ -147,11 +127,12 @@ export default function AnalysisDetailsClient({
         setPollingElapsed(0);
       };
     }
-  }, [analysis.status, analysis.id, supabase]);
+  }, [analysis.status, analysis.id]);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/');
+    router.refresh();
   };
 
   const handleStartAnalysis = async () => {
@@ -249,19 +230,20 @@ export default function AnalysisDetailsClient({
       // Preserve the AI interpretation before clearing results
       const preservedAiInterpretation = analysis.results?.ai_interpretation || null;
 
-      // Reset the analysis status to pending, but preserve AI interpretation in a separate field
-      const { error: resetError } = await (supabase as any)
-        .from('analyses')
-        .update({
+      // Reset the analysis status to pending via API
+      const response = await fetch(`/api/analyses/${analysis.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           status: 'pending',
           results: preservedAiInterpretation ? { ai_interpretation: preservedAiInterpretation } : null,
           error_log: null,
           started_at: null,
           completed_at: null,
-        })
-        .eq('id', analysis.id);
+        }),
+      });
 
-      if (resetError) {
+      if (!response.ok) {
         throw new Error('Failed to reset analysis status');
       }
 
@@ -276,11 +258,11 @@ export default function AnalysisDetailsClient({
       });
 
       // Start the new analysis
-      const response = await fetch(`/api/analyses/${analysis.id}/process`, {
+      const processResponse = await fetch(`/api/analyses/${analysis.id}/process`, {
         method: 'POST',
       });
 
-      if (!response.ok) {
+      if (!processResponse.ok) {
         throw new Error('Failed to start re-analysis');
       }
 

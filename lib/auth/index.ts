@@ -52,6 +52,25 @@ export function isLocalAuthMode(): boolean {
   return getAuthMode() === 'local';
 }
 
+/**
+ * Get the current authenticated user
+ * Works in both local and Supabase auth modes
+ * For use in Server Components and API routes
+ */
+export async function getCurrentUser(): Promise<{ id: string; email: string } | null> {
+  if (isLocalAuthMode()) {
+    const authClient = getAuthClient();
+    const { user } = await authClient.getUser();
+    return user ? { id: user.id, email: user.email || '' } : null;
+  } else {
+    // Dynamically import to avoid issues when Supabase env vars aren't set
+    const { createClient } = await import('@/lib/supabase-server');
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return user ? { id: user.id, email: user.email || '' } : null;
+  }
+}
+
 // Re-export types and utilities
 export type { AuthClient, User, Session, AuthResult, SignInCredentials, SignUpCredentials, AuthMode } from './types';
 export { getAuthMode } from './types';

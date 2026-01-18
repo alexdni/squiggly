@@ -58,3 +58,4 @@ pip-delete-this-directory.txt
 .claude/settings.local.json
 .claude/settings.local.json
 .env.example
+.env.docker

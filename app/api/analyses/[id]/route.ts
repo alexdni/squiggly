@@ -1,45 +1,51 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
+import { getStorageClient } from '@/lib/storage';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data: analysis, error } = await supabase
+    const db = getDatabaseClient();
+
+    // First fetch the analysis
+    const { data: analysis, error } = await db
       .from('analyses')
-      .select(
-        `
-        *,
-        recording:recordings (
-          id,
-          filename,
-          project_id,
-          file_path
-        )
-      `
-      )
+      .select('*')
       .eq('id', params.id)
       .single();
 
-    if (error) {
+    if (error || !analysis) {
       return NextResponse.json(
         { error: 'Analysis not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ analysis });
+    const analysisData = analysis as any;
+
+    // Then fetch the recording
+    const { data: recording } = await db
+      .from('recordings')
+      .select('id, filename, project_id, file_path')
+      .eq('id', analysisData.recording_id)
+      .single();
+
+    // Combine the data
+    const result = {
+      ...analysisData,
+      recording: recording || null,
+    };
+
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error('Error fetching analysis:', error);
     return NextResponse.json(
@@ -54,11 +60,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -79,12 +81,12 @@ export async function PATCH(
       updateData.completed_at = new Date().toISOString();
     }
 
-    // Use type assertion on the supabase client to bypass strict typing
-    const { data: analysis, error } = await (supabase as any)
+    const db = getDatabaseClient();
+    const { data: analysis, error } = await db
       .from('analyses')
       .update(updateData)
       .eq('id', params.id)
-      .select()
+      .select('*')
       .single();
 
     if (error) {
@@ -109,23 +111,18 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // This endpoint would trigger the analysis processing
-    // For now, it just updates the status to 'processing'
-    // In the future, this would enqueue a job to a worker queue
+    const db = getDatabaseClient();
 
-    const { data: analysis, error: fetchError } = await supabase
+    // Fetch analysis
+    const { data: analysis, error: fetchError } = await db
       .from('analyses')
-      .select('*, recording:recordings(*)')
+      .select('*')
       .eq('id', params.id)
       .single();
 
@@ -137,13 +134,14 @@ export async function POST(
     }
 
     // Update status to processing
-    const { error: updateError } = await (supabase as any)
+    const { error: updateError } = await db
       .from('analyses')
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
       })
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .execute();
 
     if (updateError) {
       return NextResponse.json(
@@ -152,8 +150,6 @@ export async function POST(
       );
     }
 
-    // TODO: Enqueue analysis job to worker queue
-    // For now, return success
     return NextResponse.json({
       message: 'Analysis processing started',
       analysis_id: params.id,
@@ -172,22 +168,20 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const analysisId = params.id;
+    const db = getDatabaseClient();
+    const storage = getStorageClient();
 
-    // Fetch analysis to check permissions
-    const { data: analysis, error: fetchError } = await supabase
+    // Fetch analysis to check it exists
+    const { data: analysis, error: fetchError } = await db
       .from('analyses')
-      .select('*, recording:recordings(project_id)')
+      .select('*')
       .eq('id', analysisId)
       .single();
 
@@ -200,14 +194,11 @@ export async function DELETE(
 
     // Delete visual assets from storage
     try {
-      const { data: files } = await supabase
-        .storage
-        .from('visuals')
-        .list(analysisId);
+      const files = await storage.list('visuals', analysisId);
 
       if (files && files.length > 0) {
         const filePaths = files.map(f => `${analysisId}/${f.name}`);
-        await supabase.storage.from('visuals').remove(filePaths);
+        await storage.remove('visuals', filePaths);
       }
     } catch (storageError) {
       console.error(`Error deleting visuals for analysis ${analysisId}:`, storageError);
@@ -215,10 +206,11 @@ export async function DELETE(
     }
 
     // Delete analysis from database
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await db
       .from('analyses')
       .delete()
-      .eq('id', analysisId);
+      .eq('id', analysisId)
+      .execute();
 
     if (deleteError) {
       console.error('Error deleting analysis:', deleteError);

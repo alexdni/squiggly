@@ -46,6 +46,10 @@ from local_storage import (
     get_local_file_url,
     ensure_storage_directories
 )
+from local_database import (
+    upload_results_to_local_db,
+    mark_analysis_failed_local
+)
 
 logging.basicConfig(
     level=logging.INFO,

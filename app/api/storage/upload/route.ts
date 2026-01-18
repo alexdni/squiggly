@@ -6,8 +6,20 @@ import { getStorageClient, isLocalStorageMode } from '@/lib/storage';
  *
  * This endpoint handles file uploads in Docker mode when using local storage.
  * The token parameter contains the signed upload URL data.
+ *
+ * Supports two upload methods:
+ * 1. Raw binary data with Content-Type: application/octet-stream (like Supabase)
+ * 2. multipart/form-data with 'file' field
  */
 export async function POST(request: NextRequest) {
+  return handleUpload(request);
+}
+
+export async function PUT(request: NextRequest) {
+  return handleUpload(request);
+}
+
+async function handleUpload(request: NextRequest) {
   if (!isLocalStorageMode()) {
     return NextResponse.json(
       { error: 'This endpoint is only available in local storage mode' },
@@ -45,20 +57,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get file data
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    // Get file data based on Content-Type
+    const contentType = request.headers.get('content-type') || '';
+    let buffer: Buffer;
+    let fileContentType = 'application/octet-stream';
 
-    if (!file) {
+    if (contentType.includes('multipart/form-data')) {
+      // Handle multipart form data
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+
+      if (!file) {
+        return NextResponse.json(
+          { error: 'No file provided' },
+          { status: 400 }
+        );
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+      fileContentType = file.type || 'application/octet-stream';
+    } else {
+      // Handle raw binary data (like Supabase expects)
+      const arrayBuffer = await request.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+      fileContentType = contentType || 'application/octet-stream';
+    }
+
+    if (buffer.length === 0) {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { error: 'Empty file' },
         { status: 400 }
       );
     }
-
-    // Read file content
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
 
     // Upload to local storage
     const storage = getStorageClient();
@@ -66,7 +97,7 @@ export async function POST(request: NextRequest) {
       tokenData.bucket,
       tokenData.path,
       buffer,
-      { contentType: file.type, upsert: true }
+      { contentType: fileContentType, upsert: true }
     );
 
     if (error) {
@@ -88,9 +119,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-export async function PUT(request: NextRequest) {
-  // Alias for POST
-  return POST(request);
 }
