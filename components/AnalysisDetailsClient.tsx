@@ -6,8 +6,8 @@ import { createClient } from '@/lib/supabase-client';
 import type { User } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
 
-// Dynamically import RawEEGViewer to avoid SSR issues with Chart.js
-const RawEEGViewer = dynamic(() => import('./RawEEGViewer'), {
+// Dynamically import EEG Viewer to avoid SSR issues with Chart.js
+const RawEEGViewer = dynamic(() => import('./eeg-viewer/EEGViewer'), {
   ssr: false,
   loading: () => (
     <div className="bg-white rounded-lg shadow-md p-6">
@@ -84,6 +84,7 @@ export default function AnalysisDetailsClient({
   const [aiError, setAiError] = useState<string | null>(null);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
+  const [artifactMode, setArtifactMode] = useState<'ica' | 'manual'>('ica');
 
   // Get timeout from env or default to 3 minutes (180 seconds)
   const ANALYSIS_TIMEOUT_SECONDS = 180;
@@ -157,6 +158,25 @@ export default function AnalysisDetailsClient({
   const handleStartAnalysis = async () => {
     setIsProcessing(true);
     try {
+      // Update config with chosen artifact mode before starting
+      const updatedConfig = {
+        ...analysis.config,
+        preprocessing: {
+          ...analysis.config?.preprocessing,
+          artifact_mode: artifactMode,
+        },
+      };
+
+      const patchResponse = await fetch(`/api/analyses/${analysis.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: updatedConfig }),
+      });
+
+      if (!patchResponse.ok) {
+        throw new Error('Failed to update analysis config');
+      }
+
       const response = await fetch(`/api/analyses/${analysis.id}/process`, {
         method: 'POST',
       });
@@ -166,7 +186,7 @@ export default function AnalysisDetailsClient({
       }
 
       // Update local state to show processing
-      setAnalysis({ ...analysis, status: 'processing' });
+      setAnalysis({ ...analysis, status: 'processing', config: updatedConfig });
     } catch (error) {
       console.error('Error starting analysis:', error);
       alert('Failed to start analysis. Please try again.');
@@ -249,23 +269,25 @@ export default function AnalysisDetailsClient({
       // Preserve the AI interpretation before clearing results
       const preservedAiInterpretation = analysis.results?.ai_interpretation || null;
 
-      // Reset the analysis status to pending, but preserve AI interpretation in a separate field
-      const { error: resetError } = await (supabase as any)
-        .from('analyses')
-        .update({
+      // Reset the analysis status to pending via API
+      const response = await fetch(`/api/analyses/${analysis.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           status: 'pending',
           results: preservedAiInterpretation ? { ai_interpretation: preservedAiInterpretation } : null,
           error_log: null,
           started_at: null,
           completed_at: null,
-        })
-        .eq('id', analysis.id);
+        }),
+      });
 
-      if (resetError) {
+      if (!response.ok) {
         throw new Error('Failed to reset analysis status');
       }
 
       // Update local state, preserving AI interpretation
+      // Don't auto-start processing — let the user pick ICA vs Manual first
       setAnalysis({
         ...analysis,
         status: 'pending',
@@ -274,21 +296,9 @@ export default function AnalysisDetailsClient({
         started_at: null,
         completed_at: null,
       });
-
-      // Start the new analysis
-      const response = await fetch(`/api/analyses/${analysis.id}/process`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to start re-analysis');
-      }
-
-      // Update local state to show processing
-      setAnalysis((prev) => ({ ...prev, status: 'processing' }));
     } catch (error: any) {
       console.error('Error re-analyzing:', error);
-      setReanalyzeError(error.message || 'Failed to start re-analysis. Please try again.');
+      setReanalyzeError(error.message || 'Failed to reset analysis. Please try again.');
     } finally {
       setIsReanalyzing(false);
     }
@@ -467,30 +477,79 @@ export default function AnalysisDetailsClient({
         {/* Analysis Results or Status Message */}
         {analysis.status === 'pending' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <svg
-                  className="h-6 w-6 text-yellow-600 mr-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            <div className="flex items-center mb-4">
+              <svg
+                className="h-6 w-6 text-yellow-600 mr-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div>
+                <h3 className="text-lg font-semibold text-yellow-900">
+                  Analysis Ready to Process
+                </h3>
+                <p className="text-yellow-700">
+                  Choose a de-artifacting method, then click Start Analysis.
+                </p>
+              </div>
+            </div>
+
+            {/* De-Artifacting Mode Selector */}
+            <div className="bg-white border border-yellow-200 rounded-lg p-4 mb-4">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                De-Artifacting Method
+              </h4>
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="artifactMode"
+                    value="ica"
+                    checked={artifactMode === 'ica'}
+                    onChange={() => setArtifactMode('ica')}
+                    className="mt-1"
                   />
-                </svg>
-                <div>
-                  <h3 className="text-lg font-semibold text-yellow-900">
-                    Analysis Ready to Process
-                  </h3>
-                  <p className="text-yellow-700">
-                    Click the button to start analyzing your EEG recording.
+                  <div>
+                    <div className="font-medium text-gray-900">ICA (Automatic)</div>
+                    <div className="text-sm text-gray-600">
+                      Automatically detects and removes artifacts using Independent Component Analysis
+                    </div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="artifactMode"
+                    value="manual"
+                    checked={artifactMode === 'manual'}
+                    onChange={() => setArtifactMode('manual')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="font-medium text-gray-900">Manual</div>
+                    <div className="text-sm text-gray-600">
+                      Mark artifact epochs by hand in the EEG viewer above, then analyze
+                    </div>
+                  </div>
+                </label>
+              </div>
+              {artifactMode === 'manual' && (
+                <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-3">
+                  <p className="text-sm text-blue-800">
+                    Use the annotation tool in the EEG viewer above to mark artifact regions before starting analysis. Select &ldquo;Annotate&rdquo; mode, then drag across artifact regions.
                   </p>
                 </div>
-              </div>
+              )}
+            </div>
+
+            <div className="flex justify-end">
               <button
                 onClick={handleStartAnalysis}
                 disabled={isProcessing}

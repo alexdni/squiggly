@@ -283,7 +283,9 @@ def analyze_eeg_file(
     eo_end: float,
     ec_start: float,
     ec_end: float,
-    config: Optional[Dict] = None
+    config: Optional[Dict] = None,
+    artifact_mode: str = 'ica',
+    manual_artifact_epochs: Optional[list] = None
 ) -> Dict:
     """
     Run complete EEG analysis pipeline
@@ -295,6 +297,8 @@ def analyze_eeg_file(
         ec_start: Eyes closed segment start (seconds)
         ec_end: Eyes closed segment end (seconds)
         config: Analysis configuration
+        artifact_mode: 'ica' for automatic ICA, 'manual' for user-marked artifacts
+        manual_artifact_epochs: List of {'start': float, 'end': float} for manual mode
 
     Returns:
         Dictionary of results
@@ -317,7 +321,9 @@ def analyze_eeg_file(
             eo_end,
             ec_start,
             ec_end,
-            preprocess_config
+            preprocess_config,
+            artifact_mode=artifact_mode,
+            manual_artifact_epochs=manual_artifact_epochs or []
         )
 
         epochs_eo = preprocess_result['epochs_eo']

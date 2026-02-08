@@ -291,39 +291,11 @@ export async function POST(request: Request) {
     // Cast analysis to any to avoid TypeScript type issues
     const analysisResult = analysis as any;
 
-    // Automatically trigger analysis processing
-    let analysisStarted = false;
-    if (analysisResult) {
-      try {
-        console.log(`[Auto-Analysis] Triggering analysis for recording ${recordingResult.id}`);
-
-        const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysisResult.id}/process`;
-
-        // Call the analysis processing endpoint asynchronously
-        // Don't await to avoid blocking the upload response
-        fetch(analysisProcessUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }).then(() => {
-          console.log(`[Auto-Analysis] ✓ Analysis processing initiated for ${analysisResult.id}`);
-        }).catch((err) => {
-          console.error(`[Auto-Analysis] ✗ Failed to trigger analysis:`, err);
-        });
-
-        analysisStarted = true;
-      } catch (triggerError) {
-        console.error('[Auto-Analysis] Error triggering analysis:', triggerError);
-        // Continue anyway - user can manually trigger later
-      }
-    }
-
     return NextResponse.json({
       recording,
       analysis: analysis || null,
       metadata,
-      analysisStarted,
+      analysisStarted: false,
     });
   } catch (error) {
     console.error('Error creating recording:', error);

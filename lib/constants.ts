@@ -151,6 +151,7 @@ export const DEFAULT_PREPROCESSING_CONFIG = {
   artifact_threshold: 0.7,
   epoch_length: 2,
   epoch_overlap: 0.5,
+  artifact_mode: 'ica' as const,
 };
 
 // Feature Extraction Defaults

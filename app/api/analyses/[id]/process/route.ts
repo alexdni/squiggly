@@ -90,6 +90,26 @@ export async function POST(
       console.log(`Recording ${recording.id} has both EO (${eoStart}s - ${eoEnd}s) and EC (${ecStart}s - ${ecEnd}s) data`);
     }
 
+    // Check artifact mode and fetch manual annotations if needed
+    const artifactMode = analysis.config?.preprocessing?.artifact_mode || 'ica';
+    let manualArtifactEpochs: Array<{ start: number; end: number }> = [];
+
+    if (artifactMode === 'manual') {
+      const { data: artifactAnnotations } = await (supabase as any)
+        .from('eeg_annotations')
+        .select('start_time, end_time')
+        .eq('recording_id', recording.id)
+        .eq('type', 'artifact')
+        .order('start_time');
+
+      if (artifactAnnotations && artifactAnnotations.length > 0) {
+        manualArtifactEpochs = artifactAnnotations.map((a: any) => ({
+          start: Number(a.start_time),
+          end: Number(a.end_time),
+        }));
+      }
+    }
+
     // Update status to processing
     await (supabase as any)
       .from('analyses')
@@ -116,6 +136,8 @@ export async function POST(
         eo_end: eoEnd,
         ec_start: ecStart,
         ec_end: ecEnd,
+        artifact_mode: artifactMode,
+        manual_artifact_epochs: manualArtifactEpochs,
       });
 
       // Update analysis with results
@@ -147,6 +169,8 @@ export async function POST(
             eoEnd: eoEnd,
             ecStart: ecStart,
             ecEnd: ecEnd,
+            artifactMode,
+            manualArtifactEpochs: artifactMode === 'manual' ? manualArtifactEpochs : undefined,
           },
           workerConfig
         );
@@ -236,13 +260,27 @@ function generateMockResults(recording: any) {
   const hasEO = recording.eo_start !== null && recording.eo_end !== null;
   const hasEC = recording.ec_start !== null && recording.ec_end !== null;
 
+  // Calculate artifact rejection based on mode
+  const isManualMode = recording.artifact_mode === 'manual';
+  const manualEpochs = recording.manual_artifact_epochs || [];
+  const totalManualArtifactTime = manualEpochs.reduce(
+    (sum: number, e: { start: number; end: number }) => sum + (e.end - e.start),
+    0
+  );
+  const totalDuration = (hasEO ? (recording.eo_end - recording.eo_start) : 0) +
+    (hasEC ? (recording.ec_end - recording.ec_start) : 0);
+
   // QC Report
   const qc_report = {
-    artifact_rejection_rate: Math.random() * 20 + 5, // 5-25%
+    artifact_rejection_rate: isManualMode && totalDuration > 0
+      ? Math.min(100, (totalManualArtifactTime / totalDuration) * 100)
+      : Math.random() * 20 + 5, // 5-25% for ICA
     bad_channels: [], // No bad channels for mock data
-    ica_components_removed: Math.floor(Math.random() * 3 + 1), // 1-3 components
+    ica_components_removed: isManualMode ? 0 : Math.floor(Math.random() * 3 + 1), // 0 for manual, 1-3 for ICA
     final_epochs_eo: hasEO ? Math.floor((recording.eo_end - recording.eo_start) / 2) : 0, // Assume 2s epochs
     final_epochs_ec: hasEC ? Math.floor((recording.ec_end - recording.ec_start) / 2) : 0,
+    artifact_mode: isManualMode ? 'manual' : 'ica',
+    manual_artifact_epochs_count: isManualMode ? manualEpochs.length : undefined,
   };
 
   // Band Power Analysis
