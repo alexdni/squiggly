@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@/lib/supabase-client';
 import {
   parseEDFFile,
   type EDFData,
@@ -22,29 +23,13 @@ export function useEEGData(recordingId: string, filePath: string) {
 
       const fileExtension = filePath.toLowerCase().split('.').pop();
 
-      // Download the file via API
-      const signedUrlResponse = await fetch(
-        `/api/recordings/${recordingId || 'unknown'}/download?path=${encodeURIComponent(filePath)}`
-      );
+      // Download the file from Supabase storage
+      const supabase = createClient();
+      const { data, error: downloadError } = await supabase.storage
+        .from('recordings')
+        .download(filePath);
 
-      let data: Blob;
-      if (signedUrlResponse.ok) {
-        const { signedUrl } = await signedUrlResponse.json();
-        const downloadResponse = await fetch(signedUrl);
-        if (!downloadResponse.ok) throw new Error('Failed to download file');
-        data = await downloadResponse.blob();
-      } else {
-        const token = btoa(
-          JSON.stringify({
-            bucket: 'recordings',
-            path: filePath,
-            expires: Date.now() + 60000,
-          })
-        );
-        const downloadResponse = await fetch(`/api/storage/download?token=${token}`);
-        if (!downloadResponse.ok) throw new Error('Failed to download file');
-        data = await downloadResponse.blob();
-      }
+      if (downloadError) throw downloadError;
 
       if (fileExtension === 'csv') {
         const text = await data.text();
