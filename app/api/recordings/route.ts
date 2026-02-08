@@ -249,36 +249,11 @@ export async function POST(request: Request) {
 
     const analysisResult = analysis as any;
 
-    // Automatically trigger analysis processing
-    let analysisStarted = false;
-    if (analysisResult) {
-      try {
-        console.log(`[Auto-Analysis] Triggering analysis for recording ${recordingResult.id}`);
-
-        const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysisResult.id}/process`;
-
-        fetch(analysisProcessUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }).then(() => {
-          console.log(`[Auto-Analysis] ✓ Analysis processing initiated for ${analysisResult.id}`);
-        }).catch((err) => {
-          console.error(`[Auto-Analysis] ✗ Failed to trigger analysis:`, err);
-        });
-
-        analysisStarted = true;
-      } catch (triggerError) {
-        console.error('[Auto-Analysis] Error triggering analysis:', triggerError);
-      }
-    }
-
     return NextResponse.json({
       recording,
       analysis: analysis || null,
       metadata,
-      analysisStarted,
+      analysisStarted: false,
     });
   } catch (error) {
     console.error('Error creating recording:', error);
@@ -335,24 +310,8 @@ async function createAnalysisForRecording(recordingId: string, userId: string) {
     );
   }
 
-  // Trigger analysis processing
-  const analysisResult = analysis as any;
-  if (analysisResult) {
-    try {
-      const analysisProcessUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyses/${analysisResult.id}/process`;
-      fetch(analysisProcessUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }).catch((err) => {
-        console.error(`Failed to trigger analysis:`, err);
-      });
-    } catch (triggerError) {
-      console.error('Error triggering analysis:', triggerError);
-    }
-  }
-
   return NextResponse.json({
-    analysis: analysisResult,
+    analysis: analysis as any,
     message: 'Analysis created',
   });
 }

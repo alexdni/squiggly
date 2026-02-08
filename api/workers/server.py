@@ -120,7 +120,13 @@ def analyze():
                 'message': 'At least one condition (EO or EC) must be provided with start/end times'
             }), 400
 
-        logger.info(f"Starting analysis for: {analysis_id}")
+        # Read artifact mode and manual epochs
+        artifact_mode = data.get('artifact_mode', 'ica')
+        manual_artifact_epochs = data.get('manual_artifact_epochs', [])
+
+        logger.info(f"Starting analysis for: {analysis_id} (artifact_mode={artifact_mode})")
+        if artifact_mode == 'manual':
+            logger.info(f"Manual mode: {len(manual_artifact_epochs)} artifact epochs provided")
 
         # Download EEG file from storage (Supabase or local)
         local_file, is_temp = download_file(file_path, supabase_url, supabase_key)
@@ -133,7 +139,9 @@ def analyze():
                 eo_end,
                 ec_start,
                 ec_end,
-                config=data.get('config', {})
+                config=data.get('config', {}),
+                artifact_mode=artifact_mode,
+                manual_artifact_epochs=manual_artifact_epochs
             )
 
             # Upload visualizations to storage

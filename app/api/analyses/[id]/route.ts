@@ -67,12 +67,13 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { status, results, error_log } = body;
+    const { status, results, error_log, config } = body;
 
     const updateData: Record<string, any> = {};
     if (status) updateData.status = status;
     if (results) updateData.results = results;
     if (error_log) updateData.error_log = error_log;
+    if (config) updateData.config = config;
 
     if (status === 'processing') {
       updateData.started_at = new Date().toISOString();

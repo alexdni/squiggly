@@ -71,6 +71,18 @@ CREATE TABLE IF NOT EXISTS export_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- EEG Annotations table (for persisting viewer annotations)
+CREATE TABLE IF NOT EXISTS eeg_annotations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  recording_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+  start_time NUMERIC(10, 4) NOT NULL,
+  end_time NUMERIC(10, 4) NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('artifact', 'event', 'note')),
+  description TEXT,
+  created_by UUID NOT NULL REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX idx_projects_owner ON projects(owner_id);
 CREATE INDEX idx_project_members_project ON project_members(project_id);
@@ -80,6 +92,7 @@ CREATE INDEX idx_recordings_uploaded_by ON recordings(uploaded_by);
 CREATE INDEX idx_analyses_recording ON analyses(recording_id);
 CREATE INDEX idx_analyses_status ON analyses(status);
 CREATE INDEX idx_export_logs_analysis ON export_logs(analysis_id);
+CREATE INDEX idx_eeg_annotations_recording ON eeg_annotations(recording_id);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -108,6 +121,7 @@ ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recordings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analyses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE export_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE eeg_annotations ENABLE ROW LEVEL SECURITY;
 
 -- Projects policies
 CREATE POLICY "Users can view projects they own or are members of"
@@ -286,6 +300,49 @@ CREATE POLICY "Users can view their own export logs"
 CREATE POLICY "Users can create export logs"
   ON export_logs FOR INSERT
   WITH CHECK (exported_by = auth.uid());
+
+-- EEG annotations policies
+CREATE POLICY "Users can view annotations for recordings they have access to"
+  ON eeg_annotations FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM recordings
+      JOIN projects ON recordings.project_id = projects.id
+      WHERE recordings.id = eeg_annotations.recording_id
+      AND (
+        projects.owner_id = auth.uid() OR
+        EXISTS (
+          SELECT 1 FROM project_members
+          WHERE project_members.project_id = projects.id
+          AND project_members.user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users can create annotations for recordings they have access to"
+  ON eeg_annotations FOR INSERT
+  WITH CHECK (
+    created_by = auth.uid() AND
+    EXISTS (
+      SELECT 1 FROM recordings
+      JOIN projects ON recordings.project_id = projects.id
+      WHERE recordings.id = eeg_annotations.recording_id
+      AND (
+        projects.owner_id = auth.uid() OR
+        EXISTS (
+          SELECT 1 FROM project_members
+          WHERE project_members.project_id = projects.id
+          AND project_members.user_id = auth.uid()
+          AND project_members.role IN ('owner', 'collaborator')
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users can delete their own annotations"
+  ON eeg_annotations FOR DELETE
+  USING (created_by = auth.uid());
 
 -- Storage buckets policies (to be configured in Supabase dashboard)
 -- Create these buckets in the Supabase Storage UI:

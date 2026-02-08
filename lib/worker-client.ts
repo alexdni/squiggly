@@ -21,6 +21,8 @@ export interface AnalysisJobData {
   ecStart: number | null;
   ecEnd: number | null;
   config?: Record<string, any>;
+  artifactMode?: string;
+  manualArtifactEpochs?: Array<{ start: number; end: number }>;
 }
 
 export interface AnalysisJob {
@@ -33,6 +35,8 @@ export interface AnalysisJob {
   supabase_url: string;
   supabase_key: string;
   config?: Record<string, any>;
+  artifact_mode?: string;
+  manual_artifact_epochs?: Array<{ start: number; end: number }>;
 }
 
 /**
@@ -110,6 +114,8 @@ async function submitHttpJob(
     supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL!,
     supabase_key: process.env.SUPABASE_SERVICE_ROLE_KEY!,
     config: jobData.config,
+    artifact_mode: jobData.artifactMode,
+    manual_artifact_epochs: jobData.manualArtifactEpochs,
   };
 
   const headers: Record<string, string> = {

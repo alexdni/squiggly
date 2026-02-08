@@ -66,6 +66,24 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo "PostgreSQL initialized successfully"
 else
     echo "PostgreSQL data directory exists, skipping initialization"
+
+    # Apply schema migrations for existing databases
+    # Uses IF NOT EXISTS so safe to run repeatedly
+    PG_BIN=$(dirname $(ls -d /usr/lib/postgresql/*/bin/postgres | head -1))
+    su - postgres -s /bin/bash -c "$PG_BIN/pg_ctl -D $PGDATA -l /tmp/postgres.log start"
+    sleep 3
+
+    echo "Applying schema migrations..."
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -d squiggly -f /app/scripts/schema.sql" 2>/dev/null || true
+
+    # Ensure permissions on any new tables
+    su - postgres -s /bin/bash -c "$PG_BIN/psql -d squiggly -c \"
+        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO squiggly;
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO squiggly;
+    \"" 2>/dev/null || true
+
+    su - postgres -s /bin/bash -c "$PG_BIN/pg_ctl -D $PGDATA stop"
+    echo "Schema migrations applied"
 fi
 
 # Ensure correct permissions

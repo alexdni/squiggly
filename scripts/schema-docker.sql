@@ -85,6 +85,18 @@ CREATE TABLE IF NOT EXISTS export_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- EEG Annotations table (for persisting viewer annotations)
+CREATE TABLE IF NOT EXISTS eeg_annotations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  recording_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+  start_time NUMERIC(10, 4) NOT NULL,
+  end_time NUMERIC(10, 4) NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('artifact', 'event', 'note')),
+  description TEXT,
+  created_by UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id);
@@ -94,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_recordings_uploaded_by ON recordings(uploaded_by)
 CREATE INDEX IF NOT EXISTS idx_analyses_recording ON analyses(recording_id);
 CREATE INDEX IF NOT EXISTS idx_analyses_status ON analyses(status);
 CREATE INDEX IF NOT EXISTS idx_export_logs_analysis ON export_logs(analysis_id);
+CREATE INDEX IF NOT EXISTS idx_eeg_annotations_recording ON eeg_annotations(recording_id);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()

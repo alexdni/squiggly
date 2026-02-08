@@ -352,7 +352,8 @@ class EEGPreprocessor:
         raw: mne.io.Raw,
         segment_start: float,
         segment_end: float,
-        segment_name: str = 'segment'
+        segment_name: str = 'segment',
+        reject: bool = True
     ) -> mne.Epochs:
         """
         Create epochs from a time segment
@@ -362,6 +363,9 @@ class EEGPreprocessor:
             segment_start: Start time in seconds
             segment_end: End time in seconds
             segment_name: Name for the segment (e.g., 'EO', 'EC')
+            reject: Whether to apply amplitude-based rejection threshold.
+                    Set to False for manual artifact mode (BAD annotations
+                    are still respected by MNE automatically).
 
         Returns:
             MNE Epochs object
@@ -370,7 +374,7 @@ class EEGPreprocessor:
         max_time = raw.times[-1]
         segment_end_clamped = min(segment_end, max_time)
 
-        logger.info(f"Creating {segment_name} epochs from {segment_start}s to {segment_end_clamped}s")
+        logger.info(f"Creating {segment_name} epochs from {segment_start}s to {segment_end_clamped}s (reject={reject})")
 
         # Crop to segment
         raw_segment = raw.copy().crop(tmin=segment_start, tmax=segment_end_clamped)
@@ -383,6 +387,9 @@ class EEGPreprocessor:
         )
 
         # Create epochs
+        # When reject=False (manual mode), MNE still respects BAD annotations
+        # and will drop epochs overlapping with BAD-annotated segments
+        rejection = self.rejection_threshold if reject else None
         epochs = mne.Epochs(
             raw_segment,
             events,
@@ -390,11 +397,12 @@ class EEGPreprocessor:
             tmax=self.epoch_duration,
             baseline=None,
             preload=True,
-            reject=self.rejection_threshold,
+            reject=rejection,
             verbose=False
         )
 
-        logger.info(f"Created {len(epochs)} epochs ({len(epochs.drop_log)} dropped due to artifacts)")
+        n_dropped = sum(1 for log in epochs.drop_log if len(log) > 0)
+        logger.info(f"Created {len(epochs)} epochs ({n_dropped} dropped)")
 
         return epochs
 
@@ -422,11 +430,14 @@ class EEGPreprocessor:
             Dictionary of QC metrics
         """
         # Calculate rejection rates for EO
+        # NOTE: len(epochs.drop_log) = total epochs attempted (kept + dropped)
+        #       len(epochs) = kept epochs only
+        #       dropped = total - kept
         if epochs_eo is not None:
-            eo_dropped = len(epochs_eo.drop_log)
-            eo_total = len(epochs_eo) + eo_dropped
-            eo_rejection_rate = (eo_dropped / eo_total * 100) if eo_total > 0 else 0
+            eo_total = len(epochs_eo.drop_log)
             final_epochs_eo = len(epochs_eo)
+            eo_dropped = eo_total - final_epochs_eo
+            eo_rejection_rate = (eo_dropped / eo_total * 100) if eo_total > 0 else 0
         else:
             eo_dropped = 0
             eo_total = 0
@@ -435,10 +446,10 @@ class EEGPreprocessor:
 
         # Calculate rejection rates for EC
         if epochs_ec is not None:
-            ec_dropped = len(epochs_ec.drop_log)
-            ec_total = len(epochs_ec) + ec_dropped
-            ec_rejection_rate = (ec_dropped / ec_total * 100) if ec_total > 0 else 0
+            ec_total = len(epochs_ec.drop_log)
             final_epochs_ec = len(epochs_ec)
+            ec_dropped = ec_total - final_epochs_ec
+            ec_rejection_rate = (ec_dropped / ec_total * 100) if ec_total > 0 else 0
         else:
             ec_dropped = 0
             ec_total = 0
@@ -463,13 +474,51 @@ class EEGPreprocessor:
         return qc_metrics
 
 
+def _annotate_manual_artifacts(raw: mne.io.Raw, manual_epochs: list) -> None:
+    """
+    Mark manual artifact epochs as BAD annotations in MNE Raw object.
+    MNE will automatically exclude these segments when creating epochs.
+
+    Args:
+        raw: MNE Raw object to annotate
+        manual_epochs: List of dicts with 'start' and 'end' keys (seconds)
+    """
+    if not manual_epochs:
+        return
+
+    onsets = []
+    durations = []
+    descriptions = []
+
+    for epoch in manual_epochs:
+        start = float(epoch['start'])
+        end = float(epoch['end'])
+        duration = end - start
+        if duration > 0:
+            onsets.append(start)
+            durations.append(duration)
+            descriptions.append('BAD_manual')
+
+    if onsets:
+        annotations = mne.Annotations(
+            onset=onsets,
+            duration=durations,
+            description=descriptions,
+            orig_time=raw.annotations.orig_time
+        )
+        raw.set_annotations(raw.annotations + annotations)
+        logger.info(f"Annotated {len(onsets)} manual artifact segments as BAD")
+
+
 def preprocess_eeg(
     file_path: str,
     eo_start: float,
     eo_end: float,
     ec_start: float,
     ec_end: float,
-    config: Dict = None
+    config: Dict = None,
+    artifact_mode: str = 'ica',
+    manual_artifact_epochs: list = None
 ) -> Dict:
     """
     Main preprocessing function
@@ -481,18 +530,24 @@ def preprocess_eeg(
         ec_start: Eyes closed segment start (seconds)
         ec_end: Eyes closed segment end (seconds)
         config: Preprocessing configuration dict
+        artifact_mode: 'ica' for automatic ICA artifact removal,
+                       'manual' for user-marked artifact epochs only
+        manual_artifact_epochs: List of {'start': float, 'end': float} for manual mode
 
     Returns:
         Dictionary containing preprocessed epochs and QC metrics
     """
     # Initialize preprocessor with config
+    # Filter out keys that EEGPreprocessor doesn't accept
     config = config or {}
-    preprocessor = EEGPreprocessor(**config)
+    preprocessor_kwargs = {k: v for k, v in config.items()
+                          if k not in ('artifact_mode',)}
+    preprocessor = EEGPreprocessor(**preprocessor_kwargs)
 
     # Load data (auto-detects EDF or CSV)
     raw_original = preprocessor.load_file(file_path)
 
-    # Preprocess
+    # Preprocess (filtering, resampling)
     raw = preprocessor.preprocess(raw_original.copy())
 
     # Detect bad channels
@@ -502,22 +557,38 @@ def preprocess_eeg(
         raw.info['bads'] = bad_channels
         raw.interpolate_bads(reset_bads=True)
 
-    # Apply ICA
-    raw_clean, ica_components = preprocessor.apply_ica(raw)
+    if artifact_mode == 'manual':
+        # MANUAL MODE: Skip ICA, use user-marked artifact segments
+        logger.info("Manual artifact mode: skipping ICA")
+        raw_clean = raw.copy()
+        ica_components = 0
+
+        # Mark manual artifact epochs as BAD annotations
+        _annotate_manual_artifacts(raw_clean, manual_artifact_epochs or [])
+    else:
+        # ICA MODE: Automatic artifact removal (default)
+        logger.info("ICA artifact mode: running automatic artifact removal")
+        raw_clean, ica_components = preprocessor.apply_ica(raw)
 
     # Create epochs only for conditions that have data
+    # In manual mode, skip amplitude-based rejection (user controls artifacts)
+    use_reject = artifact_mode != 'manual'
     epochs_eo = None
     epochs_ec = None
 
     if eo_start is not None and eo_end is not None:
         logger.info(f"Creating EO epochs from {eo_start}s to {eo_end}s")
-        epochs_eo = preprocessor.create_epochs(raw_clean, eo_start, eo_end, 'EO')
+        epochs_eo = preprocessor.create_epochs(
+            raw_clean, eo_start, eo_end, 'EO', reject=use_reject
+        )
     else:
         logger.info("Skipping EO epochs (no EO segment defined)")
 
     if ec_start is not None and ec_end is not None:
         logger.info(f"Creating EC epochs from {ec_start}s to {ec_end}s")
-        epochs_ec = preprocessor.create_epochs(raw_clean, ec_start, ec_end, 'EC')
+        epochs_ec = preprocessor.create_epochs(
+            raw_clean, ec_start, ec_end, 'EC', reject=use_reject
+        )
     else:
         logger.info("Skipping EC epochs (no EC segment defined)")
 
@@ -530,6 +601,9 @@ def preprocess_eeg(
         epochs_eo,
         epochs_ec
     )
+    qc_metrics['artifact_mode'] = artifact_mode
+    if artifact_mode == 'manual':
+        qc_metrics['manual_artifact_epochs_count'] = len(manual_artifact_epochs or [])
 
     return {
         'epochs_eo': epochs_eo,
