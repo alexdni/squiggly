@@ -4,8 +4,9 @@ export interface EEGAnnotation {
   startTime: number;
   endTime: number;
   description: string;
-  type: 'artifact' | 'event' | 'note';
+  type: 'artifact' | 'event' | 'note' | 'rejected';
   color?: string;
+  readOnly?: boolean;
 }
 
 export interface FilterSettings {
@@ -30,6 +31,13 @@ export interface UnifiedSignalData {
   duration: number;
   channelNames: string[];
   fileType: 'edf' | 'bdf' | 'csv';
+}
+
+export interface RejectedEpoch {
+  start: number;
+  end: number;
+  reason: string;
+  condition: string;
 }
 
 export interface AnnotationDragState {

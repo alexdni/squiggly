@@ -82,6 +82,18 @@ export default function AnalysisDetailsClient({
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [artifactMode, setArtifactMode] = useState<'ica' | 'manual'>('ica');
+  const [icaMethod, setIcaMethod] = useState<'fastica' | 'infomax' | 'picard' | 'sobi'>(
+    (analysis.config?.preprocessing?.ica_method as any) || 'sobi'
+  );
+  const [sobiDeltaThreshold, setSobiDeltaThreshold] = useState(
+    analysis.config?.preprocessing?.sobi_delta_threshold ?? 0.70
+  );
+  const [sobiHfThreshold, setSobiHfThreshold] = useState(
+    analysis.config?.preprocessing?.sobi_hf_threshold ?? 0.40
+  );
+  const [sobiFrontalCorr, setSobiFrontalCorr] = useState(
+    analysis.config?.preprocessing?.sobi_frontal_corr ?? 0.60
+  );
 
   // Get timeout from env or default to 3 minutes (180 seconds)
   const ANALYSIS_TIMEOUT_SECONDS = 180;
@@ -139,12 +151,18 @@ export default function AnalysisDetailsClient({
   const handleStartAnalysis = async () => {
     setIsProcessing(true);
     try {
-      // Update config with chosen artifact mode before starting
+      // Update config with chosen artifact mode and ICA method before starting
       const updatedConfig = {
         ...analysis.config,
         preprocessing: {
           ...analysis.config?.preprocessing,
           artifact_mode: artifactMode,
+          ica_method: artifactMode === 'ica' ? icaMethod : undefined,
+          ...(artifactMode === 'ica' && icaMethod === 'sobi' ? {
+            sobi_delta_threshold: sobiDeltaThreshold,
+            sobi_hf_threshold: sobiHfThreshold,
+            sobi_frontal_corr: sobiFrontalCorr,
+          } : {}),
         },
       };
 
@@ -453,6 +471,7 @@ export default function AnalysisDetailsClient({
         <RawEEGViewer
           recordingId={analysis.recording.id}
           filePath={analysis.recording.file_path}
+          rejectedEpochs={analysis.results?.rejected_epochs}
         />
 
         {/* Analysis Results or Status Message */}
@@ -526,6 +545,79 @@ export default function AnalysisDetailsClient({
                   <p className="text-sm text-blue-800">
                     Use the annotation tool in the EEG viewer above to mark artifact regions before starting analysis. Select &ldquo;Annotate&rdquo; mode, then drag across artifact regions.
                   </p>
+                </div>
+              )}
+
+              {/* ICA Algorithm Selector (only shown when ICA mode is selected) */}
+              {artifactMode === 'ica' && (
+                <div className="mt-4 pt-3 border-t border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-2">
+                    ICA Algorithm
+                  </h4>
+                  <select
+                    value={icaMethod}
+                    onChange={(e) => setIcaMethod(e.target.value as any)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white text-gray-900"
+                  >
+                    <option value="sobi">SOBI (Recommended)</option>
+                    <option value="picard">Picard</option>
+                    <option value="infomax">Extended Infomax</option>
+                    <option value="fastica">FastICA</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {icaMethod === 'picard' && 'Most stable and fastest convergence. Recommended by MNE-Python.'}
+                    {icaMethod === 'sobi' && 'Second Order Blind Identification. Uses temporal structure to separate sources with distinct autocorrelation — excellent for slow drift and electrode artifacts.'}
+                    {icaMethod === 'infomax' && 'Handles both sub- and super-Gaussian sources. Good for slow-wave drift separation.'}
+                    {icaMethod === 'fastica' && 'Classic algorithm. Fast but may miss low-frequency artifacts.'}
+                  </p>
+
+                  {/* SOBI threshold configuration */}
+                  {icaMethod === 'sobi' && (
+                    <div className="mt-3 space-y-2 bg-gray-50 rounded-md p-3">
+                      <h5 className="text-xs font-semibold text-gray-700">SOBI Artifact Detection Thresholds</h5>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Delta Power Ratio</label>
+                          <input
+                            type="number"
+                            min={0.1}
+                            max={1.0}
+                            step={0.05}
+                            value={sobiDeltaThreshold}
+                            onChange={(e) => setSobiDeltaThreshold(parseFloat(e.target.value) || 0.70)}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white text-gray-900"
+                          />
+                          <p className="text-[10px] text-gray-400 mt-0.5">Slow drift detection (0.5-4 Hz band)</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">HF Power Ratio</label>
+                          <input
+                            type="number"
+                            min={0.1}
+                            max={1.0}
+                            step={0.05}
+                            value={sobiHfThreshold}
+                            onChange={(e) => setSobiHfThreshold(parseFloat(e.target.value) || 0.40)}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white text-gray-900"
+                          />
+                          <p className="text-[10px] text-gray-400 mt-0.5">Muscle artifact (30-45 Hz band)</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Frontal Correlation</label>
+                          <input
+                            type="number"
+                            min={0.1}
+                            max={1.0}
+                            step={0.05}
+                            value={sobiFrontalCorr}
+                            onChange={(e) => setSobiFrontalCorr(parseFloat(e.target.value) || 0.60)}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white text-gray-900"
+                          />
+                          <p className="text-[10px] text-gray-400 mt-0.5">Eye blink detection (Fp1/Fp2)</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -614,6 +706,11 @@ export default function AnalysisDetailsClient({
                     <div className="text-lg font-semibold text-gray-900">
                       {analysis.results.qc_report.ica_components_removed}
                     </div>
+                    {analysis.results.qc_report.ica_method && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        via {analysis.results.qc_report.ica_method === 'sobi' ? 'SOBI' : analysis.results.qc_report.ica_method === 'infomax' ? 'Extended Infomax' : analysis.results.qc_report.ica_method === 'picard' ? 'Picard' : 'FastICA'}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="text-sm text-gray-700">
@@ -625,6 +722,33 @@ export default function AnalysisDetailsClient({
                     </div>
                   </div>
                 </div>
+
+                {/* Download cleaned file */}
+                {analysis.results.cleaned_file_url && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    {(() => {
+                      const fmt = analysis.results.cleaned_file_format || '.edf';
+                      const fmtLabel = fmt === '.bdf' ? 'BDF' : fmt === '.csv' ? 'CSV' : 'EDF';
+                      return (
+                        <>
+                          <a
+                            href={analysis.results.cleaned_file_url}
+                            download={`cleaned_raw${fmt}`}
+                            className="inline-flex items-center gap-2 text-sm text-neuro-primary hover:text-neuro-accent font-medium"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download Cleaned Raw File ({fmtLabel})
+                          </a>
+                          <span className="text-xs text-gray-500 ml-2">
+                            Post-ICA cleaned data in original format
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             )}
 

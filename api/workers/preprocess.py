@@ -31,8 +31,12 @@ class EEGPreprocessor:
         filter_high: float = 45.0,
         notch_freq: float = 60.0,
         epoch_duration: float = 2.0,
-        ica_n_components: int = 15,
-        rejection_threshold: Dict[str, float] = None
+        ica_n_components: int = None,
+        ica_method: str = 'sobi',
+        rejection_threshold: Dict[str, float] = None,
+        sobi_delta_threshold: float = 0.70,
+        sobi_hf_threshold: float = 0.40,
+        sobi_frontal_corr: float = 0.6,
     ):
         """
         Initialize preprocessor with configuration
@@ -43,15 +47,23 @@ class EEGPreprocessor:
             filter_high: Low-pass filter cutoff (Hz)
             notch_freq: Notch filter frequency (Hz) - 60 for US, 50 for EU
             epoch_duration: Duration of epochs in seconds
-            ica_n_components: Number of ICA components to compute
+            ica_n_components: Number of ICA components (None = use n_channels)
+            ica_method: ICA algorithm - 'fastica', 'infomax', 'picard', or 'sobi'
             rejection_threshold: Amplitude thresholds for artifact rejection
+            sobi_delta_threshold: SOBI delta-band power ratio threshold (0-1)
+            sobi_hf_threshold: SOBI high-frequency power ratio threshold (0-1)
+            sobi_frontal_corr: SOBI frontal channel correlation threshold (0-1)
         """
         self.resample_freq = resample_freq
         self.filter_low = filter_low
         self.filter_high = filter_high
         self.notch_freq = notch_freq
         self.epoch_duration = epoch_duration
-        self.ica_n_components = ica_n_components
+        self.ica_n_components = ica_n_components  # None = auto (n_channels)
+        self.ica_method = ica_method if ica_method in ('fastica', 'infomax', 'picard', 'sobi') else 'sobi'
+        self.sobi_delta_threshold = sobi_delta_threshold
+        self.sobi_hf_threshold = sobi_hf_threshold
+        self.sobi_frontal_corr = sobi_frontal_corr
 
         # Default rejection thresholds (in μV)
         self.rejection_threshold = rejection_threshold or {
@@ -301,7 +313,9 @@ class EEGPreprocessor:
 
     def detect_bad_channels(self, raw: mne.io.Raw) -> List[str]:
         """
-        Detect bad channels based on variance and correlation
+        Detect bad channels based on:
+        1. Overall variance (broadband outliers)
+        2. Low-frequency power (delta-band drift / electrode noise)
 
         Args:
             raw: Preprocessed Raw object
@@ -311,38 +325,70 @@ class EEGPreprocessor:
         """
         logger.info("Detecting bad channels")
 
-        # Get data
         data = raw.get_data()
+        bad_channels = []
+        seen = set()
 
-        # Calculate channel-wise variance
+        # --- Check 1: broadband variance outliers (3 SD) ---
         variances = np.var(data, axis=1)
         mean_var = np.mean(variances)
         std_var = np.std(variances)
 
-        # Channels with unusually high or low variance
-        bad_channels = []
         for i, ch_name in enumerate(raw.ch_names):
             if variances[i] > mean_var + 3 * std_var or variances[i] < mean_var - 3 * std_var:
                 bad_channels.append(ch_name)
-                logger.info(f"Bad channel detected: {ch_name} (variance: {variances[i]:.2e})")
+                seen.add(ch_name)
+                logger.info(f"Bad channel (variance): {ch_name} (var={variances[i]:.2e}, mean={mean_var:.2e})")
+
+        # --- Check 2: low-frequency power outliers ---
+        # Channels with abnormally high delta-band power often have electrode
+        # contact issues or slow drift that ICA can't fully remove.
+        try:
+            from scipy.signal import welch
+            sfreq = raw.info['sfreq']
+            delta_powers = []
+            for i in range(data.shape[0]):
+                freqs, psd = welch(data[i], fs=sfreq, nperseg=min(int(4 * sfreq), data.shape[1]))
+                # Delta band: 0.5 - 4 Hz
+                delta_mask = (freqs >= 0.5) & (freqs <= 4.0)
+                delta_powers.append(np.mean(psd[delta_mask]))
+
+            delta_powers = np.array(delta_powers)
+            median_delta = np.median(delta_powers)
+
+            for i, ch_name in enumerate(raw.ch_names):
+                if ch_name in seen:
+                    continue
+                # Flag if delta power is > 5x the median (very aggressive drift)
+                if delta_powers[i] > median_delta * 5:
+                    bad_channels.append(ch_name)
+                    seen.add(ch_name)
+                    logger.info(f"Bad channel (delta power): {ch_name} (delta={delta_powers[i]:.2e}, median={median_delta:.2e}, ratio={delta_powers[i]/median_delta:.1f}x)")
+
+        except Exception as e:
+            logger.warning(f"Low-frequency bad channel check failed: {e}")
 
         return bad_channels
 
-    def apply_ica(self, raw: mne.io.Raw, n_components: int = None) -> Tuple[mne.io.Raw, int]:
+    def apply_ica(self, raw: mne.io.Raw, n_components: int = None) -> Tuple[mne.io.Raw, int, List[int]]:
         """
         Apply ICA for artifact removal (eye blinks, muscle artifacts)
 
         Args:
             raw: Preprocessed Raw object
-            n_components: Number of ICA components (defaults to self.ica_n_components)
+            n_components: Number of ICA components (None = use n_channels)
 
         Returns:
-            Tuple of (cleaned Raw object, number of components removed)
+            Tuple of (cleaned Raw object, number of components removed, list of excluded component indices)
         """
+        n_channels = len(raw.ch_names)
         n_components = n_components or self.ica_n_components
 
+        # If still None (no config override), default to n_channels
+        if n_components is None:
+            n_components = n_channels
+
         # ICA components cannot exceed the number of channels
-        n_channels = len(raw.ch_names)
         if n_components > n_channels:
             logger.info(f"Reducing ICA components from {n_components} to {n_channels} (number of channels)")
             n_components = n_channels
@@ -350,26 +396,37 @@ class EEGPreprocessor:
         # Need at least 2 components for ICA to be meaningful
         if n_components < 2:
             logger.warning(f"Too few channels ({n_channels}) for ICA, skipping artifact removal")
-            return raw.copy(), 0
+            return raw.copy(), 0, []
 
-        logger.info(f"Running ICA with {n_components} components")
+        method = self.ica_method
+        logger.info(f"Running ICA: method={method}, n_components={n_components}")
 
-        # Fit ICA
+        if method == 'sobi':
+            return self._apply_sobi(raw, n_components)
+
+        # Build ICA kwargs based on method
+        fit_params = {}
+        if method == 'infomax':
+            # Extended Infomax handles both sub- and super-Gaussian sources,
+            # which is better for separating slow drift from cortical signals
+            fit_params = {'extended': True}
+
         ica = mne.preprocessing.ICA(
             n_components=n_components,
             random_state=42,
             max_iter='auto',
-            method='fastica'
+            method=method,
+            fit_params=fit_params if fit_params else None,
         )
 
         ica.fit(raw, verbose=False)
 
         # Detect artifacts automatically
-        # EOG artifacts (eye blinks/movements) - skip if no EOG channels
+        # EOG artifacts (eye blinks/movements)
         eog_indices = []
         try:
             eog_indices, eog_scores = ica.find_bads_eog(raw, threshold=3.0, verbose=False)
-            logger.info(f"Detected {len(eog_indices)} EOG artifact components")
+            logger.info(f"Detected {len(eog_indices)} EOG artifact components: {eog_indices}")
         except RuntimeError as e:
             logger.warning(f"Skipping EOG detection: {e}")
 
@@ -377,7 +434,7 @@ class EEGPreprocessor:
         muscle_indices = []
         try:
             muscle_indices, muscle_scores = ica.find_bads_muscle(raw, threshold=0.8, verbose=False)
-            logger.info(f"Detected {len(muscle_indices)} muscle artifact components")
+            logger.info(f"Detected {len(muscle_indices)} muscle artifact components: {muscle_indices}")
         except Exception as e:
             logger.warning(f"Skipping muscle artifact detection: {e}")
 
@@ -385,12 +442,108 @@ class EEGPreprocessor:
         bad_components = list(set(eog_indices + muscle_indices))
         ica.exclude = bad_components
 
-        logger.info(f"Identified {len(bad_components)} total artifact components: {bad_components}")
+        logger.info(f"Excluding {len(bad_components)} artifact components: {bad_components}")
 
         # Apply ICA to remove artifacts
         raw_clean = ica.apply(raw.copy(), verbose=False)
 
-        return raw_clean, len(bad_components)
+        return raw_clean, len(bad_components), bad_components
+
+    def _apply_sobi(
+        self,
+        raw: mne.io.Raw,
+        n_components: int
+    ) -> Tuple[mne.io.Raw, int, List[int]]:
+        """
+        Apply SOBI (Second Order Blind Identification) using coroICA.
+
+        SOBI uses time-lagged covariance matrices (second-order statistics) rather than
+        higher-order statistics, making it particularly effective for separating sources
+        with distinct temporal autocorrelation patterns — e.g., slow electrode drift
+        vs. cortical rhythms vs. fast muscle noise.
+        """
+        from coroica import UwedgeICA
+        from scipy.signal import welch
+
+        sfreq = raw.info['sfreq']
+        picks = mne.pick_types(raw.info, eeg=True)
+        data = raw.get_data(picks=picks)  # (n_channels, n_samples)
+
+        # Configure SOBI: partition size = 2 seconds, time lags up to 50 samples
+        sobi = UwedgeICA(
+            n_components=min(n_components, data.shape[0]),
+            partitionsize=int(sfreq * 2),
+            timelags=list(range(1, min(51, int(sfreq // 5)))),
+        )
+        sobi.fit(data.T)
+
+        W = sobi.V_       # unmixing matrix: sources = data.T @ W.T
+        A = np.linalg.pinv(W)  # mixing matrix
+
+        sources = (data.T @ W.T)  # (n_samples, n_components)
+        n_comp = sources.shape[1]
+
+        # Artifact detection for SOBI components:
+        # 1. Low-frequency dominance (slow drift / electrode pop)
+        # 2. High-frequency dominance (muscle)
+        # 3. Correlation with frontal channels (eye blinks)
+        bad_components = []
+
+        for ci in range(n_comp):
+            comp = sources[:, ci]
+            freqs, psd = welch(comp, fs=sfreq, nperseg=min(int(4 * sfreq), len(comp)))
+
+            total_power = np.sum(psd)
+            if total_power == 0:
+                continue
+
+            # Delta band (0.5-4 Hz) ratio
+            delta_mask = (freqs >= 0.5) & (freqs <= 4.0)
+            delta_ratio = np.sum(psd[delta_mask]) / total_power
+            if delta_ratio > self.sobi_delta_threshold:
+                bad_components.append(ci)
+                logger.info(f"SOBI component {ci}: delta ratio {delta_ratio:.2f} > {self.sobi_delta_threshold} — flagged as slow drift")
+                continue
+
+            # High-frequency (30-45 Hz) ratio
+            hf_mask = (freqs >= 30) & (freqs <= 45)
+            hf_ratio = np.sum(psd[hf_mask]) / total_power
+            if hf_ratio > self.sobi_hf_threshold:
+                bad_components.append(ci)
+                logger.info(f"SOBI component {ci}: HF ratio {hf_ratio:.2f} > {self.sobi_hf_threshold} — flagged as muscle")
+                continue
+
+        # Also check correlation with frontal channels for eye blinks
+        frontal_names = {'fp1', 'fp2', 'fpz', 'af3', 'af4'}
+        frontal_indices = [
+            i for i, ch in enumerate(raw.ch_names)
+            if ch.lower().replace('eeg ', '').replace('-le', '').replace('-ref', '').split('-')[0].strip() in frontal_names
+            and i in picks
+        ]
+
+        if frontal_indices:
+            frontal_data = data[frontal_indices].mean(axis=0)  # average frontal
+            for ci in range(n_comp):
+                if ci in bad_components:
+                    continue
+                corr = np.abs(np.corrcoef(sources[:, ci], frontal_data)[0, 1])
+                if corr > self.sobi_frontal_corr:
+                    bad_components.append(ci)
+                    logger.info(f"SOBI component {ci}: frontal correlation {corr:.2f} > {self.sobi_frontal_corr} — flagged as EOG")
+
+        bad_components = sorted(set(bad_components))
+        logger.info(f"SOBI: excluding {len(bad_components)} artifact components: {bad_components}")
+
+        # Zero out bad components and reconstruct
+        sources_cleaned = sources.copy()
+        sources_cleaned[:, bad_components] = 0
+        data_cleaned = sources_cleaned @ A.T  # (n_samples, n_channels)
+
+        # Put cleaned data back into raw
+        raw_clean = raw.copy()
+        raw_clean._data[picks] = data_cleaned.T
+
+        return raw_clean, len(bad_components), bad_components
 
     def create_epochs(
         self,
@@ -399,7 +552,7 @@ class EEGPreprocessor:
         segment_end: float,
         segment_name: str = 'segment',
         reject: bool = True
-    ) -> mne.Epochs:
+    ) -> Tuple[mne.Epochs, List[Dict]]:
         """
         Create epochs from a time segment
 
@@ -413,7 +566,8 @@ class EEGPreprocessor:
                     are still respected by MNE automatically).
 
         Returns:
-            MNE Epochs object
+            Tuple of (MNE Epochs object, list of rejected epoch dicts)
+            Each rejected epoch dict has: {start, end, reason, condition}
         """
         # Clamp segment_end to actual recording duration to avoid rounding errors
         max_time = raw.times[-1]
@@ -446,10 +600,27 @@ class EEGPreprocessor:
             verbose=False
         )
 
-        n_dropped = sum(1 for log in epochs.drop_log if len(log) > 0)
+        # Collect rejected epoch time ranges (in original recording time)
+        rejected_epochs = []
+        sfreq = raw_segment.info['sfreq']
+        for idx, log_entry in enumerate(epochs.drop_log):
+            if len(log_entry) > 0:
+                # This epoch was dropped; compute its time range in the
+                # original recording coordinate system
+                epoch_onset_sample = events[idx, 0]
+                epoch_start_local = epoch_onset_sample / sfreq
+                epoch_end_local = epoch_start_local + self.epoch_duration
+                rejected_epochs.append({
+                    'start': round(segment_start + epoch_start_local, 3),
+                    'end': round(segment_start + epoch_end_local, 3),
+                    'reason': ', '.join(log_entry),
+                    'condition': segment_name,
+                })
+
+        n_dropped = len(rejected_epochs)
         logger.info(f"Created {len(epochs)} epochs ({n_dropped} dropped)")
 
-        return epochs
+        return epochs, rejected_epochs
 
     def get_qc_metrics(
         self,
@@ -458,7 +629,8 @@ class EEGPreprocessor:
         bad_channels: List[str],
         ica_components_removed: int,
         epochs_eo: mne.Epochs = None,
-        epochs_ec: mne.Epochs = None
+        epochs_ec: mne.Epochs = None,
+        ica_excluded_indices: List[int] = None,
     ) -> Dict:
         """
         Generate quality control metrics
@@ -507,6 +679,11 @@ class EEGPreprocessor:
             'artifact_rejection_rate': round(overall_rejection_rate, 2),
             'bad_channels': bad_channels,
             'ica_components_removed': ica_components_removed,
+            'ica_method': self.ica_method,
+            'ica_excluded_components': ica_excluded_indices or [],
+            'sobi_delta_threshold': self.sobi_delta_threshold if self.ica_method == 'sobi' else None,
+            'sobi_hf_threshold': self.sobi_hf_threshold if self.ica_method == 'sobi' else None,
+            'sobi_frontal_corr': self.sobi_frontal_corr if self.ica_method == 'sobi' else None,
             'final_epochs_eo': final_epochs_eo,
             'final_epochs_ec': final_epochs_ec,
             'eo_rejection_rate': round(eo_rejection_rate, 2),
@@ -585,23 +762,31 @@ def preprocess_eeg(
     # Initialize preprocessor with config
     # Filter out keys that EEGPreprocessor doesn't accept
     config = config or {}
+    IGNORED_CONFIG_KEYS = {'artifact_mode'}
+    # Only pass kwargs that EEGPreprocessor.__init__ actually accepts
+    VALID_KEYS = {
+        'resample_freq', 'filter_low', 'filter_high', 'notch_freq',
+        'epoch_duration', 'ica_n_components', 'ica_method', 'rejection_threshold',
+        'sobi_delta_threshold', 'sobi_hf_threshold', 'sobi_frontal_corr',
+    }
     preprocessor_kwargs = {k: v for k, v in config.items()
-                          if k not in ('artifact_mode',)}
+                          if k in VALID_KEYS}
     preprocessor = EEGPreprocessor(**preprocessor_kwargs)
 
-    # Load data (auto-detects EDF or CSV)
+    # Load data (auto-detects EDF, BDF, or CSV)
     raw_original = preprocessor.load_file(file_path)
 
     # Preprocess (filtering, resampling)
     raw = preprocessor.preprocess(raw_original.copy())
 
-    # Detect bad channels
+    # Detect bad channels (broadband variance + low-frequency power)
     bad_channels = preprocessor.detect_bad_channels(raw)
     if bad_channels:
         logger.info(f"Interpolating {len(bad_channels)} bad channels")
         raw.info['bads'] = bad_channels
         raw.interpolate_bads(reset_bads=True)
 
+    ica_excluded_indices = []
     if artifact_mode == 'manual':
         # MANUAL MODE: Skip ICA, use user-marked artifact segments
         logger.info("Manual artifact mode: skipping ICA")
@@ -612,28 +797,31 @@ def preprocess_eeg(
         _annotate_manual_artifacts(raw_clean, manual_artifact_epochs or [])
     else:
         # ICA MODE: Automatic artifact removal (default)
-        logger.info("ICA artifact mode: running automatic artifact removal")
-        raw_clean, ica_components = preprocessor.apply_ica(raw)
+        logger.info(f"ICA artifact mode ({preprocessor.ica_method}): running automatic artifact removal")
+        raw_clean, ica_components, ica_excluded_indices = preprocessor.apply_ica(raw)
 
     # Create epochs only for conditions that have data
     # In manual mode, skip amplitude-based rejection (user controls artifacts)
     use_reject = artifact_mode != 'manual'
     epochs_eo = None
     epochs_ec = None
+    all_rejected_epochs = []
 
     if eo_start is not None and eo_end is not None:
         logger.info(f"Creating EO epochs from {eo_start}s to {eo_end}s")
-        epochs_eo = preprocessor.create_epochs(
+        epochs_eo, rejected_eo = preprocessor.create_epochs(
             raw_clean, eo_start, eo_end, 'EO', reject=use_reject
         )
+        all_rejected_epochs.extend(rejected_eo)
     else:
         logger.info("Skipping EO epochs (no EO segment defined)")
 
     if ec_start is not None and ec_end is not None:
         logger.info(f"Creating EC epochs from {ec_start}s to {ec_end}s")
-        epochs_ec = preprocessor.create_epochs(
+        epochs_ec, rejected_ec = preprocessor.create_epochs(
             raw_clean, ec_start, ec_end, 'EC', reject=use_reject
         )
+        all_rejected_epochs.extend(rejected_ec)
     else:
         logger.info("Skipping EC epochs (no EC segment defined)")
 
@@ -644,7 +832,8 @@ def preprocess_eeg(
         bad_channels,
         ica_components,
         epochs_eo,
-        epochs_ec
+        epochs_ec,
+        ica_excluded_indices=ica_excluded_indices,
     )
     qc_metrics['artifact_mode'] = artifact_mode
     if artifact_mode == 'manual':
@@ -654,7 +843,8 @@ def preprocess_eeg(
         'epochs_eo': epochs_eo,
         'epochs_ec': epochs_ec,
         'raw_clean': raw_clean,
-        'qc_metrics': qc_metrics
+        'qc_metrics': qc_metrics,
+        'rejected_epochs': all_rejected_epochs,
     }
 
 

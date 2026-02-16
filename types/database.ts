@@ -78,11 +78,14 @@ export interface AnalysisConfig {
     filter_high: number;
     notch_freq: number | null;
     ica_enabled: boolean;
-    ica_method: 'fastica' | 'infomax';
+    ica_method: 'fastica' | 'infomax' | 'picard' | 'sobi';
     ica_n_components: number;
     artifact_threshold: number;
     epoch_length: number;
     epoch_overlap: number;
+    sobi_delta_threshold?: number;
+    sobi_hf_threshold?: number;
+    sobi_frontal_corr?: number;
   };
   features: {
     bands: BandDefinition[];

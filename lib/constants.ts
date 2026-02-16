@@ -157,12 +157,15 @@ export const DEFAULT_PREPROCESSING_CONFIG = {
   filter_high: 45,
   notch_freq: 60,
   ica_enabled: true,
-  ica_method: 'fastica' as const,
-  ica_n_components: 19,
+  ica_method: 'sobi' as const,
+  ica_n_components: null as number | null,  // null = auto (use n_channels)
   artifact_threshold: 0.7,
   epoch_length: 2,
   epoch_overlap: 0.5,
   artifact_mode: 'ica' as const,
+  sobi_delta_threshold: 0.70,
+  sobi_hf_threshold: 0.40,
+  sobi_frontal_corr: 0.60,
 };
 
 // Feature Extraction Defaults

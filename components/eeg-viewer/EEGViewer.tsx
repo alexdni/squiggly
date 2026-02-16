@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useEEGData } from './useEEGData';
 import { useEEGFilters } from './useEEGFilters';
 import { useEEGAnnotations } from './useEEGAnnotations';
@@ -8,18 +8,20 @@ import EEGUnifiedChart from './EEGUnifiedChart';
 import EEGToolbar from './EEGToolbar';
 import EEGTimeSlider from './EEGTimeSlider';
 import EEGAnnotationModal from './EEGAnnotationModal';
-import { DEFAULT_FILTER_SETTINGS, type FilterSettings } from './types';
+import { DEFAULT_FILTER_SETTINGS, type FilterSettings, type RejectedEpoch, type EEGAnnotation } from './types';
 
 interface EEGViewerProps {
   recordingId: string;
   filePath: string;
+  rejectedEpochs?: RejectedEpoch[];
 }
 
-export default function EEGViewer({ recordingId, filePath }: EEGViewerProps) {
+export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEGViewerProps) {
   const { signalData, isLoading, error } = useEEGData(recordingId, filePath);
   const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
   const [selectedChannels, setSelectedChannels] = useState<number[]>([]);
   const [timeStart, setTimeStart] = useState(0);
+  const [showRejectedEpochs, setShowRejectedEpochs] = useState(true);
 
   // Auto-select all channels on load
   useEffect(() => {
@@ -65,6 +67,25 @@ export default function EEGViewer({ recordingId, filePath }: EEGViewerProps) {
     removeAnnotation,
     cancelAnnotation,
   } = useEEGAnnotations(recordingId);
+
+  // Convert rejected epochs to annotation objects
+  const rejectedAnnotations = useMemo<EEGAnnotation[]>(() => {
+    if (!rejectedEpochs || !showRejectedEpochs) return [];
+    return rejectedEpochs.map((ep, i) => ({
+      id: `rejected-${i}`,
+      startTime: ep.start,
+      endTime: ep.end,
+      description: `${ep.reason} (${ep.condition})`,
+      type: 'rejected' as const,
+      readOnly: true,
+    }));
+  }, [rejectedEpochs, showRejectedEpochs]);
+
+  // Merge manual annotations with rejected epoch annotations
+  const allAnnotations = useMemo<EEGAnnotation[]>(
+    () => [...annotations, ...rejectedAnnotations],
+    [annotations, rejectedAnnotations]
+  );
 
   const handleFilterChange = useCallback((settings: FilterSettings) => {
     setFilterSettings(settings);
@@ -155,6 +176,26 @@ export default function EEGViewer({ recordingId, filePath }: EEGViewerProps) {
         />
       </div>
 
+      {/* Rejected epochs toggle */}
+      {rejectedEpochs && rejectedEpochs.length > 0 && (
+        <div className="mb-2 flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showRejectedEpochs}
+              onChange={(e) => setShowRejectedEpochs(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-gray-700">
+              Show rejected epochs
+            </span>
+          </label>
+          <span className="text-xs text-red-500">
+            ({rejectedEpochs.length} epoch{rejectedEpochs.length !== 1 ? 's' : ''} rejected)
+          </span>
+        </div>
+      )}
+
       {/* Chart */}
       {selectedChannels.length > 0 ? (
         <>
@@ -164,7 +205,7 @@ export default function EEGViewer({ recordingId, filePath }: EEGViewerProps) {
             channelNames={signalData.channelNames}
             selectedChannels={selectedChannels}
             sensitivityMicrovolts={filterSettings.sensitivityMicrovolts}
-            annotations={annotations}
+            annotations={allAnnotations}
             dragState={dragState}
             isAnnotateMode={isAnnotateMode}
             onDragStart={startDrag}
@@ -198,29 +239,35 @@ export default function EEGViewer({ recordingId, filePath }: EEGViewerProps) {
       )}
 
       {/* Annotations list */}
-      {annotations.length > 0 && (
+      {allAnnotations.length > 0 && (
         <div className="mt-3 border border-gray-200 rounded-lg p-3">
           <h4 className="text-sm font-semibold text-gray-900 mb-2">
-            Annotations ({annotations.length})
+            Annotations ({allAnnotations.length})
           </h4>
           <div className="space-y-1">
-            {annotations.map((a) => (
+            {allAnnotations.map((a) => (
               <div
                 key={a.id}
-                className="flex items-center justify-between text-xs bg-yellow-50 border border-yellow-200 rounded px-2 py-1"
+                className={`flex items-center justify-between text-xs rounded px-2 py-1 ${
+                  a.type === 'rejected'
+                    ? 'bg-red-50 border border-red-200'
+                    : 'bg-yellow-50 border border-yellow-200'
+                }`}
               >
                 <span className="text-gray-900">
                   <span className="font-medium capitalize">{a.type}</span>
                   {' '}{a.startTime.toFixed(2)}s - {a.endTime.toFixed(2)}s
                   {a.description && `: ${a.description}`}
                 </span>
-                <button
-                  onClick={() => removeAnnotation(a.id)}
-                  className="ml-2 text-red-500 hover:text-red-700 text-xs font-medium"
-                  title="Remove annotation"
-                >
-                  Remove
-                </button>
+                {!a.readOnly && (
+                  <button
+                    onClick={() => removeAnnotation(a.id)}
+                    className="ml-2 text-red-500 hover:text-red-700 text-xs font-medium"
+                    title="Remove annotation"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
             ))}
           </div>

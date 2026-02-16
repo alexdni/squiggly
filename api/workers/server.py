@@ -170,6 +170,34 @@ def analyze():
                 # Ensure visuals is not present or is empty dict if no visuals generated
                 results['visuals'] = {}
 
+            # Upload cleaned raw file to storage
+            cleaned_file_path = results.pop('_cleaned_file_path', None)
+            if cleaned_file_path and os.path.exists(cleaned_file_path):
+                try:
+                    with open(cleaned_file_path, 'rb') as f:
+                        cleaned_bytes = f.read()
+                    file_ext = results.get('cleaned_file_format', '.edf')
+                    file_name = f'cleaned_raw{file_ext}'
+                    url = upload_visual(
+                        cleaned_bytes,
+                        file_name,
+                        analysis_id,
+                        supabase_url,
+                        supabase_key
+                    )
+                    if url:
+                        results['cleaned_file_url'] = url
+                        logger.info(f"Uploaded cleaned raw file ({len(cleaned_bytes)} bytes)")
+                    else:
+                        logger.warning("Failed to upload cleaned raw file")
+                except Exception as e:
+                    logger.warning(f"Error uploading cleaned raw file: {e}")
+                finally:
+                    os.unlink(cleaned_file_path)
+            else:
+                # Remove internal key if it leaked through
+                results.pop('_cleaned_file_path', None)
+
             # Upload results to database
             if is_local_storage_mode():
                 upload_results_to_local_db(analysis_id, results)

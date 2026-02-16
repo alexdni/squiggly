@@ -174,6 +174,7 @@ export async function POST(
             eoEnd: eoEnd,
             ecStart: ecStart,
             ecEnd: ecEnd,
+            config: analysisData.config || {},
             artifactMode,
             manualArtifactEpochs: artifactMode === 'manual' ? manualArtifactEpochs : undefined,
           },

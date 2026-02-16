@@ -21,7 +21,7 @@ export const annotationPlugin: Plugin<'line'> = {
 
     if (!xScale || !chartArea) return;
 
-    // Draw saved annotations
+    // Draw all annotations (manual + rejected) as overlays
     for (const annotation of options.annotations) {
       const x1 = xScale.getPixelForValue(annotation.startTime);
       const x2 = xScale.getPixelForValue(annotation.endTime);
@@ -31,12 +31,19 @@ export const annotationPlugin: Plugin<'line'> = {
 
       if (right <= chartArea.left || left >= chartArea.right) continue;
 
+      const isRejected = annotation.type === 'rejected';
+
       ctx.save();
-      ctx.fillStyle = 'rgba(234, 179, 8, 0.25)';
+      // Rejected epochs: red tint; manual annotations: yellow
+      ctx.fillStyle = isRejected
+        ? 'rgba(239, 68, 68, 0.18)'
+        : 'rgba(234, 179, 8, 0.25)';
       ctx.fillRect(left, chartArea.top, right - left, chartArea.bottom - chartArea.top);
 
       // Draw label at the top
-      ctx.fillStyle = 'rgba(161, 98, 7, 0.8)';
+      ctx.fillStyle = isRejected
+        ? 'rgba(185, 28, 28, 0.85)'
+        : 'rgba(161, 98, 7, 0.8)';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       const labelX = (left + right) / 2;
