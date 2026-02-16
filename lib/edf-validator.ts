@@ -8,6 +8,7 @@ import {
   EXPECTED_CHANNELS_21,
   EXPECTED_CHANNELS_24,
   ALL_EEG_CHANNELS,
+  EXCLUDED_CHANNEL_PATTERNS,
 } from './constants';
 
 interface ValidationResult {
@@ -62,28 +63,47 @@ function normalizeChannelName(ch: string): string {
 }
 
 /**
- * Validate EDF file montage from buffer
- * Parses EDF header structure without loading full signal data
+ * Shared montage validation for EDF/BDF files.
+ * Both formats share the same header layout after the version field.
  */
-export async function validateEDFMontage(
-  buffer: Buffer
+async function validateMontage(
+  buffer: Buffer,
+  format: 'EDF' | 'BDF'
 ): Promise<ValidationResult> {
   try {
     // Check minimum size (256 bytes for header)
     if (buffer.length < 256) {
       return {
         valid: false,
-        error: 'File too small to be valid EDF',
+        error: `File too small to be valid ${format}`,
       };
     }
 
-    // Parse fixed header (256 bytes)
-    const version = buffer.toString('ascii', 0, 8).trim();
-    if (!version.startsWith('0')) {
-      return {
-        valid: false,
-        error: 'Invalid EDF format: version field incorrect',
-      };
+    // Parse fixed header (256 bytes) - version check
+    if (format === 'BDF') {
+      // BDF: first byte is 0xFF, followed by "BIOSEMI"
+      if (buffer[0] !== 0xFF) {
+        return {
+          valid: false,
+          error: 'Invalid BDF format: version byte incorrect (expected 0xFF)',
+        };
+      }
+      const biosemiStr = buffer.toString('ascii', 1, 8).trim();
+      if (biosemiStr !== 'BIOSEMI') {
+        return {
+          valid: false,
+          error: 'Invalid BDF format: expected "BIOSEMI" identifier in header',
+        };
+      }
+    } else {
+      // EDF: first 8 bytes should start with "0"
+      const version = buffer.toString('ascii', 0, 8).trim();
+      if (!version.startsWith('0')) {
+        return {
+          valid: false,
+          error: 'Invalid EDF format: version field incorrect',
+        };
+      }
     }
 
     // Get number of channels (bytes 252-256)
@@ -91,7 +111,6 @@ export async function validateEDFMontage(
 
     // Validate channel count - support 10-20 (19, 21 channels) and 10-10 (24+ channels)
     // We accept any count >= 19 as long as it contains the required 10-20 base channels
-    const validChannelCounts = [EXPECTED_CHANNELS_19, EXPECTED_CHANNELS_21, EXPECTED_CHANNELS_24];
     const isValidCount = !isNaN(nChannels) && nChannels >= EXPECTED_CHANNELS_19;
 
     if (!isValidCount) {
@@ -111,7 +130,7 @@ export async function validateEDFMontage(
     if (buffer.length < headerSize) {
       return {
         valid: false,
-        error: 'EDF file header incomplete',
+        error: `${format} file header incomplete`,
       };
     }
 
@@ -137,11 +156,25 @@ export async function validateEDFMontage(
       offset += 16;
     }
 
+    // Filter out non-EEG channels (BioSemi aux, rail, impedance, etc.)
+    const isExcludedChannel = (ch: string): boolean => {
+      return EXCLUDED_CHANNEL_PATTERNS.some(pattern => pattern.test(ch)) ||
+        ch.toLowerCase().includes('annotation');
+    };
+
+    // Separate EEG channels from excluded channels
+    const eegChannelLabels = channelLabels.filter(ch => !isExcludedChannel(ch));
+    const excludedChannels = rawChannelLabels.filter((_, i) => {
+      const normalized = channelLabels[i] || rawChannelLabels[i];
+      return isExcludedChannel(normalized) || isExcludedChannel(rawChannelLabels[i]);
+    });
+
     // Debug logging
-    console.log('[EDF Validator] Found channels:', {
-      count: nChannels,
+    console.log(`[${format} Validator] Found channels:`, {
+      total: nChannels,
       raw: rawChannelLabels,
-      normalized: channelLabels,
+      eeg: eegChannelLabels,
+      excluded: excludedChannels,
       hasA2A1Reference,
     });
 
@@ -149,33 +182,29 @@ export async function validateEDFMontage(
     // All montages must contain at least these 19 channels
     const requiredBaseChannels = MONTAGE_10_20_19CH;
 
-    // Check if all required base channels are present
+    // Check if all required base channels are present (among EEG channels only)
     const missingChannels = requiredBaseChannels.filter(
-      (ch) => !channelLabels.includes(ch)
+      (ch) => !eegChannelLabels.includes(ch)
     );
 
     if (missingChannels.length > 0) {
       return {
         valid: false,
-        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 or 10-10 montage with base channels. Found: ${channelLabels.join(', ')}`,
+        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 or 10-10 montage with base channels. Found EEG channels: ${eegChannelLabels.join(', ')}`,
       };
     }
 
-    // Check for unexpected channels - allow:
-    // 1. All known EEG channels (10-20 and 10-10 systems)
-    // 2. Annotation channels
-    // 3. Reference channels (A1, A2)
-    const extraChannels = channelLabels.filter(
+    // Check for unknown channels among the non-excluded ones
+    const extraChannels = eegChannelLabels.filter(
       (ch) =>
         !ALL_EEG_CHANNELS.includes(ch) &&
-        !ch.toLowerCase().includes('annotation') &&
         ch !== 'A1' &&
         ch !== 'A2'
     );
 
     // Only warn about unknown channels, don't reject
     if (extraChannels.length > 0) {
-      console.log('[EDF Validator] Unknown channels (will be ignored):', extraChannels);
+      console.log(`[${format} Validator] Unknown channels (will be ignored):`, extraChannels);
     }
 
     // Skip to samples per record (after several other fields)
@@ -201,23 +230,40 @@ export async function validateEDFMontage(
     const samplingRate =
       recordDuration > 0 ? samplesPerRecord[0] / recordDuration : 0;
 
-    // Note: Annotation parsing is complex and not critical for initial validation
-    // Full annotation parsing can be done in preprocessing workers
-
     return {
       valid: true,
       metadata: {
         duration_seconds: duration,
         sampling_rate: samplingRate,
-        n_channels: nChannels,
-        channels: channelLabels,
+        n_channels: eegChannelLabels.length,
+        channels: eegChannelLabels,
         annotations: [], // Empty for now, parsed in workers
       },
     };
   } catch (error: any) {
     return {
       valid: false,
-      error: `Failed to parse EDF file: ${error.message}`,
+      error: `Failed to parse ${format} file: ${error.message}`,
     };
   }
+}
+
+/**
+ * Validate EDF file montage from buffer
+ * Parses EDF header structure without loading full signal data
+ */
+export async function validateEDFMontage(
+  buffer: Buffer
+): Promise<ValidationResult> {
+  return validateMontage(buffer, 'EDF');
+}
+
+/**
+ * Validate BDF file montage from buffer
+ * BDF is structurally identical to EDF but uses 0xFF+BIOSEMI version and 24-bit samples
+ */
+export async function validateBDFMontage(
+  buffer: Buffer
+): Promise<ValidationResult> {
+  return validateMontage(buffer, 'BDF');
 }

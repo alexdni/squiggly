@@ -29,7 +29,7 @@ export interface UnifiedSignalData {
   sampleRate: number;
   duration: number;
   channelNames: string[];
-  fileType: 'edf' | 'csv';
+  fileType: 'edf' | 'bdf' | 'csv';
 }
 
 export interface AnnotationDragState {

@@ -1,5 +1,5 @@
-// Browser-based EDF reader for visualizing raw EEG data
-// Reads EDF files and extracts signal data for plotting
+// Browser-based EDF/BDF reader for visualizing raw EEG data
+// Reads EDF (16-bit) and BDF (24-bit) files and extracts signal data for plotting
 
 export interface EDFHeader {
   version: string;
@@ -12,6 +12,7 @@ export interface EDFHeader {
   recordDuration: number;
   channelCount: number;
   channels: EDFChannel[];
+  isBDF: boolean;
 }
 
 export interface EDFChannel {
@@ -34,11 +35,37 @@ export interface EDFData {
 }
 
 /**
- * Parse EDF file from ArrayBuffer
+ * Read a 24-bit signed integer (little-endian) from a DataView
+ */
+function getInt24(dataView: DataView, offset: number): number {
+  const b0 = dataView.getUint8(offset);
+  const b1 = dataView.getUint8(offset + 1);
+  const b2 = dataView.getUint8(offset + 2);
+  // Combine as unsigned, then sign-extend from 24-bit
+  const unsigned = b0 | (b1 << 8) | (b2 << 16);
+  // If the sign bit (bit 23) is set, extend to 32-bit signed
+  return unsigned >= 0x800000 ? unsigned - 0x1000000 : unsigned;
+}
+
+/**
+ * Detect whether an ArrayBuffer contains a BDF file
+ * BDF: first byte is 0xFF, followed by "BIOSEMI"
+ * EDF: first byte is ASCII "0" (0x30)
+ */
+function isBDFFormat(arrayBuffer: ArrayBuffer): boolean {
+  const firstByte = new Uint8Array(arrayBuffer, 0, 1)[0];
+  return firstByte === 0xFF;
+}
+
+/**
+ * Parse EDF or BDF file from ArrayBuffer
+ * Automatically detects format from the version field
  */
 export async function parseEDFFile(arrayBuffer: ArrayBuffer): Promise<EDFData> {
   const dataView = new DataView(arrayBuffer);
   const decoder = new TextDecoder('ascii');
+  const isBDF = isBDFFormat(arrayBuffer);
+  const bytesPerSample = isBDF ? 3 : 2;
 
   let offset = 0;
 
@@ -146,6 +173,7 @@ export async function parseEDFFile(arrayBuffer: ArrayBuffer): Promise<EDFData> {
     recordDuration,
     channelCount,
     channels,
+    isBDF,
   };
 
   // Initialize signal arrays
@@ -160,10 +188,12 @@ export async function parseEDFFile(arrayBuffer: ArrayBuffer): Promise<EDFData> {
       const channel = channels[ch];
       const samples = channel.samplesPerRecord;
 
-      // Read digital values (16-bit integers)
       for (let s = 0; s < samples; s++) {
-        const digitalValue = dataView.getInt16(offset, true); // little-endian
-        offset += 2;
+        // Read digital value: 24-bit for BDF, 16-bit for EDF
+        const digitalValue = isBDF
+          ? getInt24(dataView, offset)
+          : dataView.getInt16(offset, true); // little-endian
+        offset += bytesPerSample;
 
         // Convert to physical value
         const physicalValue =

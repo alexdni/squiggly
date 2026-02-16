@@ -1,8 +1,8 @@
 // Application Constants
 
 // File Upload
-export const MAX_UPLOAD_SIZE = 52428800; // 50 MB in bytes
-export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF', '.csv', '.CSV'];
+export const MAX_UPLOAD_SIZE = 209715200; // 200 MB in bytes
+export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF', '.bdf', '.BDF', '.csv', '.CSV'];
 
 // EEG Configuration
 export const EXPECTED_CHANNELS_19 = 19;
@@ -84,7 +84,7 @@ export const AUX_CHANNELS = {
   eog: ['EOG', 'eog', 'HEOG', 'VEOG'],
 };
 
-// Channels to explicitly exclude (accelerometer, gyroscope, etc.)
+// Channels to explicitly exclude (accelerometer, gyroscope, BioSemi aux, etc.)
 export const EXCLUDED_CHANNEL_PATTERNS = [
   /^a[XYZ]$/i,    // Accelerometer: aX, aY, aZ
   /^g[XYZ]$/i,    // Gyroscope: gX, gY, gZ
@@ -94,6 +94,17 @@ export const EXCLUDED_CHANNEL_PATTERNS = [
   /^temp/i,       // Temperature
   /^batt/i,       // Battery
   /^z-/i,         // Impedance measurements: z-Cz, z-F3, etc.
+  /^EXG\d/i,      // BioSemi external channels: EXG1-EXG8
+  /^Rail/i,       // BioSemi rail channels: Rail_Pos, Rail_Neg, Rail+, Rail-
+  /^GSR/i,        // Galvanic skin response
+  /^Erg/i,        // Ergometer
+  /^Resp/i,       // Respiration
+  /^Plet/i,       // Plethysmograph
+  /^Status$/i,    // BioSemi status/trigger channel
+  /^Trigger$/i,   // Trigger channel
+  /^SAT$/i,       // Saturation channel
+  /^Imp/i,        // Impedance channels: Impe_Fp1, Imp_Fp1, Impedance, etc.
+  /mpe_/i,        // Truncated impedance labels (BDF 16-byte limit): mpe_FT10, mpe_TP10
 ];
 
 // EO/EC Annotation Labels

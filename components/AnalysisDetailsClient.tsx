@@ -89,7 +89,7 @@ export default function AnalysisDetailsClient({
 
   // Auto-refresh when processing
   useEffect(() => {
-    if (analysis.status === 'processing' || analysis.status === 'pending') {
+    if (analysis.status === 'processing') {
       let pollCount = 0;
       const startTime = Date.now();
 
@@ -112,7 +112,7 @@ export default function AnalysisDetailsClient({
             const data = await response.json();
             if (data) {
               setAnalysis(data);
-              if (data.status !== 'processing' && data.status !== 'pending') {
+              if (data.status !== 'processing') {
                 clearInterval(interval);
                 setPollingElapsed(0);
               }
@@ -542,7 +542,7 @@ export default function AnalysisDetailsClient({
           </div>
         )}
 
-        {(analysis.status === 'processing' || analysis.status === 'pending') && (
+        {analysis.status === 'processing' && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
             <div className="flex items-center">
               <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>

@@ -102,7 +102,7 @@ export function getConfig(): AppConfig {
     },
     app: {
       url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-      maxUploadSize: parseNumber(process.env.MAX_UPLOAD_SIZE, 52428800),
+      maxUploadSize: parseNumber(process.env.MAX_UPLOAD_SIZE, 209715200),
     },
   };
 }

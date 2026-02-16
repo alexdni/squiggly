@@ -136,9 +136,28 @@ ELECTRODE_POSITIONS = {
 
 def normalize_channel_name(ch_name: str) -> str:
     """
-    Normalize a channel name to match ELECTRODE_POSITIONS keys.
+    Normalize a channel name to match ELECTRODE_POSITIONS keys and MNE montage names.
     Handles common prefixes, suffixes, and case variations.
     """
+    # Canonical channel names (MNE standard_1020 + extras) for case-insensitive matching
+    _CANONICAL_CHANNELS = {
+        name.upper(): name for name in [
+            'Fp1', 'Fp2', 'Fpz', 'F7', 'F3', 'Fz', 'F4', 'F8',
+            'T7', 'C3', 'Cz', 'C4', 'T8',
+            'P7', 'P3', 'Pz', 'P4', 'P8',
+            'O1', 'O2', 'Oz',
+            'AF3', 'AF4', 'AF7', 'AF8', 'AFz',
+            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6', 'FCz',
+            'FT7', 'FT8', 'FT9', 'FT10',
+            'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6', 'CPz',
+            'TP7', 'TP8', 'TP9', 'TP10',
+            'PO3', 'PO4', 'PO7', 'PO8', 'POz',
+            'A1', 'A2', 'Iz',
+            # Legacy names
+            'T3', 'T4', 'T5', 'T6', 'M1', 'M2',
+        ]
+    }
+
     # Strip whitespace
     clean = ch_name.strip()
 
@@ -152,16 +171,10 @@ def normalize_channel_name(ch_name: str) -> str:
         if clean.endswith(suffix):
             clean = clean[:len(clean) - len(suffix)]
 
-    # Handle case: FP1 -> Fp1, FP2 -> Fp2, FZ -> Fz, etc.
-    if len(clean) >= 2:
-        # Standard format: first letter uppercase, rest lowercase except numbers
-        result = clean[0].upper()
-        for c in clean[1:]:
-            if c.isdigit():
-                result += c
-            else:
-                result += c.lower()
-        clean = result
+    # Look up canonical capitalization (case-insensitive)
+    canonical = _CANONICAL_CHANNELS.get(clean.upper())
+    if canonical:
+        return canonical
 
     return clean
 
@@ -770,7 +783,10 @@ def generate_alpha_peak_topomap(
     vmax = 12.0
 
     # Create figure with two subplots: topomap on left, table on right
-    fig = plt.figure(figsize=(12, 6), dpi=dpi)
+    # Scale height based on number of channels (min 6 for <=19, grow for more)
+    n_channels = len(ch_names)
+    fig_height = max(6, 0.35 * n_channels)
+    fig = plt.figure(figsize=(12, fig_height), dpi=dpi)
 
     # Left subplot: Topomap
     ax_topo = plt.subplot(1, 2, 1)
@@ -823,7 +839,8 @@ def generate_alpha_peak_topomap(
 
     table.auto_set_font_size(False)
     table.set_fontsize(8)
-    table.scale(1, 1.5)
+    row_height = max(1.5, 2.0 if n_channels > 24 else 1.8 if n_channels > 19 else 1.5)
+    table.scale(1, row_height)
 
     # Style header
     for i in range(3):
