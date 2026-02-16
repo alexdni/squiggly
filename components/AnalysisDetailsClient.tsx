@@ -86,8 +86,8 @@ export default function AnalysisDetailsClient({
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [artifactMode, setArtifactMode] = useState<'ica' | 'manual'>('ica');
 
-  // Get timeout from env or default to 3 minutes (180 seconds)
-  const ANALYSIS_TIMEOUT_SECONDS = 180;
+  // Polling timeout: 2 minutes
+  const ANALYSIS_TIMEOUT_SECONDS = 120;
   const POLL_INTERVAL_MS = 2000;
 
   // Auto-refresh when processing
@@ -177,16 +177,20 @@ export default function AnalysisDetailsClient({
         throw new Error('Failed to update analysis config');
       }
 
+      // Set processing state immediately (optimistic) so the spinner shows
+      // even if the POST to the worker takes a moment
+      setAnalysis({ ...analysis, status: 'processing', config: updatedConfig });
+
+      // Dispatch to worker — this returns quickly (fire-and-forget)
       const response = await fetch(`/api/analyses/${analysis.id}/process`, {
         method: 'POST',
       });
 
       if (!response.ok) {
+        // Revert to pending if the dispatch itself failed
+        setAnalysis({ ...analysis, status: 'pending', config: updatedConfig });
         throw new Error('Failed to start analysis');
       }
-
-      // Update local state to show processing
-      setAnalysis({ ...analysis, status: 'processing', config: updatedConfig });
     } catch (error) {
       console.error('Error starting analysis:', error);
       alert('Failed to start analysis. Please try again.');
@@ -562,21 +566,75 @@ export default function AnalysisDetailsClient({
         )}
 
         {analysis.status === 'processing' && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <div className="flex items-center">
-              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
-              <div className="flex-1">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6 overflow-hidden relative">
+            {/* Animated shimmer bar across the top */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-200 overflow-hidden">
+              <div className="h-full w-1/3 bg-gradient-to-r from-blue-400 via-indigo-500 to-blue-400 animate-[shimmer_2s_ease-in-out_infinite]" style={{ animation: 'shimmer 2s ease-in-out infinite' }} />
+            </div>
+            <style jsx>{`
+              @keyframes shimmer {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(400%); }
+              }
+            `}</style>
+
+            <div className="flex items-start gap-4">
+              {/* Pulsing brain icon */}
+              <div className="flex-shrink-0 relative">
+                <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
+                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714a2.25 2.25 0 0 0 .659 1.591L19 14.5m-4.25-11.396c.251.023.501.05.75.082M5 14.5l-1.395.747a1.125 1.125 0 0 0-.39 1.54l1.64 2.844a1.126 1.126 0 0 0 1.544.39L9 18.75m-4-4.25 1.5.75M19 14.5l1.395.747a1.125 1.125 0 0 1 .39 1.54l-1.64 2.844a1.126 1.126 0 0 1-1.544.39L15 18.75m4-4.25-1.5.75" />
+                  </svg>
+                </div>
+                <div className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-blue-500 animate-ping" />
+              </div>
+
+              <div className="flex-1 min-w-0">
                 <h3 className="text-lg font-semibold text-blue-900">
                   Analysis in progress...
                 </h3>
-                <p className="text-blue-700">
-                  This may take up to 3 minutes. Please do not close this page.
-                  {pollingElapsed > 0 && (
-                    <span className="ml-2">
-                      ({pollingElapsed}s elapsed)
-                    </span>
-                  )}
+                <p className="text-blue-700 text-sm mt-1">
+                  This may take up to 2 minutes. Please do not close this page.
                 </p>
+
+                {/* Processing steps */}
+                <div className="mt-4 space-y-2">
+                  {[
+                    { label: 'Preprocessing EEG data', threshold: 0 },
+                    { label: 'Filtering & artifact rejection', threshold: 15 },
+                    { label: 'Computing band power', threshold: 35 },
+                    { label: 'Coherence & connectivity analysis', threshold: 55 },
+                    { label: 'Generating report', threshold: 80 },
+                  ].map((step, i) => {
+                    const isActive = pollingElapsed >= step.threshold && (i === 4 || pollingElapsed < [15, 35, 55, 80, 999][i]);
+                    const isDone = i < 4 && pollingElapsed >= [15, 35, 55, 80, 999][i];
+                    return (
+                      <div key={step.label} className={`flex items-center gap-2 text-sm transition-opacity duration-500 ${pollingElapsed >= step.threshold ? 'opacity-100' : 'opacity-0'}`}>
+                        {isDone ? (
+                          <svg className="h-4 w-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : isActive ? (
+                          <div className="h-4 w-4 flex-shrink-0">
+                            <div className="h-3 w-3 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                          </div>
+                        ) : (
+                          <div className="h-4 w-4 flex-shrink-0" />
+                        )}
+                        <span className={isDone ? 'text-green-700' : isActive ? 'text-blue-800 font-medium' : 'text-blue-600'}>
+                          {step.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Elapsed time */}
+                {pollingElapsed > 0 && (
+                  <p className="text-blue-500 text-xs mt-3">
+                    {pollingElapsed}s elapsed
+                  </p>
+                )}
               </div>
             </div>
           </div>

@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { submitAnalysisJob, getWorkerConfig } from '@/lib/worker-client';
 
+// Allow up to 120s for this route (requires Vercel Pro; Hobby is capped at 10s)
+export const maxDuration = 120;
+
 /**
  * Start EEG analysis processing
  *

@@ -126,42 +126,31 @@ async function submitHttpJob(
     headers['Authorization'] = `Bearer ${config.authToken}`;
   }
 
+  // Fire-and-forget: dispatch the request to the worker but don't wait for
+  // the full response. The worker updates Supabase directly when it finishes.
+  // This avoids Vercel serverless function timeouts (10s Hobby / 60s Pro).
   try {
-    // Create timeout controller
-    const timeoutMs = config.timeoutMs || 180000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const workerUrl = `${config.workerUrl}/analyze`;
+    console.log(`[Worker] Dispatching job to ${workerUrl} (fire-and-forget)`);
 
-    try {
-      const response = await fetch(`${config.workerUrl}/analyze`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(job),
-        signal: controller.signal,
-      });
+    fetch(workerUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(job),
+    }).catch((err) => {
+      console.error('[Worker] Background request failed:', err.message);
+    });
 
-      clearTimeout(timeoutId);
+    // Give the request a moment to be dispatched before the function exits
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Worker service returned ${response.status}: ${error}`);
-      }
-
-      return {
-        success: true,
-        message: 'Analysis job submitted to worker service',
-      };
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-
-      if (fetchError.name === 'AbortError') {
-        throw new Error(`Analysis timed out after ${timeoutMs / 1000} seconds`);
-      }
-      throw fetchError;
-    }
+    return {
+      success: true,
+      message: 'Analysis job dispatched to worker service',
+    };
   } catch (error: any) {
-    console.error('Failed to submit job to worker:', error);
-    throw new Error(`Failed to submit job: ${error.message}`);
+    console.error('Failed to dispatch job to worker:', error);
+    throw new Error(`Failed to dispatch job: ${error.message}`);
   }
 }
 
