@@ -2,10 +2,10 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "cd api/workers && pip install -r requirements.txt"
+    "buildCommand": "pip install -r api/workers/requirements.txt"
   },
   "deploy": {
-    "startCommand": "cd api/workers && python server.py",
+    "startCommand": "cd api/workers && gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 600 --log-level info server:app 2>&1",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
