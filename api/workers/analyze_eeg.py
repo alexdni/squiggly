@@ -329,6 +329,8 @@ def analyze_eeg_file(
         epochs_eo = preprocess_result['epochs_eo']
         epochs_ec = preprocess_result['epochs_ec']
         qc_metrics = preprocess_result['qc_metrics']
+        raw_clean = preprocess_result.get('raw_clean')
+        rejected_epochs = preprocess_result.get('rejected_epochs', [])
 
         n_eo = len(epochs_eo) if epochs_eo is not None else 0
         n_ec = len(epochs_ec) if epochs_ec is not None else 0
@@ -526,9 +528,53 @@ def analyze_eeg_file(
             logger.warning(f"Failed to generate some visualizations: {e}", exc_info=True)
             # Continue anyway - visuals are optional
 
-        # Step 4: Compile Results
+        # Step 4: Export cleaned raw file in original format
         logger.info("")
-        logger.info("STEP 4: Compiling Results")
+        logger.info("STEP 4: Exporting Cleaned Raw File")
+        logger.info("-"*80)
+
+        cleaned_file_path = None
+        cleaned_file_ext = '.edf'  # default
+        if raw_clean is not None:
+            try:
+                input_ext = os.path.splitext(file_path)[1].lower()
+                if input_ext == '.bdf':
+                    cleaned_file_ext = '.bdf'
+                elif input_ext == '.csv':
+                    cleaned_file_ext = '.csv'
+                else:
+                    cleaned_file_ext = '.edf'
+
+                cleaned_tmp = tempfile.NamedTemporaryFile(
+                    delete=False, suffix=f'_cleaned_raw{cleaned_file_ext}'
+                )
+                cleaned_tmp.close()
+
+                if cleaned_file_ext == '.edf':
+                    raw_clean.export(cleaned_tmp.name, overwrite=True, verbose=False)
+                elif cleaned_file_ext == '.bdf':
+                    import edfio
+                    signals = []
+                    data = raw_clean.get_data()
+                    for i, ch_name in enumerate(raw_clean.ch_names):
+                        signals.append(edfio.BdfSignal(
+                            data[i],
+                            sampling_frequency=raw_clean.info['sfreq'],
+                            label=ch_name[:16],
+                        ))
+                    bdf = edfio.Bdf(signals)
+                    bdf.write(cleaned_tmp.name)
+                elif cleaned_file_ext == '.csv':
+                    raw_clean.to_data_frame().to_csv(cleaned_tmp.name, index=False)
+
+                cleaned_file_path = cleaned_tmp.name
+                logger.info(f"Exported cleaned raw to: {cleaned_tmp.name} ({cleaned_file_ext})")
+            except Exception as e:
+                logger.warning(f"Failed to export cleaned raw file: {e}", exc_info=True)
+
+        # Step 5: Compile Results
+        logger.info("")
+        logger.info("STEP 5: Compiling Results")
         logger.info("-"*80)
 
         processing_time = time.time() - start_time
@@ -542,14 +588,17 @@ def analyze_eeg_file(
             'band_ratios': features['band_ratios'],
             'asymmetry': features['asymmetry'],
             'risk_patterns': features['risk_patterns'],
-            'visuals': visuals,  # Add visuals to results
+            'rejected_epochs': rejected_epochs,
+            'visuals': visuals,
             'processing_metadata': {
                 'preprocessing_config': preprocess_config,
                 'processing_time_seconds': round(processing_time, 2),
                 'mne_version': __import__('mne').__version__,
                 'numpy_version': __import__('numpy').__version__,
                 'scipy_version': __import__('scipy').__version__,
-            }
+            },
+            '_cleaned_file_path': cleaned_file_path,
+            'cleaned_file_format': cleaned_file_ext,
         }
 
         logger.info("="*80)

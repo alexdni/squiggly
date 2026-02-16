@@ -150,6 +150,36 @@ def analyze():
                 # Ensure visuals is not present or is empty dict if no visuals generated
                 results['visuals'] = {}
 
+            # Upload cleaned raw file to Supabase if available
+            cleaned_file_path = results.pop('_cleaned_file_path', None)
+            if cleaned_file_path and os.path.exists(cleaned_file_path):
+                try:
+                    with open(cleaned_file_path, 'rb') as f:
+                        cleaned_bytes = f.read()
+                    file_ext = results.get('cleaned_file_format', '.edf')
+                    file_name = f'cleaned_raw{file_ext}'
+                    # Determine content type
+                    content_type = 'application/octet-stream'
+                    if file_ext == '.csv':
+                        content_type = 'text/csv'
+                    url = upload_visual_to_supabase(
+                        cleaned_bytes,
+                        file_name,
+                        analysis_id,
+                        supabase_url,
+                        supabase_key
+                    )
+                    if url:
+                        results['cleaned_file_url'] = url
+                        logger.info(f"Uploaded cleaned raw file: {file_name}")
+                    else:
+                        logger.warning("Failed to upload cleaned raw file")
+                    os.unlink(cleaned_file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to upload cleaned raw file: {e}")
+                    if os.path.exists(cleaned_file_path):
+                        os.unlink(cleaned_file_path)
+
             # Upload results
             upload_results_to_supabase(
                 analysis_id,

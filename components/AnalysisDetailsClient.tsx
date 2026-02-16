@@ -85,6 +85,18 @@ export default function AnalysisDetailsClient({
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [artifactMode, setArtifactMode] = useState<'ica' | 'manual'>('ica');
+  const [icaMethod, setIcaMethod] = useState<'fastica' | 'infomax' | 'picard' | 'sobi'>(
+    (initialAnalysis.config?.preprocessing?.ica_method as any) || 'sobi'
+  );
+  const [sobiDeltaThreshold, setSobiDeltaThreshold] = useState(
+    initialAnalysis.config?.preprocessing?.sobi_delta_threshold ?? 0.70
+  );
+  const [sobiHfThreshold, setSobiHfThreshold] = useState(
+    initialAnalysis.config?.preprocessing?.sobi_hf_threshold ?? 0.40
+  );
+  const [sobiFrontalCorr, setSobiFrontalCorr] = useState(
+    initialAnalysis.config?.preprocessing?.sobi_frontal_corr ?? 0.60
+  );
 
   // Polling timeout: 2 minutes
   const ANALYSIS_TIMEOUT_SECONDS = 120;
@@ -158,12 +170,18 @@ export default function AnalysisDetailsClient({
   const handleStartAnalysis = async () => {
     setIsProcessing(true);
     try {
-      // Update config with chosen artifact mode before starting
+      // Update config with chosen artifact mode and ICA settings before starting
       const updatedConfig = {
         ...analysis.config,
         preprocessing: {
           ...analysis.config?.preprocessing,
           artifact_mode: artifactMode,
+          ica_method: icaMethod,
+          ...(icaMethod === 'sobi' ? {
+            sobi_delta_threshold: sobiDeltaThreshold,
+            sobi_hf_threshold: sobiHfThreshold,
+            sobi_frontal_corr: sobiFrontalCorr,
+          } : {}),
         },
       };
 
@@ -476,6 +494,7 @@ export default function AnalysisDetailsClient({
         <RawEEGViewer
           recordingId={analysis.recording.id}
           filePath={analysis.recording.file_path}
+          rejectedEpochs={analysis.results?.rejected_epochs}
         />
 
         {/* Analysis Results or Status Message */}
@@ -552,6 +571,81 @@ export default function AnalysisDetailsClient({
                 </div>
               )}
             </div>
+
+            {/* ICA Method Selector (only when ICA mode is selected) */}
+            {artifactMode === 'ica' && (
+              <div className="bg-white border border-yellow-200 rounded-lg p-4 mb-4">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                  ICA Method
+                </h4>
+                <select
+                  value={icaMethod}
+                  onChange={(e) => setIcaMethod(e.target.value as any)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                >
+                  <option value="sobi">SOBI (Recommended)</option>
+                  <option value="fastica">FastICA</option>
+                  <option value="infomax">Infomax</option>
+                  <option value="picard">Picard</option>
+                </select>
+
+                {/* SOBI Configuration */}
+                {icaMethod === 'sobi' && (
+                  <div className="mt-3 space-y-3">
+                    <p className="text-xs text-gray-600">
+                      SOBI artifact detection thresholds. Higher values = more aggressive rejection.
+                    </p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Delta Power Ratio
+                        </label>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.1"
+                          max="1.0"
+                          value={sobiDeltaThreshold}
+                          onChange={(e) => setSobiDeltaThreshold(parseFloat(e.target.value) || 0.70)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                        />
+                        <p className="text-xs text-gray-500 mt-0.5">Slow drift threshold</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          HF Power Ratio
+                        </label>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.1"
+                          max="1.0"
+                          value={sobiHfThreshold}
+                          onChange={(e) => setSobiHfThreshold(parseFloat(e.target.value) || 0.40)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                        />
+                        <p className="text-xs text-gray-500 mt-0.5">Muscle artifact threshold</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Frontal Correlation
+                        </label>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.1"
+                          max="1.0"
+                          value={sobiFrontalCorr}
+                          onChange={(e) => setSobiFrontalCorr(parseFloat(e.target.value) || 0.60)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                        />
+                        <p className="text-xs text-gray-500 mt-0.5">EOG detection threshold</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end">
               <button
@@ -1342,7 +1436,19 @@ export default function AnalysisDetailsClient({
               <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                 Export Options
               </h2>
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
+                {analysis.results.cleaned_file_url && (
+                  <a
+                    href={analysis.results.cleaned_file_url}
+                    download={`cleaned_raw${analysis.results.cleaned_file_format || '.edf'}`}
+                    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium inline-flex items-center gap-2"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Cleaned EEG ({analysis.results.cleaned_file_format || '.edf'})
+                  </a>
+                )}
                 <button className="bg-neuro-primary text-white px-6 py-3 rounded-lg hover:bg-neuro-accent transition-colors font-medium">
                   Export PDF Report
                 </button>
