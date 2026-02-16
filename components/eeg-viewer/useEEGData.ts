@@ -9,6 +9,7 @@ import {
   filterValidChannels,
   type CSVData,
 } from '@/lib/csv-reader-browser';
+import { EXCLUDED_CHANNEL_PATTERNS } from '@/lib/constants';
 import type { UnifiedSignalData } from './types';
 
 export function useEEGData(recordingId: string, filePath: string) {
@@ -44,15 +45,29 @@ export function useEEGData(recordingId: string, filePath: string) {
           fileType: 'csv',
         });
       } else {
+        // EDF and BDF share the same reader (auto-detects format from header)
         const arrayBuffer = await data.arrayBuffer();
         const parsedData = await parseEDFFile(arrayBuffer);
 
+        // Filter to only EEG channels (drop BioSemi aux, rail, impedance, etc.)
+        const allLabels = parsedData.header.channels.map((ch) => ch.label);
+        const eegIndices: number[] = [];
+        const eegNames: string[] = [];
+        for (let i = 0; i < allLabels.length; i++) {
+          const label = allLabels[i];
+          const isExcluded = EXCLUDED_CHANNEL_PATTERNS.some(p => p.test(label));
+          if (!isExcluded) {
+            eegIndices.push(i);
+            eegNames.push(label);
+          }
+        }
+
         setSignalData({
-          signals: parsedData.signals,
+          signals: eegIndices.map(i => parsedData.signals[i]),
           sampleRate: parsedData.sampleRate,
           duration: parsedData.duration,
-          channelNames: parsedData.header.channels.map((ch) => ch.label),
-          fileType: 'edf',
+          channelNames: eegNames,
+          fileType: fileExtension === 'bdf' ? 'bdf' : 'edf',
         });
       }
     } catch (err: any) {

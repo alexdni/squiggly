@@ -21,12 +21,7 @@ export async function GET(
       .select(
         `
         *,
-        recording:recordings (
-          id,
-          filename,
-          project_id,
-          file_path
-        )
+        recording:recordings (*)
       `
       )
       .eq('id', params.id)

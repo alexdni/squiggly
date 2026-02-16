@@ -161,7 +161,7 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 - Supabase free tier limits: 500MB storage, 2GB bandwidth/month (monitor usage)
 - Vercel free tier limits: 100GB bandwidth, 100 hours serverless execution/month
 - Vercel function timeout: 10s (Hobby), 60s (Pro), 900s (Enterprise) → require Pro or higher for long EDFs
-- EDF file size limit: 50MB (configurable; recordings >20 min may exceed)
+- EEG file size limit: 200MB (configurable; supports EDF, BDF, and CSV formats)
 - Python serverless payload limit: 250MB (sufficient for 10-min EDF ~5MB compressed)
 
 **Regulatory:**

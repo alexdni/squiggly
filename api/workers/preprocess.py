@@ -115,8 +115,10 @@ class EEGPreprocessor:
             return raw
         elif ext_lower == '.edf':
             return self.load_edf(file_path)
+        elif ext_lower == '.bdf':
+            return self.load_bdf(file_path)
         else:
-            raise ValueError(f"Unsupported file format: {ext}. Supported formats: .edf, .csv")
+            raise ValueError(f"Unsupported file format: {ext}. Supported formats: .edf, .bdf, .csv")
 
     def load_edf(self, file_path: str) -> mne.io.Raw:
         """
@@ -141,6 +143,49 @@ class EEGPreprocessor:
         raw = self._standardize_channel_names(raw)
 
         # Select only EEG channels (exclude non-EEG like EOG, ECG)
+        raw = self._select_eeg_channels(raw)
+
+        # Set montage for electrode positions
+        montage = mne.channels.make_standard_montage('standard_1020')
+        raw.set_montage(montage, on_missing='warn')
+
+        # Set reference to average
+        raw.set_eeg_reference('average', projection=False)
+
+        logger.info(f"Loaded raw data: {raw.info['sfreq']} Hz, {len(raw.ch_names)} channels, {raw.times[-1]:.1f}s duration")
+
+        return raw
+
+    def load_bdf(self, file_path: str) -> mne.io.Raw:
+        """
+        Load BDF (BioSemi Data Format) file and prepare raw data.
+        BioSemi files typically contain many non-EEG channels (EXG, Rail,
+        Status, impedance, etc.) which are filtered out automatically.
+
+        Args:
+            file_path: Path to BDF file
+
+        Returns:
+            MNE Raw object
+        """
+        logger.info(f"Loading BDF file: {file_path}")
+
+        # Load BDF file (24-bit format used by BioSemi systems)
+        raw = mne.io.read_raw_bdf(file_path, preload=True, verbose=False)
+
+        # Get channel names and normalize
+        channel_names = raw.ch_names
+        logger.info(f"Found {len(channel_names)} total channels: {channel_names}")
+
+        # Standardize channel names
+        raw = self._standardize_channel_names(raw)
+
+        # Log which channels will be dropped (non-EEG: EXG, Rail, Status, etc.)
+        non_eeg = [ch for ch in raw.ch_names if ch not in self.all_valid_channels]
+        if non_eeg:
+            logger.info(f"Dropping {len(non_eeg)} non-EEG channels: {non_eeg}")
+
+        # Select only EEG channels (exclude non-EEG like EXG, Rail, Status, impedance)
         raw = self._select_eeg_channels(raw)
 
         # Set montage for electrode positions

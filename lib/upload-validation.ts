@@ -82,6 +82,50 @@ export async function validateEDFHeader(file: File): Promise<ValidationResult> {
 }
 
 /**
+ * Basic BDF header validation (checks first 8 bytes for BDF signature)
+ * BDF files start with byte 0xFF followed by "BIOSEMI"
+ */
+export async function validateBDFHeader(file: File): Promise<ValidationResult> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const header = new Uint8Array(e.target?.result as ArrayBuffer);
+
+      // BDF signature: first byte is 0xFF, followed by "BIOSEMI"
+      if (header[0] !== 0xFF) {
+        resolve({
+          valid: false,
+          error: 'Invalid BDF file format. File does not contain valid BDF header.',
+        });
+        return;
+      }
+
+      const biosemiStr = String.fromCharCode(...header.slice(1, 8));
+      if (biosemiStr.trim() !== 'BIOSEMI') {
+        resolve({
+          valid: false,
+          error: 'Invalid BDF file format. Expected "BIOSEMI" identifier in header.',
+        });
+        return;
+      }
+
+      resolve({ valid: true });
+    };
+
+    reader.onerror = () => {
+      resolve({
+        valid: false,
+        error: 'Failed to read file header.',
+      });
+    };
+
+    // Read first 256 bytes (BDF header size, same as EDF)
+    reader.readAsArrayBuffer(file.slice(0, 256));
+  });
+}
+
+/**
  * Basic CSV validation (checks for timestamp column and valid structure)
  */
 export async function validateCSVHeader(file: File): Promise<ValidationResult> {
@@ -162,6 +206,12 @@ export async function validateUploadFile(file: File): Promise<ValidationResult> 
     const csvResult = await validateCSVHeader(file);
     if (!csvResult.valid) {
       return csvResult;
+    }
+  } else if (extension === '.bdf') {
+    // Validate BDF header
+    const bdfResult = await validateBDFHeader(file);
+    if (!bdfResult.valid) {
+      return bdfResult;
     }
   } else {
     // Validate EDF header

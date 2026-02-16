@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { checkProjectPermission } from '@/lib/rbac';
-import { validateEDFMontage } from '@/lib/edf-validator';
+import { validateEDFMontage, validateBDFMontage } from '@/lib/edf-validator';
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
 
 interface RecordingMetadata {
@@ -108,11 +108,14 @@ export async function POST(request: Request) {
     } else if (fileExtension === 'edf') {
       console.log('[Recording] Validating EDF file');
       validationResult = await validateEDFMontage(buffer);
+    } else if (fileExtension === 'bdf') {
+      console.log('[Recording] Validating BDF file');
+      validationResult = await validateBDFMontage(buffer);
     } else {
       return NextResponse.json(
         {
           error: 'Unsupported file format',
-          message: `File type .${fileExtension} is not supported. Only .edf and .csv files are allowed.`,
+          message: `File type .${fileExtension} is not supported. Only .edf, .bdf, and .csv files are allowed.`,
         },
         { status: 400 }
       );
