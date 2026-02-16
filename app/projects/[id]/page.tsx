@@ -13,7 +13,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect('/login');
+    redirect('/login?expired=1');
   }
 
   // Fetch project details

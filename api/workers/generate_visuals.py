@@ -855,8 +855,6 @@ def generate_alpha_peak_topomap(
             if i % 2 == 0:
                 cell.set_facecolor('#f0f0f0')
 
-    ax_table.set_title('Peak Frequencies by Channel', fontsize=12, fontweight='bold', pad=20)
-
     # Set overall title
     if title is None:
         title = f'Individual Alpha Frequency (IAF) - {condition}'

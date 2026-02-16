@@ -32,10 +32,10 @@ export async function GET(
 
     const analysisData = analysis as any;
 
-    // Then fetch the recording
+    // Then fetch the recording (include all fields needed by the UI)
     const { data: recording } = await db
       .from('recordings')
-      .select('id, filename, project_id, file_path')
+      .select('*')
       .eq('id', analysisData.recording_id)
       .single();
 

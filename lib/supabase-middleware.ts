@@ -44,6 +44,14 @@ async function updateSessionLocal(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // If the page itself says the session is expired (?expired=1), clear the cookie
+  // This breaks the redirect loop: middleware thinks cookie is valid → dashboard → getCurrentUser fails → redirect /login?expired=1
+  if (request.nextUrl.pathname === '/login' && request.nextUrl.searchParams.get('expired') === '1') {
+    const response = NextResponse.redirect(new URL('/login', request.url));
+    response.cookies.delete('squiggly_session');
+    return response;
+  }
+
   // Redirect authenticated users away from login/signup
   if (
     (request.nextUrl.pathname === '/login' ||

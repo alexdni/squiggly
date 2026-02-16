@@ -6,7 +6,8 @@ export default async function DashboardPage() {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect('/login');
+    // Use ?expired=1 so middleware clears the stale cookie and breaks the redirect loop
+    redirect('/login?expired=1');
   }
 
   return <DashboardClient user={user as any} />;

@@ -13,7 +13,7 @@ export default async function AnalysisPage({ params }: AnalysisPageProps) {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect('/login');
+    redirect('/login?expired=1');
   }
 
   const db = getDatabaseClient();

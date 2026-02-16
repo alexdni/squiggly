@@ -6,7 +6,7 @@ export default async function ProjectsPage() {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect('/login');
+    redirect('/login?expired=1');
   }
 
   return <ProjectsClient user={user as any} />;
