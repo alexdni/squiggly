@@ -8,12 +8,23 @@ Deploy this to Railway, Render, or any platform that supports Python.
 
 from flask import Flask, request, jsonify
 import os
+import sys
 import logging
 import tempfile
+
+# Configure root logger to write to stdout so Railway doesn't classify
+# INFO/WARNING messages as errors (Railway treats stderr as error-level).
+# force=True ensures this overrides any prior basicConfig (e.g. from gunicorn).
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True,
+)
+
 from analyze_eeg import analyze_eeg_file, download_from_supabase, upload_results_to_supabase, upload_visual_to_supabase, mark_analysis_failed
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Authentication token (optional)
