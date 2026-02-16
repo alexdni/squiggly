@@ -1,11 +1,11 @@
 [phases.setup]
-nixPkgs = ["python310", "gcc", "gfortran", "openblas"]
+nixPkgs = ["python311", "gcc", "gfortran", "openblas", "pkg-config"]
 
 [phases.install]
-cmds = ["pip install -r api/workers/requirements.txt"]
+cmds = ["echo 'Dependencies installed in build phase'"]
 
 [phases.build]
-cmds = ["echo 'Build complete'"]
+cmds = ["pip install -r api/workers/requirements.txt"]
 
 [start]
 cmd = "cd api/workers && gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 600 --log-level info server:app 2>&1"
