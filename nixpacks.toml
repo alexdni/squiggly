@@ -5,7 +5,7 @@ nixPkgs = ["python311", "gcc", "gfortran", "openblas", "pkg-config"]
 cmds = ["echo 'Dependencies installed in build phase'"]
 
 [phases.build]
-cmds = ["pip install -r api/workers/requirements.txt"]
+cmds = ["pip install -r requirements.txt"]
 
 [start]
-cmd = "gunicorn --chdir api/workers --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 600 --log-level info server:app 2>&1"
+cmd = "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 600 --log-level info server:app 2>&1"
