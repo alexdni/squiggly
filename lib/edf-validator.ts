@@ -2,11 +2,6 @@
 // Validates EDF header without external dependencies
 
 import {
-  MONTAGE_10_20_19CH,
-  MONTAGE_10_20_21CH,
-  EXPECTED_CHANNELS_19,
-  EXPECTED_CHANNELS_21,
-  EXPECTED_CHANNELS_24,
   ALL_EEG_CHANNELS,
   EXCLUDED_CHANNEL_PATTERNS,
 } from './constants';
@@ -109,14 +104,13 @@ async function validateMontage(
     // Get number of channels (bytes 252-256)
     const nChannels = parseInt(buffer.toString('ascii', 252, 256).trim());
 
-    // Validate channel count - support 10-20 (19, 21 channels) and 10-10 (24+ channels)
-    // We accept any count >= 19 as long as it contains the required 10-20 base channels
-    const isValidCount = !isNaN(nChannels) && nChannels >= EXPECTED_CHANNELS_19;
+    // Validate channel count - require at least 2 channels
+    const isValidCount = !isNaN(nChannels) && nChannels >= 2;
 
     if (!isValidCount) {
       return {
         valid: false,
-        error: `Expected at least ${EXPECTED_CHANNELS_19} channels, found ${nChannels}. This tool requires 10-20 or 10-10 montage.`,
+        error: `EDF file must have at least 2 channels, found ${nChannels}.`,
       };
     }
 
@@ -178,19 +172,12 @@ async function validateMontage(
       hasA2A1Reference,
     });
 
-    // Base required channels (10-20 montage without ear references)
-    // All montages must contain at least these 19 channels
-    const requiredBaseChannels = MONTAGE_10_20_19CH;
-
-    // Check if all required base channels are present (among EEG channels only)
-    const missingChannels = requiredBaseChannels.filter(
-      (ch) => !eegChannelLabels.includes(ch)
-    );
-
-    if (missingChannels.length > 0) {
+    // Check that at least 2 recognized EEG channels are present
+    const knownEegChannels = eegChannelLabels.filter(ch => ALL_EEG_CHANNELS.includes(ch) || ch === 'A1' || ch === 'A2');
+    if (knownEegChannels.length < 2) {
       return {
         valid: false,
-        error: `Missing required channels: ${missingChannels.join(', ')}. Expected 10-20 or 10-10 montage with base channels. Found EEG channels: ${eegChannelLabels.join(', ')}`,
+        error: `No recognized EEG channels found. Expected standard 10-20 or 10-10 channel names. Found: ${eegChannelLabels.join(', ')}`,
       };
     }
 

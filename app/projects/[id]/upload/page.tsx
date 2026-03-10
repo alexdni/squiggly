@@ -146,7 +146,7 @@ export default function UploadPage() {
           </button>
           <h1 className="text-3xl font-bold text-neuro-dark">Upload EEG Recording</h1>
           <p className="text-gray-800 mt-2">
-            Upload a 19-channel EDF file for EO/EC analysis
+            Upload an EDF file for EO/EC analysis
           </p>
         </div>
 
