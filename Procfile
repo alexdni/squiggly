@@ -1,1 +1,1 @@
-web: cd api/workers && gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 600 server:app
+web: gunicorn --chdir api/workers --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 600 --log-level info server:app 2>&1
