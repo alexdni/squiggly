@@ -106,7 +106,7 @@ class CSVReader:
 
         # Validate structure
         if 'timestamp' not in df.columns:
-            raise ValueError("CSV file must have 'timestamp' column as first column")
+            raise ValueError("CSV file must have a 'timestamp' column")
 
         # Get channel columns (all except timestamp)
         channel_cols = [col for col in df.columns if col.lower() != 'timestamp']

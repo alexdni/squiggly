@@ -68,16 +68,19 @@ export async function validateCSVFile(
     const headerLine = lines[0];
     const headers = headerLine.split(/[,\t]/).map(h => h.trim());
 
-    // First column should be timestamp
-    if (!headers[0] || headers[0].toLowerCase() !== 'timestamp') {
+    // Timestamp can be first or last column
+    const tsFirst = headers[0]?.toLowerCase() === 'timestamp';
+    const tsLast = headers[headers.length - 1]?.toLowerCase() === 'timestamp';
+    if (!tsFirst && !tsLast) {
       return {
         valid: false,
-        error: 'CSV file must have "timestamp" as the first column',
+        error: 'CSV file must have "timestamp" as the first or last column',
       };
     }
 
     // Extract channel names (all columns except timestamp)
-    const allChannels = headers.slice(1).filter(h => h.length > 0);
+    const allColumns = tsFirst ? headers.slice(1) : headers.slice(0, -1);
+    const allChannels = allColumns.filter(h => h.length > 0);
 
     if (allChannels.length === 0) {
       return {
@@ -135,7 +138,7 @@ export async function validateCSVFile(
       if (!line) continue;
 
       const values = line.split(/[,\t]/);
-      const timestamp = parseFloat(values[0]);
+      const timestamp = parseFloat(tsFirst ? values[0] : values[values.length - 1]);
 
       if (!isNaN(timestamp)) {
         timestamps.push(timestamp);

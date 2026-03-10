@@ -32,13 +32,15 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
   const headerLine = lines[0];
   const headers = headerLine.split(/[,\t]/).map(h => h.trim());
 
-  // First column should be timestamp
-  if (!headers[0] || headers[0].toLowerCase() !== 'timestamp') {
-    throw new Error('CSV file must have "timestamp" as the first column');
+  // Timestamp can be first or last column
+  const tsFirst = headers[0]?.toLowerCase() === 'timestamp';
+  const tsLast = headers[headers.length - 1]?.toLowerCase() === 'timestamp';
+  if (!tsFirst && !tsLast) {
+    throw new Error('CSV file must have "timestamp" as the first or last column');
   }
 
   // Extract channel names (all columns except timestamp)
-  const channelNames = headers.slice(1).filter(h => h.length > 0);
+  const channelNames = (tsFirst ? headers.slice(1) : headers.slice(0, -1)).filter(h => h.length > 0);
 
   if (channelNames.length === 0) {
     throw new Error('CSV file must have at least one channel column');
@@ -59,8 +61,8 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
 
     const values = line.split(/[,\t]/);
 
-    // Parse timestamp
-    const timestamp = parseFloat(values[0]);
+    // Parse timestamp (first or last column)
+    const timestamp = parseFloat(tsFirst ? values[0] : values[values.length - 1]);
     if (isNaN(timestamp)) {
       console.warn(`Skipping row ${i + 1}: invalid timestamp`);
       continue;
@@ -68,10 +70,10 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
 
     timestamps.push(timestamp);
 
-    // Parse channel values
+    // Parse channel values (offset by 1 if timestamp is first, otherwise start at 0)
     for (let j = 0; j < channelNames.length; j++) {
       const channelName = channelNames[j];
-      const valueStr = values[j + 1];
+      const valueStr = values[tsFirst ? j + 1 : j];
 
       // Handle missing/empty values
       let value: number;

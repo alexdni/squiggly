@@ -148,17 +148,19 @@ export async function validateCSVHeader(file: File): Promise<ValidationResult> {
       const headerLine = lines[0].trim();
       const headers = headerLine.split(/[,\t]/).map(h => h.trim());
 
-      // First column should be timestamp
-      if (!headers[0] || headers[0].toLowerCase() !== 'timestamp') {
+      // Timestamp can be first or last column
+      const tsFirst = headers[0]?.toLowerCase() === 'timestamp';
+      const tsLast = headers[headers.length - 1]?.toLowerCase() === 'timestamp';
+      if (!tsFirst && !tsLast) {
         resolve({
           valid: false,
-          error: 'CSV file must have "timestamp" as the first column.',
+          error: 'CSV file must have "timestamp" as the first or last column.',
         });
         return;
       }
 
       // Check that there are channel columns
-      const channelCount = headers.slice(1).filter(h => h.length > 0).length;
+      const channelCount = (tsFirst ? headers.slice(1) : headers.slice(0, -1)).filter(h => h.length > 0).length;
       if (channelCount === 0) {
         resolve({
           valid: false,
