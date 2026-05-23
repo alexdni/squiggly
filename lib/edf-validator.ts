@@ -172,14 +172,9 @@ async function validateMontage(
       hasA2A1Reference,
     });
 
-    // Check that at least 2 recognized EEG channels are present
+    // Log recognized vs unrecognized channels for debugging, but don't reject on name mismatch
     const knownEegChannels = eegChannelLabels.filter(ch => ALL_EEG_CHANNELS.includes(ch) || ch === 'A1' || ch === 'A2');
-    if (knownEegChannels.length < 2) {
-      return {
-        valid: false,
-        error: `No recognized EEG channels found. Expected standard 10-20 or 10-10 channel names. Found: ${eegChannelLabels.join(', ')}`,
-      };
-    }
+    console.log(`[${format} Validator] Known EEG channels: ${knownEegChannels.length}/${eegChannelLabels.length}`);
 
     // Check for unknown channels among the non-excluded ones
     const extraChannels = eegChannelLabels.filter(

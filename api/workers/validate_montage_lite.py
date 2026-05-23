@@ -101,14 +101,9 @@ def parse_edf_header(file_path: str) -> Dict:
                 label = f.read(16).decode('ascii', errors='ignore').strip()
                 channel_labels.append(normalize_channel_name(label))
 
-            # Check that at least some recognized EEG channels are present
+            # Log recognized channel count but don't reject on name mismatch
             valid_eeg_channels = [ch for ch in channel_labels if ch in ALL_VALID_CHANNELS]
-            if len(valid_eeg_channels) < 2:
-                return {
-                    'valid': False,
-                    'error': f'No recognized EEG channels found. Expected standard 10-20 or 10-10 channel names.',
-                    'metadata': None
-                }
+            print(f'Recognized EEG channels: {len(valid_eeg_channels)}/{len(channel_labels)}')
 
             # Read sampling info (skip transducer type, physical dimension, etc.)
             # Each field is n_channels * field_size

@@ -69,14 +69,9 @@ def validate_edf_montage(file_path: str) -> Dict:
                 'metadata': None
             }
 
-        # Check that at least some recognized EEG channels are present
+        # Log recognized channel count but don't reject on name mismatch
         valid_eeg_channels = [ch for ch in ch_names if ch in ALL_VALID_CHANNELS]
-        if len(valid_eeg_channels) < 2:
-            return {
-                'valid': False,
-                'error': f'No recognized EEG channels found. Expected standard 10-20 or 10-10 channel names.',
-                'metadata': None
-            }
+        print(f'Recognized EEG channels: {len(valid_eeg_channels)}/{len(ch_names)}')
 
         # Get metadata
         sampling_rate = raw.info['sfreq']
