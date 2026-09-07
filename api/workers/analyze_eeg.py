@@ -128,17 +128,25 @@ def upload_visual_to_supabase(
     file_name: str,
     analysis_id: str,
     supabase_url: str,
-    supabase_key: str
+    supabase_key: str,
+    content_type: str = 'image/png',
+    download: bool = False,
 ) -> Optional[str]:
     """
-    Upload a visual asset (PNG) to Supabase Storage
+    Upload an analysis asset to the Supabase 'visuals' bucket.
+
+    Defaults are tuned for the visualisation PNGs. The cleaned EEG export
+    reuses this helper with an explicit content_type and download=True so the
+    browser saves the file instead of trying to render it inline.
 
     Args:
-        png_bytes: PNG image as bytes
+        png_bytes: File contents as bytes
         file_name: Name for the file (e.g., 'topomap_alpha1_EO.png')
         analysis_id: Analysis UUID
         supabase_url: Supabase project URL
         supabase_key: Supabase service role key
+        content_type: MIME type stored with the object (served back on GET)
+        download: If True, the signed URL forces Content-Disposition: attachment
 
     Returns:
         Public URL of uploaded file, or None if failed
@@ -158,14 +166,18 @@ def upload_visual_to_supabase(
         supabase.storage.from_(bucket_name).upload(
             object_path,
             png_bytes,
-            file_options={"content-type": "image/png", "upsert": "true"}
+            file_options={"content-type": content_type, "upsert": "true"}
         )
 
         # Generate signed URL (valid for 1 year)
         # Note: For permanent access, make bucket public in Supabase dashboard
+        # download=<name> makes Supabase send Content-Disposition: attachment,
+        # which is needed because <a download> is ignored cross-origin.
+        url_options = {"download": file_name} if download else {}
         url_response = supabase.storage.from_(bucket_name).create_signed_url(
             object_path,
-            60 * 60 * 24 * 365  # 1 year in seconds
+            60 * 60 * 24 * 365,  # 1 year in seconds
+            options=url_options,
         )
 
         if url_response and 'signedURL' in url_response:

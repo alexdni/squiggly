@@ -178,7 +178,9 @@ def analyze():
                         file_name,
                         analysis_id,
                         supabase_url,
-                        supabase_key
+                        supabase_key,
+                        content_type=content_type,
+                        download=True,
                     )
                     if url:
                         results['cleaned_file_url'] = url
