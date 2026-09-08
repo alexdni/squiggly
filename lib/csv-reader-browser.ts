@@ -2,6 +2,7 @@
 // Parses CSV files with timestamp column and channel data columns
 
 import { butterworthCoeffs, applyBiquad, filtfilt, notchCoeffs, prefilterEEG } from './eeg-filters';
+import { parseCsvTimestamp } from './csv-timestamp';
 
 export interface CSVHeader {
   channels: string[];
@@ -61,8 +62,8 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
 
     const values = line.split(/[,\t]/);
 
-    // Parse timestamp (first or last column)
-    const timestamp = parseFloat(tsFirst ? values[0] : values[values.length - 1]);
+    // Parse timestamp (first or last column); handles numeric and ISO 8601
+    const timestamp = parseCsvTimestamp(tsFirst ? values[0] : values[values.length - 1]);
     if (isNaN(timestamp)) {
       console.warn(`Skipping row ${i + 1}: invalid timestamp`);
       continue;

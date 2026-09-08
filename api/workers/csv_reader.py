@@ -85,6 +85,35 @@ class CSVReader:
         channel_lower = channel_name.lower()
         return any(ch.lower() == channel_lower for ch in self.all_eeg_channels)
 
+    @staticmethod
+    def timestamps_to_numeric(series: pd.Series) -> np.ndarray:
+        """
+        Return the timestamp column as float64.
+
+        Numeric columns (epoch s/ms/us/ns or a relative counter) pass through
+        untouched; the unit is auto-detected downstream from the deltas.
+        String columns are parsed as ISO 8601 (e.g. "2026-06-24T22:13:59.340Z",
+        TheraQ / Divergence exports) and converted to epoch milliseconds so the
+        same delta-based detection treats them like any millisecond column.
+        Mirrors lib/csv-timestamp.ts on the frontend.
+        """
+        if pd.api.types.is_numeric_dtype(series):
+            return series.to_numpy(dtype=np.float64)
+
+        parsed = pd.to_datetime(series, utc=True, errors='coerce', format='ISO8601')
+        n_bad = int(parsed.isna().sum())
+        if n_bad == len(parsed):
+            raise ValueError(
+                "Timestamp column must be numeric or ISO 8601 dates; "
+                f"first value was {series.iloc[0]!r}"
+            )
+        if n_bad:
+            raise ValueError(f"{n_bad} rows have unparseable ISO 8601 timestamps")
+
+        logger.info("Parsed ISO 8601 timestamp column to epoch milliseconds")
+        epoch_ms = (parsed - pd.Timestamp(0, tz='UTC')) / pd.Timedelta(milliseconds=1)
+        return epoch_ms.to_numpy(dtype=np.float64)
+
     def read_csv(self, file_path: str) -> Tuple[mne.io.RawArray, float]:
         """
         Read CSV file and convert to MNE Raw format
@@ -153,8 +182,9 @@ class CSVReader:
         if ecg_channels:
             logger.info(f"Found {len(ecg_channels)} ECG channels: {ecg_channels}")
 
-        # Extract timestamps and auto-detect unit by analyzing differences
-        timestamps = df['timestamp'].values
+        # Extract timestamps (numeric or ISO 8601) and auto-detect unit by
+        # analyzing differences
+        timestamps = self.timestamps_to_numeric(df['timestamp'])
         first_ts = timestamps[0]
 
         # Sample first 20 time differences to detect unit
