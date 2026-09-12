@@ -1,6 +1,6 @@
 # Squiggly - EEG Assessment Platform
 
-Rapid, transparent, open-source tool for analyzing 19-channel EEG recordings with support for Eyes-Open (EO) and Eyes-Closed (EC) conditions.
+Rapid, transparent, open-source tool for analyzing EEG recordings with support for Eyes-Open (EO) and Eyes-Closed (EC) conditions. Existing 19-channel workflows remain the primary supported path, with shared montage definitions now recognizing extended 10-10 channels and Brain Products actiCAP 64-channel names for future ingestion work.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
@@ -15,8 +15,12 @@ Rapid, transparent, open-source tool for analyzing 19-channel EEG recordings wit
 ## Features
 
 ### File Support
-- **EDF (European Data Format)** - Standard clinical EEG format with 19-channel 10-20 montage validation
+- **EDF (European Data Format)** - Standard clinical EEG format validated against the canonical EEG montage registry
+- **BDF (BioSemi Data Format)** - BioSemi recordings with non-EEG auxiliary channel filtering
 - **CSV Format** - Support for Divergence/Flex device recordings with automatic timestamp detection
+- **Montage registry** - Shared TypeScript/Python channel definitions for 19-channel 10-20, extended 10-10, and Brain Products actiCAP 64-channel names
+
+> BrainVision (`.vhdr`, `.vmrk`, `.eeg`) upload is not implemented yet. The actiCAP 64-channel profile is present so those channel names can be recognized when BrainVision ingestion is added.
 
 ### Interactive EEG Viewer
 - Real-time waveform display with per-channel rendering
@@ -123,7 +127,25 @@ Pattern flagging based on within-subject thresholds:
 | Auth | Supabase Auth with Google OAuth |
 | Worker | Python Flask/Gunicorn on Railway |
 | Signal Processing | MNE-Python, NumPy, SciPy, antropy, scikit-learn |
+| Montage Registry | Shared JSON manifest consumed by TypeScript validation and Python workers |
 | Visualization | Plotly, matplotlib, Chart.js |
+
+### Canonical EEG Montage Registry
+
+Squiggly keeps EEG channel definitions in a shared manifest at
+`lib/montages/canonical-montages.json`. TypeScript code consumes it through
+`lib/montage-registry.ts`, while Python workers consume the same file through
+`api/workers/montage_registry.py`. This prevents upload validation and worker
+preprocessing from drifting apart.
+
+Current profiles include:
+
+- `10-20-19` - existing 19-channel 10-20 workflow
+- `10-20-21` - 19-channel profile plus `A1`/`A2` references
+- `10-10-extended` - existing Squiggly extended 10-10 channel support
+- `brainproducts-acticap-64` - Brain Products actiCAP 64-channel names
+
+For more detail, see [`docs/architecture/eeg-montage-registry.md`](docs/architecture/eeg-montage-registry.md).
 
 ---
 
@@ -144,7 +166,7 @@ Pattern flagging based on within-subject thresholds:
 ### 1. Clone and Install Dependencies
 
 ```bash
-git clone https://github.com/alexdni/squiggly.git
+git clone https://github.com/SKR-Psych/squiggly.git
 cd squiggly
 npm install
 ```
@@ -250,6 +272,7 @@ squiggly/
 │   └── analyses/                 # Analysis detail pages
 ├── api/workers/                  # Python signal processing
 │   ├── analyze_eeg.py            # Main orchestrator
+│   ├── montage_registry.py       # Python reader for shared montage manifest
 │   ├── preprocess.py             # Signal preprocessing (ICA & manual modes)
 │   ├── extract_features.py       # Feature extraction
 │   ├── generate_visuals.py       # Visualization generation
@@ -270,12 +293,15 @@ squiggly/
 │   │   └── useEEGFilters.ts      # Signal filter hook
 │   └── FileUploadZone.tsx        # Upload interface
 ├── lib/                          # Utilities
+│   ├── montages/                 # Canonical EEG montage manifest
+│   ├── montage-registry.ts       # TypeScript helpers for montage profiles
 │   ├── supabase.ts               # Supabase client
 │   ├── eeg-filters.ts            # Browser-side EEG signal filters
 │   ├── openai-client.ts          # OpenAI integration
 │   ├── worker-client.ts          # Python worker HTTP client
 │   ├── prompts/                  # AI prompt templates
-│   └── constants.ts              # Configuration defaults
+│   └── constants.ts              # Configuration defaults derived from registry
+├── docs/                         # Architecture notes, ADRs, change notes, runbooks
 ├── types/                        # TypeScript definitions
 └── supabase/                     # Database schema
 ```
@@ -288,8 +314,9 @@ squiggly/
 Projects organize recordings for a subject/client. Add optional metadata (age, gender, primary concern).
 
 ### 2. Upload EEG Recording
-- Drag and drop EDF or CSV file
-- System validates 19-channel 10-20 montage
+- Drag and drop EDF, BDF, or CSV file
+- System validates supported EEG channels against the canonical montage registry
+- Existing 19-channel 10-20 workflows remain supported; extended 10-10 and actiCAP-64 channel names are recognized by the registry
 - Mark EO/EC segments (auto-detected from annotations or filename)
 - Analysis is created in pending state (not auto-triggered)
 
@@ -356,6 +383,18 @@ Download JSON data via API for further analysis.
 
 ---
 
+## Project Documentation and Rollback
+
+Additional internal documentation lives in [`docs/`](docs/README.md):
+
+- [`docs/architecture/eeg-montage-registry.md`](docs/architecture/eeg-montage-registry.md) explains the shared montage registry.
+- [`docs/architecture/decisions/ADR-0001-canonical-montage-registry.md`](docs/architecture/decisions/ADR-0001-canonical-montage-registry.md) records the architecture decision.
+- [`docs/changes/2026-06-01-canonical-montage-registry.md`](docs/changes/2026-06-01-canonical-montage-registry.md) summarizes the registry change.
+- [`docs/runbooks/rollback.md`](docs/runbooks/rollback.md) describes code, deployment, worker, and database rollback steps.
+- [`docs/runbooks/release-checklist.md`](docs/runbooks/release-checklist.md) lists pre-merge and post-deployment checks.
+
+---
+
 ## Important Disclaimers
 
 **This EEG assessment platform is for educational and research use only.**
@@ -369,7 +408,7 @@ Download JSON data via API for further analysis.
 
 ## Docker Deployment
 
-For self-hosted local deployment without cloud dependencies, see the [`docker` branch](https://github.com/alexdni/squiggly/tree/docker).
+For self-hosted local deployment without cloud dependencies, see the [`docker` branch](https://github.com/SKR-Psych/squiggly/tree/docker).
 
 Features:
 - All-in-one container (Next.js + Python + PostgreSQL)

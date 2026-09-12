@@ -8,14 +8,14 @@ To avoid exceeding Vercel's 250MB serverless function limit, we use a two-tier v
 
 ### Tier 1: Lightweight Validation (API Routes)
 - **File**: `validate_montage_lite.py`
-- **Dependencies**: Python standard library only (no external packages)
+- **Dependencies**: Python standard library only (no MNE or NumPy)
 - **Purpose**: Fast EDF header validation during upload
 - **Validates**:
   - EDF file format signature
-  - 19-channel count
-  - 10-20 montage channel names
+  - Basic channel count sanity (at least 2 channels)
+  - Channel names against the canonical montage registry when recognized
   - Basic metadata (duration, sampling rate)
-- **Size**: <100KB
+- **Size**: <100KB plus the shared montage manifest
 
 ### Tier 2: Full Signal Processing (Separate Workers)
 - **Files**: `preprocess.py`, `extract_features.py`, etc.
@@ -43,11 +43,21 @@ To avoid exceeding Vercel's 250MB serverless function limit, we use a two-tier v
 ### `validate_montage_lite.py`
 Pure Python EDF header parser. Validates:
 - File format (EDF signature)
-- Channel count (must be 19)
-- Channel names (10-20 montage)
+- Basic channel count sanity (at least 2 channels)
+- Channel names using the canonical montage registry
 - Basic metadata extraction
 
-**No external dependencies required**
+**No MNE/NumPy dependencies required**
+
+
+### `montage_registry.py`
+Loads the shared canonical montage manifest from `lib/montages/canonical-montages.json`.
+This keeps Python worker channel selection aligned with TypeScript validation.
+
+Current registry profiles include the existing 19-channel 10-20 workflow,
+Squiggly's existing extended 10-10 support, and a Brain Products actiCAP
+64-channel profile. BrainVision `.vhdr` / `.vmrk` / `.eeg` upload support is
+not implemented yet.
 
 ### `validate_montage.py` (Full version - for reference)
 Full MNE-based validation with annotation parsing.

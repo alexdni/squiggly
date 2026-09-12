@@ -20,6 +20,7 @@ import mne
 from scipy import signal as scipy_signal
 from typing import Tuple, List
 import logging
+from montage_registry import get_all_known_eeg_channels, get_montage_channels
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,28 +31,14 @@ class CSVReader:
 
     def __init__(self):
         """Initialize CSV reader"""
-        # Standard 10-20 channel names we support
-        self.standard_channels = [
-            'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-            'T7', 'C3', 'Cz', 'C4', 'T8',
-            'P7', 'P3', 'Pz', 'P4', 'P8',
-            'O1', 'O2', 'A1', 'A2'
-        ]
-
-        # Additional EEG channels (10-10 system, old nomenclature)
+        # Canonical EEG channel names are shared with TypeScript validators.
+        self.standard_channels = get_montage_channels('10-20-21')
         self.additional_channels = [
-            'T3', 'T4', 'T5', 'T6',  # Old nomenclature
-            'Fpz', 'AFz', 'FCz', 'CPz', 'POz', 'Oz', 'Iz',
-            'AF3', 'AF4', 'AF7', 'AF8',
-            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
-            'FT7', 'FT8', 'FT9', 'FT10',
-            'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6',
-            'TP7', 'TP8', 'TP9', 'TP10',
-            'PO3', 'PO4', 'PO7', 'PO8',
+            ch for ch in get_montage_channels('10-10-extended')
+            if ch not in self.standard_channels
         ]
-
-        # All valid EEG channels
-        self.all_eeg_channels = self.standard_channels + self.additional_channels
+        self.acticap_64_channels = get_montage_channels('brainproducts-acticap-64')
+        self.all_eeg_channels = get_all_known_eeg_channels()
 
         # ECG channel patterns
         self.ecg_patterns = ['ecg', 'ECG', 'EKG', 'ekg']

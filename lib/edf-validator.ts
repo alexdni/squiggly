@@ -5,6 +5,7 @@ import {
   ALL_EEG_CHANNELS,
   EXCLUDED_CHANNEL_PATTERNS,
 } from './constants';
+import { normalizeEEGChannelName } from './montage-registry';
 
 interface ValidationResult {
   valid: boolean;
@@ -22,40 +23,8 @@ interface ValidationResult {
   };
 }
 
-// Channel name normalization
-const CHANNEL_ALIASES: Record<string, string> = {
-  'FP1': 'Fp1',
-  'FP2': 'Fp2',
-  'T3': 'T7',
-  'T4': 'T8',
-  'T5': 'P7',
-  'T6': 'P8',
-  'M1': 'A1',  // Mastoid = Auricular
-  'M2': 'A2',
-  'TP9': 'A1', // Sometimes ear references are labeled as TP9/TP10
-  'TP10': 'A2',
-};
-
-function normalizeChannelName(ch: string): string {
-  let normalized = ch.trim().replace(/\s+/g, '');
-
-  // Remove common prefixes (EEG, ECG, EMG, etc.)
-  normalized = normalized.replace(/^(EEG|ECG|EMG|EOG)/i, '');
-
-  // Remove common suffixes (reference notations)
-  normalized = normalized.replace(/-(LE|REF|AVG|A1|A2|CZ|M1|M2)$/i, '');
-
-  // Handle A2-A1 reference channel (represents both ear references)
-  if (normalized.match(/^A2-A1$/i)) {
-    // This is the combined reference - we'll treat it as having both A1 and A2
-    return 'A1'; // We'll handle A2 separately
-  }
-
-  // Apply aliases
-  normalized = CHANNEL_ALIASES[normalized] || normalized;
-
-  return normalized;
-}
+// Channel name normalization is centralized in the canonical montage registry.
+const normalizeChannelName = normalizeEEGChannelName;
 
 /**
  * Shared montage validation for EDF/BDF files.

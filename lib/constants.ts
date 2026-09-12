@@ -1,5 +1,7 @@
 // Application Constants
 
+import { getAllKnownEEGChannels, getMontageProfile } from './montage-registry';
+
 // File Upload
 export const MAX_UPLOAD_SIZE = 209715200; // 200 MB in bytes
 export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF', '.bdf', '.BDF', '.csv', '.CSV'];
@@ -8,50 +10,34 @@ export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF', '.bdf', '.BDF', '.csv', 
 export const EXPECTED_CHANNELS_19 = 19;
 export const EXPECTED_CHANNELS_21 = 21;
 export const EXPECTED_CHANNELS_24 = 24;  // 10-10 montage (common 24-channel setup)
+export const EXPECTED_CHANNELS_ACTICAP_64 = 64;
 
-export const MONTAGE_10_20_19CH = [
-  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-  'T7', 'C3', 'Cz', 'C4', 'T8',
-  'P7', 'P3', 'Pz', 'P4', 'P8',
-  'O1', 'O2'
-];
+export const MONTAGE_10_20_19CH = getMontageProfile('10-20-19').channels;
 
-export const MONTAGE_10_20_21CH = [
-  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-  'T7', 'C3', 'Cz', 'C4', 'T8',
-  'P7', 'P3', 'Pz', 'P4', 'P8',
-  'O1', 'O2',
-  'A1', 'A2'  // Ear references
-];
+export const MONTAGE_10_20_21CH = getMontageProfile('10-20-21').channels;
+
+export const MONTAGE_10_10_EXTENDED = getMontageProfile('10-10-extended').channels;
+
+export const MONTAGE_BRAINPRODUCTS_ACTICAP_64 = getMontageProfile('brainproducts-acticap-64').channels;
 
 // 10-10 system extended montage (24 channels - common clinical setup)
 // Includes the 19-channel 10-20 base plus additional 10-10 positions
 export const MONTAGE_10_10_24CH = [
-  // Standard 10-20 positions
-  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-  'T7', 'C3', 'Cz', 'C4', 'T8',
-  'P7', 'P3', 'Pz', 'P4', 'P8',
-  'O1', 'O2',
-  // Additional 10-10 positions (common extensions)
+  ...MONTAGE_10_20_19CH,
   'FC1', 'FC2', 'CP1', 'CP2', 'Oz'
 ];
 
 // Alternative 10-10 24-channel montage variations
 export const MONTAGE_10_10_24CH_ALT1 = [
-  // With frontocentral and centroparietal positions
-  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+  ...MONTAGE_10_20_19CH.slice(0, 7),
   'FC5', 'FC1', 'FC2', 'FC6',
-  'T7', 'C3', 'Cz', 'C4', 'T8',
+  ...MONTAGE_10_20_19CH.slice(7, 12),
   'CP5', 'CP1', 'CP2', 'CP6',
-  'P7', 'P3', 'Pz', 'P4', 'P8',
-  'O1', 'O2'
+  ...MONTAGE_10_20_19CH.slice(12),
 ];
 
 export const MONTAGE_10_10_24CH_ALT2 = [
-  // With ear references and Oz
-  'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-  'T7', 'C3', 'Cz', 'C4', 'T8',
-  'P7', 'P3', 'Pz', 'P4', 'P8',
+  ...MONTAGE_10_20_19CH.slice(0, 17),
   'O1', 'Oz', 'O2',
   'A1', 'A2',
   'FC1', 'FC2'
@@ -61,22 +47,12 @@ export const MONTAGE_10_10_24CH_ALT2 = [
 export const MONTAGE_10_20 = MONTAGE_10_20_19CH;
 
 // Additional standard channels (10-10 system, old nomenclature, etc.)
-export const ADDITIONAL_EEG_CHANNELS = [
-  'T3', 'T4', 'T5', 'T6',  // Old nomenclature for T7, T8, P7, P8
-  'Fpz', 'AFz', 'FCz', 'CPz', 'POz', 'Oz', 'Iz',  // Midline 10-10
-  'AF3', 'AF4', 'AF7', 'AF8',  // Anterior frontal
-  'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',  // Frontocentral
-  'FT7', 'FT8', 'FT9', 'FT10',  // Frontotemporal
-  'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6',  // Centroparietal
-  'TP7', 'TP8', 'TP9', 'TP10',  // Temporoparietal
-  'PO3', 'PO4', 'PO7', 'PO8',  // Parieto-occipital
-];
+export const ADDITIONAL_EEG_CHANNELS = MONTAGE_10_10_EXTENDED.filter(
+  (channel) => !MONTAGE_10_20_21CH.includes(channel)
+);
 
-// All valid EEG channels (combined standard montages)
-export const ALL_EEG_CHANNELS = [
-  ...MONTAGE_10_20_21CH,
-  ...ADDITIONAL_EEG_CHANNELS
-];
+// All valid EEG channels (combined canonical montage registry)
+export const ALL_EEG_CHANNELS = getAllKnownEEGChannels();
 
 // Auxiliary channels that should be processed but not as EEG
 export const AUX_CHANNELS = {

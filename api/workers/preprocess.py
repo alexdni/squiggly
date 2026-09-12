@@ -16,6 +16,7 @@ from typing import Dict, List, Tuple, Optional
 import logging
 import os
 from csv_reader import load_csv_as_raw
+from montage_registry import get_all_known_eeg_channels, get_montage_channels, normalize_channel_name
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,36 +71,15 @@ class EEGPreprocessor:
             'eeg': 150e-6,  # 150 μV
         }
 
-        # Standard 10-20 channel names (base 19 channels)
-        self.expected_channels_10_20 = [
-            'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-            'T7', 'C3', 'Cz', 'C4', 'T8',
-            'P7', 'P3', 'Pz', 'P4', 'P8',
-            'O1', 'O2'
-        ]
-
-        # Extended 10-10 channels (additional positions beyond 10-20)
+        # Canonical montage/channel definitions are loaded from the shared
+        # registry used by the TypeScript validation layer.
+        self.expected_channels_10_20 = get_montage_channels('10-20-19')
         self.additional_10_10_channels = [
-            # Midline
-            'Fpz', 'AFz', 'FCz', 'CPz', 'POz', 'Oz', 'Iz',
-            # Anterior frontal
-            'AF3', 'AF4', 'AF7', 'AF8',
-            # Frontocentral
-            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
-            # Frontotemporal
-            'FT7', 'FT8', 'FT9', 'FT10',
-            # Centroparietal
-            'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6',
-            # Temporoparietal
-            'TP7', 'TP8', 'TP9', 'TP10',
-            # Parieto-occipital
-            'PO3', 'PO4', 'PO7', 'PO8',
-            # Ear references
-            'A1', 'A2',
+            ch for ch in get_montage_channels('10-10-extended')
+            if ch not in get_montage_channels('10-20-21')
         ]
-
-        # All valid EEG channels (combined)
-        self.all_valid_channels = self.expected_channels_10_20 + self.additional_10_10_channels
+        self.acticap_64_channels = get_montage_channels('brainproducts-acticap-64')
+        self.all_valid_channels = get_all_known_eeg_channels()
 
         # Legacy: expected_channels for backward compatibility
         self.expected_channels = self.expected_channels_10_20
@@ -212,36 +192,11 @@ class EEGPreprocessor:
         return raw
 
     def _standardize_channel_names(self, raw: mne.io.Raw) -> mne.io.Raw:
-        """Standardize channel names to match 10-20 convention"""
+        """Standardize channel names using the canonical montage registry."""
 
-        # Common aliases
-        channel_aliases = {
-            'FP1': 'Fp1', 'FP2': 'Fp2',
-            'T3': 'T7', 'T4': 'T8', 'T5': 'P7', 'T6': 'P8',
-            'M1': 'A1', 'M2': 'A2',
-            'TP9': 'A1', 'TP10': 'A2'
-        }
-
-        # Remove common prefixes and suffixes
         mapping = {}
         for ch_name in raw.ch_names:
-            # Strip whitespace
-            clean_name = ch_name.strip()
-
-            # Remove common prefixes
-            for prefix in ['EEG ', 'ECG ', 'EMG ', 'EOG ']:
-                if clean_name.startswith(prefix):
-                    clean_name = clean_name[len(prefix):]
-
-            # Remove reference suffixes
-            for suffix in ['-LE', '-REF', '-AVG', '-A1', '-A2', '-CZ', '-M1', '-M2']:
-                if clean_name.endswith(suffix):
-                    clean_name = clean_name[:clean_name.index(suffix)]
-
-            # Apply aliases
-            if clean_name in channel_aliases:
-                clean_name = channel_aliases[clean_name]
-
+            clean_name = normalize_channel_name(ch_name)
             if clean_name != ch_name:
                 mapping[ch_name] = clean_name
 
@@ -252,9 +207,10 @@ class EEGPreprocessor:
         return raw
 
     def _select_eeg_channels(self, raw: mne.io.Raw) -> mne.io.Raw:
-        """Select only EEG channels that match 10-20 or 10-10 montage"""
+        """Select EEG channels from the canonical montage registry."""
 
-        # First, find all valid EEG channels (both 10-20 and 10-10)
+        # First, find all valid EEG channels from the canonical registry
+        # (10-20, Squiggly's existing 10-10 extension, and actiCAP-64).
         available_channels = [ch for ch in raw.ch_names if ch in self.all_valid_channels]
 
         # Check if we have at least the base 10-20 channels
@@ -269,7 +225,11 @@ class EEGPreprocessor:
         if additional_present:
             logger.info(f"Found {len(additional_present)} additional 10-10 channels: {additional_present}")
 
-        logger.info(f"Selecting {len(available_channels)} EEG channels ({len(base_channels_present)} base + {len(additional_present)} extended)")
+        acticap_present = [ch for ch in raw.ch_names if ch in self.acticap_64_channels]
+        if len(acticap_present) >= 60:
+            logger.info(f"Detected actiCAP-like channel coverage: {len(acticap_present)}/64 channels")
+
+        logger.info(f"Selecting {len(available_channels)} EEG channels from canonical registry ({len(base_channels_present)} base 10-20 + {len(additional_present)} legacy extended)")
         raw.pick_channels(available_channels)
 
         return raw

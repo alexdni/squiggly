@@ -9,39 +9,10 @@ import json
 import mne
 from typing import Dict, List, Tuple, Optional
 
-# Standard 10-20 montage channels
-EXPECTED_CHANNELS = [
-    'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-    'T7', 'C3', 'Cz', 'C4', 'T8',
-    'P7', 'P3', 'Pz', 'P4', 'P8',
-    'O1', 'O2'
-]
+from montage_registry import get_all_known_eeg_channels, get_montage_channels, normalize_channel_name
 
-# Extended 10-10 channels also accepted
-EXTENDED_CHANNELS = [
-    'Fpz', 'AFz', 'FCz', 'CPz', 'POz', 'Oz', 'Iz',
-    'AF3', 'AF4', 'AF7', 'AF8',
-    'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
-    'FT7', 'FT8', 'FT9', 'FT10',
-    'CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6',
-    'TP7', 'TP8', 'TP9', 'TP10',
-    'PO3', 'PO4', 'PO7', 'PO8',
-    'A1', 'A2',
-]
-
-ALL_VALID_CHANNELS = set(EXPECTED_CHANNELS + EXTENDED_CHANNELS)
-
-# Allowed variations in channel naming
-CHANNEL_ALIASES = {
-    'FP1': 'Fp1', 'FP2': 'Fp2',
-    'T3': 'T7', 'T4': 'T8',
-    'T5': 'P7', 'T6': 'P8',
-}
-
-def normalize_channel_name(ch: str) -> str:
-    """Normalize channel name to standard format"""
-    ch = ch.strip().replace(' ', '')
-    return CHANNEL_ALIASES.get(ch, ch)
+EXPECTED_CHANNELS = get_montage_channels('10-20-19')
+ALL_VALID_CHANNELS = set(get_all_known_eeg_channels())
 
 def validate_edf_montage(file_path: str) -> Dict:
     """

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "channelAliases": {
+    "FP1": "Fp1",
+    "FP2": "Fp2",
+    "FPZ": "Fpz",
+    "AFZ": "AFz",
+    "FCZ": "FCz",
+    "CPZ": "CPz",
+    "POZ": "POz",
+    "OZ": "Oz",
+    "IZ": "Iz",
+    "T3": "T7",
+    "T4": "T8",
+    "T5": "P7",
+    "T6": "P8",
+    "M1": "A1",
+    "M2": "A2",
+    "TP9": "A1",
+    "TP10": "A2"
+  },
+  "montages": {
+    "10-20-19": {
+      "label": "Standard 10-20 19-channel EEG",
+      "channels": ["Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz", "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2"]
+    },
+    "10-20-21": {
+      "label": "Standard 10-20 21-channel EEG with ear references",
+      "extends": "10-20-19",
+      "channels": ["Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz", "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2", "A1", "A2"]
+    },
+    "10-10-extended": {
+      "label": "Existing Squiggly extended 10-10 support",
+      "base": "10-20-21",
+      "additionalChannels": ["T3", "T4", "T5", "T6", "Fpz", "AFz", "FCz", "CPz", "POz", "Oz", "Iz", "AF3", "AF4", "AF7", "AF8", "FC1", "FC2", "FC3", "FC4", "FC5", "FC6", "FT7", "FT8", "FT9", "FT10", "CP1", "CP2", "CP3", "CP4", "CP5", "CP6", "TP7", "TP8", "TP9", "TP10", "PO3", "PO4", "PO7", "PO8"]
+    },
+    "brainproducts-acticap-64": {
+      "label": "Brain Products actiCAP 64-channel 10-10 layout",
+      "vendor": "Brain Products",
+      "capModel": "actiCAP",
+      "channels": ["Fp1", "Fpz", "Fp2", "AF7", "AF3", "AFz", "AF4", "AF8", "F7", "F5", "F3", "F1", "Fz", "F2", "F4", "F6", "F8", "FT7", "FC5", "FC3", "FC1", "FCz", "FC2", "FC4", "FC6", "FT8", "T7", "C5", "C3", "C1", "Cz", "C2", "C4", "C6", "T8", "TP9", "TP7", "CP5", "CP3", "CP1", "CPz", "CP2", "CP4", "CP6", "TP8", "TP10", "P7", "P5", "P3", "P1", "Pz", "P2", "P4", "P6", "P8", "PO7", "PO3", "POz", "PO4", "PO8", "O1", "Oz", "O2", "Iz"]
+    }
+  }
+}
