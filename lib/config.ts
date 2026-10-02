@@ -28,12 +28,6 @@ export interface AppConfig {
     mode: 'supabase' | 'local';
     adminEmail?: string;
   };
-  worker: {
-    mode: 'mock' | 'http' | 'queue';
-    serviceUrl?: string;
-    authToken?: string;
-    timeoutMs: number;
-  };
   features: {
     ica: boolean;
     ruleEngine: boolean;
@@ -88,12 +82,6 @@ export function getConfig(): AppConfig {
     auth: {
       mode: (process.env.AUTH_MODE as 'supabase' | 'local') || 'supabase',
       adminEmail: process.env.ADMIN_EMAIL,
-    },
-    worker: {
-      mode: (process.env.WORKER_MODE as 'mock' | 'http' | 'queue') || 'mock',
-      serviceUrl: process.env.WORKER_SERVICE_URL,
-      authToken: process.env.WORKER_AUTH_TOKEN,
-      timeoutMs: parseNumber(process.env.ANALYSIS_TIMEOUT_MS, 180000),
     },
     features: {
       ica: parseBoolean(process.env.ENABLE_ICA, true),

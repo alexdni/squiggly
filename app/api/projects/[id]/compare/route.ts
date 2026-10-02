@@ -135,9 +135,14 @@ export async function GET(
     return NextResponse.json({
       success: true,
       comparison,
+      // Legacy PNG URLs (Python-era analyses); new analyses render from `results`.
       visuals: {
         a: visualsA,
         b: visualsB,
+      },
+      results: {
+        a: analysisA.results ?? null,
+        b: analysisB.results ?? null,
       },
     });
   } catch (error: any) {
@@ -200,8 +205,16 @@ function computeComparison(
   // Compute coherence deltas
   const coherenceDeltas: Record<string, Record<string, number>> = {};
 
-  const coherenceA = (resultsA as any).coherence?.eo || (resultsA as any).coherence?.ec || [];
-  const coherenceB = (resultsB as any).coherence?.eo || (resultsB as any).coherence?.ec || [];
+  // wPLI per channel pair, preferring EO like the band-power deltas above. `coherence` is the
+  // pre-wPLI field some early analyses carried.
+  const pairsOf = (r: any): any[] =>
+    r?.connectivity?.eo?.pair_data ||
+    r?.connectivity?.ec?.pair_data ||
+    r?.coherence?.eo ||
+    r?.coherence?.ec ||
+    [];
+  const coherenceA = pairsOf(resultsA);
+  const coherenceB = pairsOf(resultsB);
 
   // Build a map for easy lookup
   const coherenceMap: Record<string, any> = {};
@@ -223,7 +236,10 @@ function computeComparison(
     const a = coherenceMap[pairKey].a || {};
     const b = coherenceMap[pairKey].b || {};
 
-    bands.forEach((band) => {
+    const pairBands = Object.keys({ ...a, ...b }).filter(
+      (k) => !['ch1', 'ch2', 'type', 'region'].includes(k)
+    );
+    pairBands.forEach((band) => {
       const cohA = a[band] || 0;
       const cohB = b[band] || 0;
       coherenceDeltas[pairKey][band] = cohB - cohA;

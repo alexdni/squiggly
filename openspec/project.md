@@ -16,28 +16,22 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 - Next.js 14+ (App Router, React Server Components)
 - TypeScript (strict mode)
 - Tailwind CSS (custom neuro theme with accessible color palettes)
-- Plotly.js (interactive charts: APF, ratios, reactivity)
-- WebGL canvas (spectrograms)
+- Chart.js (bar/line charts), Canvas (topomaps, spectrograms), SVG (connectivity graphs) —
+  all visuals rendered client-side from the results JSON
 
 **Backend:**
-- Next.js API Routes (orchestration layer)
-- Python 3.11+ serverless functions (Vercel runtime)
-- Supabase (Postgres, Storage, Auth, Queue)
-
-**Python Libraries:**
-- MNE (EEG processing, ICA, topomaps)
-- NumPy, SciPy (signal processing, filtering, PSD, coherence)
-- pandas (data manipulation)
-- antropy (Lempel-Ziv Complexity)
-- scikit-learn (ICA, utilities)
-- matplotlib, Pillow (PNG generation)
-- ReportLab or WeasyPrint (PDF export)
+- Next.js API Routes (orchestration and analysis)
+- Server-side analysis engine in Node.js (`lib/server/eeg`): runs in a `worker_threads` thread
+  after the request returns (`waitUntil` on Vercel)
+- `@divergentneuro/biofeedback-core` (private, server-only): artifact pipeline — channel QC,
+  zero-phase filtering, transient repair, ASR, extended-Infomax ICA + IC classification, adaptive
+  epoch rejection
+- Supabase (Postgres, Storage, Auth) or Docker mode (PostgreSQL + local storage)
 
 **Tooling:**
 - OpenSpec (spec-driven development)
 - Claude Code 4.5 (AI-assisted implementation)
 - Vitest (TypeScript unit tests)
-- pytest (Python unit tests)
 - Playwright (E2E tests)
 - Sentry (error tracking)
 - Vercel (deployment)
@@ -53,35 +47,33 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 - Prefer functional components with hooks over class components
 - Explicit return types for all exported functions
 
-**Python:**
-- Black formatter (88-char line length)
-- isort for import ordering
-- Type hints for all function signatures (PEP 484)
-- Naming: snake_case for functions/variables, PascalCase for classes
-- Docstrings for all public functions (Google style)
-
 **File Organization:**
 - Frontend: `/app` (Next.js App Router pages), `/components` (reusable UI), `/lib` (utilities)
-- Backend: `/api/workers` (Python serverless functions), `/api/routes` (Next.js API routes)
-- Tests: `/__tests__` (TypeScript), `/tests` (Python), `/e2e` (Playwright)
+- Backend: `/app/api` (Next.js API routes), `/lib/server` (server-only analysis code; never
+  imported by client components)
+- Tests: `__tests__/` next to the code (Vitest), `/e2e` (Playwright)
 
 ### Architecture Patterns
 
-**Serverless Python Workers:**
-- Each major processing step (preprocess, extract_features, generate_visuals, evaluate_rules) is a separate serverless function
-- Workers are stateless; intermediate data is stored in Supabase Storage or DB JSONB columns
-- Jobs are orchestrated via Supabase Queue with retry logic (3 attempts, exponential backoff)
+**Server-Side Analysis Jobs:**
+- `/process` authorizes, sets `processing`, responds 202, then runs the job after the response
+  (`waitUntil` on Vercel; the long-running server in Docker)
+- CPU work runs in a `worker_threads` thread bundled to `.eeg-worker/worker.mjs`, one job at a time
+  per server process; jobs write `completed`/`failed` themselves with a service-role DB client
+- The proprietary engine (`@divergentneuro/biofeedback-core`) is server-only; a post-build check
+  fails if it reaches browser assets
 
 **Data Flow:**
-1. Client uploads EDF → Supabase Storage
-2. API route validates montage → inserts `recordings` row → enqueues `analyses` job
-3. Python workers pull from queue → process → persist results to Storage + DB
-4. Client polls `GET /api/analyses/:id` for status → fetches results when complete
+1. Client uploads EDF/BDF/CSV → Storage
+2. API route validates montage → inserts `recordings` and `analyses` rows
+3. Client starts the analysis → server cleans the recording, extracts features, stores the cleaned
+   file, writes `analyses.results`
+4. Client polls `GET /api/analyses/:id` and renders visuals from the JSON
 
 **Storage Strategy:**
-- Large binary files (EDFs, PNGs) → Supabase Storage with project-scoped buckets
-- Structured features (PSD, coherence, LZC, etc.) → Postgres JSONB columns
-- Visual assets pre-rendered server-side to ensure consistency in PDF exports
+- Large binary files (recordings, cleaned exports) → Storage with project-scoped buckets
+- Structured features (band power, wPLI, LZC, spectrogram summaries, etc.) → Postgres JSONB
+- Visuals are rendered client-side; Python-era analyses keep their stored PNGs
 
 **Access Control:**
 - Row-level security (RLS) in Supabase for project-scoped data
@@ -92,7 +84,8 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 
 **Unit Tests:**
 - TypeScript: Vitest for utilities, API route logic, UI components (>70% coverage target)
-- Python: pytest for preprocessing, feature extraction, rule evaluation (>80% coverage target)
+- Feature parity: TS feature code is tested against fixtures generated by the former Python
+  implementation (`lib/server/eeg/__fixtures__`)
 - Critical validations: PSD sums to 1.0, ICA reduces artifact power without over-suppressing signal
 
 **Integration Tests:**
@@ -162,7 +155,7 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 - Vercel free tier limits: 100GB bandwidth, 100 hours serverless execution/month
 - Vercel function timeout: 10s (Hobby), 60s (Pro), 900s (Enterprise) → require Pro or higher for long EDFs
 - EEG file size limit: 200MB (configurable; supports EDF, BDF, and CSV formats)
-- Python serverless payload limit: 250MB (sufficient for 10-min EDF ~5MB compressed)
+- Analysis functions: 300 s / 3 GB on Vercel; recordings are decimated to ~250 Hz before cleaning
 
 **Regulatory:**
 - **Not a medical device:** Explicitly disclaim clinical use in UI, PDF, Terms of Service
@@ -190,13 +183,11 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 **Third-Party APIs:**
 - Google OAuth (user authentication)
 
-**Python Libraries:**
-- MNE: BSD-3-Clause license, maintained by MNE-Python community
-- antropy: BSD-3-Clause, maintained by Raphael Vallat
-- SciPy, NumPy, pandas, scikit-learn: BSD/MIT licenses, stable
+**Analysis Engine:**
+- `@divergentneuro/biofeedback-core` (proprietary, GitHub Packages; install needs `NODE_AUTH_TOKEN`)
 
 **Frontend Libraries:**
-- Plotly.js: MIT license
+- Chart.js: MIT license
 - Tailwind CSS: MIT license
 
 **Monitoring/Logging:**

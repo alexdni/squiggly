@@ -5,6 +5,7 @@ import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission, canAccessRecording } from '@/lib/rbac';
 import { validateEDFMontage, validateBDFMontage } from '@/lib/edf-validator';
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
+import { detectTheraqPhase } from '@/lib/theraq';
 
 interface RecordingMetadata {
   duration_seconds: number;
@@ -64,6 +65,18 @@ export async function POST(request: Request) {
 
     if (!hasPermission) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // The path must be one the upload route issued for this project ("<projectId>/<name>"):
+    // storage runs with the service role, so a foreign or "../" path would read (and on failed
+    // validation delete) files outside the project.
+    if (
+      typeof filePath !== 'string' ||
+      !filePath.startsWith(`${projectId}/`) ||
+      filePath.split('/').some((seg: string) => seg === '..' || seg === '') ||
+      filePath.includes('\\')
+    ) {
+      return NextResponse.json({ error: 'Invalid file path' }, { status: 400 });
     }
 
     const db = getDatabaseClient();
@@ -219,6 +232,10 @@ export async function POST(request: Request) {
       ec_end: finalEcEnd ?? null,
       uploaded_by: user.id,
     };
+    // TheraQ phase role from the filename (e.g. "..._EO1.edf"); only set when recognised so
+    // databases without the TheraQ migration keep accepting uploads.
+    const phase = detectTheraqPhase(filename);
+    if (phase) recordingData.phase = phase;
 
     const { data: recording, error: insertError } = await db
       .from('recordings')

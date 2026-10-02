@@ -7,8 +7,8 @@ Rapid, transparent, open-source tool for analyzing 19-channel EEG recordings wit
 
 ## Features
 
-- **File Support**: EDF and CSV file upload (19-channel 10-20 montage)
-- **Preprocessing Pipeline**: Configurable filtering, ICA artifact removal, and epoching
+- **File Support**: EDF, BDF and CSV upload (10-20 / 10-10 montages)
+- **Artifact Pipeline**: Channel QC and interpolation, zero-phase filtering, transient repair, ASR, extended-Infomax ICA with component classification (or blink regression), adaptive epoch rejection — selectable profiles plus a manual-annotation mode
 - **Multi-Domain Analysis**:
   - **Power Spectral**: Absolute/relative band power, alpha peak frequency
   - **Connectivity**: Weighted Phase-Lag Index (wPLI), network metrics
@@ -23,7 +23,10 @@ Rapid, transparent, open-source tool for analyzing 19-channel EEG recordings wit
 
 ## Architecture
 
-Squiggly supports two deployment modes:
+All signal processing runs **server-side in Node.js** inside the Next.js server — there is no
+separate worker service. `POST /api/analyses/[id]/process` returns immediately and runs the job in a
+`worker_threads` thread; the browser polls for completion and draws every visual (topomaps,
+connectivity graphs, spectrograms) from the results JSON.
 
 ### Docker Mode (Self-Hosted)
 All-in-one container for local deployment:
@@ -31,14 +34,13 @@ All-in-one container for local deployment:
 ```
 ┌─────────────────────────────────────────────────────┐
 │                 Docker Container                     │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
-│  │   Next.js   │  │   Python    │  │ PostgreSQL  │  │
-│  │  Frontend   │◄─┤   Worker    │  │  Database   │  │
-│  │  (Port 3000)│  │ (Port 8000) │  │ (Port 5432) │  │
-│  └─────────────┘  └─────────────┘  └─────────────┘  │
-│         │                │                │          │
-│         └────────────────┼────────────────┘          │
-│                          ▼                           │
+│  ┌──────────────────────────────┐  ┌─────────────┐  │
+│  │ Next.js (UI + API routes)    │  │ PostgreSQL  │  │
+│  │  └ analysis worker thread    │  │  Database   │  │
+│  │   (Port 3000)                │  │ (Port 5432) │  │
+│  └──────────────────────────────┘  └─────────────┘  │
+│                  │                        │          │
+│                  ▼                        ▼          │
 │              ┌─────────────────────┐                 │
 │              │   Local Storage     │                 │
 │              │   /data/storage/    │                 │
@@ -46,19 +48,32 @@ All-in-one container for local deployment:
 └─────────────────────────────────────────────────────┘
 ```
 
-### Cloud Mode (Vercel + Railway + Supabase)
+### Cloud Mode (Vercel + Supabase)
 Distributed architecture for multi-user deployment:
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│    Vercel    │     │   Railway    │     │   Supabase   │
-│   Next.js    │────►│    Python    │     │  PostgreSQL  │
-│   Frontend   │     │    Worker    │     │   Storage    │
-└──────────────┘     └──────────────┘     └──────────────┘
-       │                    │                    │
-       └────────────────────┴────────────────────┘
-                     Supabase Auth (Google OAuth)
+┌──────────────────────────┐     ┌──────────────┐
+│          Vercel          │     │   Supabase   │
+│  Next.js UI + API routes │────►│  PostgreSQL  │
+│  analysis in functions   │     │   Storage    │
+└──────────────────────────┘     └──────────────┘
+              Supabase Auth (Google OAuth)
 ```
+
+### Analysis engine (private dependency)
+
+Artifact cleaning uses `@divergentneuro/biofeedback-core`, a **private** package on GitHub
+Packages. It is loaded only on the server and is never sent to the browser (the build fails if
+it reaches a client bundle — see `scripts/check-client-bundle.mjs`). To install dependencies you
+need a GitHub token with `read:packages` access to the DivergentNeuro organization:
+
+```bash
+export NODE_AUTH_TOKEN=ghp_your_token   # used by .npmrc; never commit it
+npm ci
+```
+
+Without the token the rest of the app installs, but the build stops with a message explaining
+that the analysis engine is missing.
 
 ## Tech Stack
 
@@ -69,8 +84,9 @@ Distributed architecture for multi-user deployment:
 | Database | PostgreSQL (embedded) | Supabase PostgreSQL |
 | Storage | Local filesystem | Supabase Storage |
 | Auth | Session-based login | Google OAuth |
-| Worker | Python (embedded) | Railway container |
-| Signal Processing | MNE, NumPy, SciPy, antropy | Same |
+| Analysis | Node.js worker thread in the Next.js server | Vercel Functions (Node.js) |
+| Signal Processing | TypeScript (biofeedback-core artifact pipeline + `lib/server/eeg`) | Same |
+| Visuals | Canvas / SVG / Chart.js in the browser | Same |
 
 ---
 
@@ -88,7 +104,6 @@ Distributed architecture for multi-user deployment:
    ```bash
    git clone https://github.com/alexdni/squiggly.git
    cd squiggly
-   git checkout docker
    ```
 
 2. **Configure environment**
@@ -105,9 +120,10 @@ Distributed architecture for multi-user deployment:
    OPENAI_API_KEY=sk-your-openai-api-key
    ```
 
-3. **Build and start**
+3. **Build and start** (the token is passed as a BuildKit secret and never stored in the image)
    ```bash
-   docker compose up -d
+   export NODE_AUTH_TOKEN=ghp_your_token
+   docker compose up -d --build
    ```
 
 4. **Access the application**
@@ -178,7 +194,7 @@ docker logs squiggly
 
 **Analysis fails:**
 ```bash
-docker exec squiggly cat /var/log/supervisor/python-worker-error.log
+docker exec squiggly cat /var/log/supervisor/nextjs.log   # look for [analysis <id>] lines
 ```
 
 **Reset everything:**
@@ -189,46 +205,37 @@ docker compose up -d
 
 ---
 
-## Cloud Deployment (Vercel + Railway + Supabase)
+## Cloud Deployment (Vercel + Supabase)
 
-For multi-user deployment with Google OAuth authentication.
+For multi-user deployment with Google OAuth authentication. See [DEPLOYMENT.md](DEPLOYMENT.md)
+for details.
 
 ### Prerequisites
 
 - Supabase account
-- Vercel account
-- Railway account
+- Vercel account (Pro recommended: analyses run up to 300 s with 3 GB memory)
 - Google Cloud project (for OAuth)
+- GitHub token with `read:packages` for the analysis engine
 
 ### Setup Instructions
 
 #### 1. Supabase Setup
 
 1. Create a new project at [supabase.com](https://supabase.com)
-2. Run the schema SQL (SQL Editor → paste contents of `supabase/schema.sql`)
+2. Run the schema SQL (SQL Editor → paste contents of `supabase/schema.sql`), then the files in
+   `supabase/migrations/`
 3. Create Storage buckets: `recordings`, `visuals`, `exports` (private)
 4. Enable Google OAuth (Authentication → Providers → Google)
 
-#### 2. Deploy Python Worker to Railway
-
-1. Create new project in [Railway](https://railway.app)
-2. Connect to your GitHub repository
-3. Set root directory: `api/workers`
-4. Set environment variables:
-   - `WORKER_AUTH_TOKEN`: Generate a secure random token
-5. Copy the generated Railway URL
-
-#### 3. Deploy Frontend to Vercel
+#### 2. Deploy to Vercel
 
 1. Import project in [Vercel](https://vercel.com)
 2. Set environment variables:
    ```env
    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-   WORKER_MODE=http
-   WORKER_SERVICE_URL=https://your-railway-app.railway.app
-   WORKER_AUTH_TOKEN=your-secure-token
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key   # analyses write results with it
+   NODE_AUTH_TOKEN=ghp_your_token                     # build-time: installs the analysis engine
    OPENAI_API_KEY=sk-your-key  # Optional
    ```
 3. Deploy
@@ -248,16 +255,11 @@ squiggly/
 │   ├── dashboard/                # Dashboard page
 │   ├── login/                    # Login page
 │   └── projects/                 # Project pages
-├── api/workers/                  # Python signal processing
-│   ├── analyze_eeg.py            # Main analysis orchestrator
-│   ├── preprocess.py             # Signal preprocessing
-│   ├── extract_features.py       # Feature extraction
-│   ├── generate_visuals.py       # Visualization generation
-│   ├── local_database.py         # Docker database functions
-│   ├── local_storage.py          # Docker storage functions
-│   └── server.py                 # Flask HTTP server
 ├── components/                   # React components
+│   └── visuals/                  # Client-rendered topomaps, connectivity, spectrograms
 ├── lib/                          # Shared utilities
+│   ├── server/eeg/               # Server-only analysis: IO, pipeline, features, job runner
+│   ├── server/theraq/            # TheraQ four-phase metrics engine
 │   ├── auth/                     # Authentication abstraction
 │   ├── db/                       # Database abstraction
 │   ├── storage/                  # Storage abstraction
@@ -274,16 +276,17 @@ squiggly/
 Projects organize recordings for a subject/client.
 
 ### 2. Upload EEG Recording
-- Supported formats: EDF (European Data Format), CSV
-- 19-channel 10-20 montage with linked-ears reference
+- Supported formats: EDF, BDF, CSV
+- 10-20 / 10-10 channel labels (legacy T3/T4/T5/T6 accepted)
 - Auto-detection of EO/EC segments from annotations or filename
 
 ### 3. Analysis
-The system automatically:
-- Preprocesses data (filtering, ICA artifact removal)
+Choose an artifact profile (full, conservative, aggressive, rejection-only, legacy) or manual
+mode, then start the analysis. The server:
+- Cleans the recording (QC, filtering, ASR, ICA, epoch rejection)
 - Extracts features across all domains
-- Generates visualizations
 - Evaluates risk patterns
+- Stores the cleaned recording in its original format for download
 
 ### 4. Review Results
 Interactive dashboard with:
@@ -309,7 +312,7 @@ Download PDF reports or raw JSON data.
 
 | Feature | Docker | Cloud |
 |---------|--------|-------|
-| Setup complexity | Low (single command) | Medium (3 services) |
+| Setup complexity | Low (single command) | Medium (2 services) |
 | Cost | Free (self-hosted) | ~$35-60/month |
 | Users | Single user/team | Multi-user |
 | Authentication | Email/password | Google OAuth |
@@ -341,6 +344,6 @@ MIT License - see LICENSE file for details.
 
 ## Acknowledgments
 
-- Built with [MNE-Python](https://mne.tools/) for EEG signal processing
+- Artifact pipeline from DivergentNeuro `biofeedback-core`; feature definitions originally implemented with [MNE-Python](https://mne.tools/)
 - UI components from [shadcn/ui](https://ui.shadcn.com/)
 - Inspired by open-source QEEG research tools

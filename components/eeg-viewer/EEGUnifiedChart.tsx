@@ -36,7 +36,8 @@ const channelLabelPlugin: Plugin<'line'> = {
     const meta = (chart.options.plugins as any)?.eegChannelLabels as
       | { labels: string[]; offsets: number[] }
       | undefined;
-    if (!meta) return;
+    // Registered globally, so it also runs on other charts, which get an empty options object.
+    if (!meta || !Array.isArray(meta.labels) || !Array.isArray(meta.offsets)) return;
 
     const { ctx } = chart;
     const yScale = chart.scales.y;

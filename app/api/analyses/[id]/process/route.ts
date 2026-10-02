@@ -1,393 +1,132 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
-import { submitAnalysisJob, getWorkerConfig } from '@/lib/worker-client';
+import { checkProjectPermission } from '@/lib/rbac';
+import { runInBackground } from '@/lib/server/background';
+import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
+import { runAnalysisJob } from '@/lib/server/eeg/runAnalysisJob';
+
+// The analysis itself runs after the response (see runInBackground); this budget covers it.
+export const maxDuration = 300;
 
 /**
- * Start EEG analysis processing
+ * Start EEG analysis.
  *
- * Supports two modes:
- * 1. Mock mode (development): Generates fake results immediately
- * 2. Worker mode (production): Submits job to Python worker service
- *
- * Set WORKER_MODE=http and WORKER_SERVICE_URL in .env to use real workers
+ * Validates access, marks the analysis `processing`, and runs the server-side pipeline in the
+ * background. Responds 202 immediately; the client polls GET /api/analyses/[id] for the outcome.
  */
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function POST(_request: Request, { params }: { params: { id: string } }) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const db = getDatabaseClient();
+
+  const { data: analysis, error: fetchError } = await db
+    .from('analyses')
+    .select('*')
+    .eq('id', params.id)
+    .single();
+  if (fetchError || !analysis) {
+    return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
+  }
+  const analysisData = analysis as any;
+
+  const { data: recording, error: recordingError } = await db
+    .from('recordings')
+    .select('id, project_id, file_path, duration_seconds, eo_start, eo_end, ec_start, ec_end')
+    .eq('id', analysisData.recording_id)
+    .single();
+  if (recordingError || !recording) {
+    return NextResponse.json({ error: 'Recording not found' }, { status: 400 });
+  }
+  const rec = recording as any;
+  if (!rec.file_path) {
+    return NextResponse.json({ error: 'Recording file path not found' }, { status: 400 });
+  }
+
+  if (!(await checkProjectPermission(rec.project_id, user.id, 'analysis:create'))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // A run that has been `processing` this long died with its server instance; allow a retry.
+  const STALE_MS = 10 * 60 * 1000;
+  const lastStartMs = analysisData.started_at ? Date.parse(analysisData.started_at) : 0;
+  if (analysisData.status === 'processing' && Date.now() - lastStartMs < STALE_MS) {
+    return NextResponse.json({ error: 'Analysis is already running' }, { status: 409 });
+  }
+
+  // Segments; with no labels the whole recording is analyzed as EO (baseline).
+  const segments: { eo?: { start: number; end: number }; ec?: { start: number; end: number } } = {};
+  if (rec.eo_start != null && rec.eo_end != null) {
+    segments.eo = { start: Number(rec.eo_start), end: Number(rec.eo_end) };
+  }
+  if (rec.ec_start != null && rec.ec_end != null) {
+    segments.ec = { start: Number(rec.ec_start), end: Number(rec.ec_end) };
+  }
+  if (!segments.eo && !segments.ec) {
+    segments.eo = { start: 0, end: Number(rec.duration_seconds) || Number.MAX_SAFE_INTEGER };
+  }
+
+  const preprocessing = analysisData.config?.preprocessing ?? {};
+  let manualArtifacts: { start: number; end: number }[] = [];
+  if (preprocessing.artifact_mode === 'manual') {
+    const { data: annotations } = await db
+      .from('eeg_annotations')
+      .select('start_time, end_time')
+      .eq('recording_id', analysisData.recording_id)
+      .eq('type', 'artifact')
+      .order('start_time')
+      .execute();
+    manualArtifacts = ((annotations as any[]) ?? []).map((a) => ({
+      start: Number(a.start_time),
+      end: Number(a.end_time),
+    }));
+  }
+
+  // The job writes its outcome with the service role; fail now rather than leave the row stuck.
   try {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const db = getDatabaseClient();
-
-    // Fetch analysis
-    const { data: analysis, error: fetchError } = await db
-      .from('analyses')
-      .select('*')
-      .eq('id', params.id)
-      .single();
-
-    if (fetchError || !analysis) {
-      return NextResponse.json(
-        { error: 'Analysis not found' },
-        { status: 404 }
-      );
-    }
-
-    const analysisData = analysis as any;
-
-    // Fetch recording
-    const { data: recording, error: recordingError } = await db
-      .from('recordings')
-      .select('id, filename, file_path, duration_seconds, sampling_rate, n_channels, eo_start, eo_end, ec_start, ec_end')
-      .eq('id', analysisData.recording_id)
-      .single();
-
-    if (recordingError || !recording) {
-      return NextResponse.json(
-        { error: 'Recording not found' },
-        { status: 400 }
-      );
-    }
-
-    const recordingData = recording as any;
-
-    // Validate required recording data
-    if (!recordingData.file_path) {
-      return NextResponse.json(
-        { error: 'Recording file path not found' },
-        { status: 400 }
-      );
-    }
-
-    // Check segment labels - if none provided, use entire recording as EO (baseline)
-    let hasEO = recordingData.eo_start !== null && recordingData.eo_end !== null;
-    let hasEC = recordingData.ec_start !== null && recordingData.ec_end !== null;
-
-    // Default segment times (will be overridden if segments are labeled)
-    let eoStart = recordingData.eo_start;
-    let eoEnd = recordingData.eo_end;
-    let ecStart = recordingData.ec_start;
-    let ecEnd = recordingData.ec_end;
-
-    if (!hasEO && !hasEC) {
-      // No segments labeled - use entire recording as EO (eyes open / baseline)
-      console.log(`Recording ${recordingData.id} has no segment labels - using entire recording as baseline`);
-      eoStart = 0;
-      eoEnd = recordingData.duration_seconds;
-      hasEO = true;
-    }
-
-    // Log info about which conditions are present
-    if (hasEO && !hasEC) {
-      console.log(`Recording ${recordingData.id} has only EO data (${eoStart}s - ${eoEnd}s)`);
-    } else if (hasEC && !hasEO) {
-      console.log(`Recording ${recordingData.id} has only EC data (${ecStart}s - ${ecEnd}s)`);
-    } else if (hasEO && hasEC) {
-      console.log(`Recording ${recordingData.id} has both EO (${eoStart}s - ${eoEnd}s) and EC (${ecStart}s - ${ecEnd}s) data`);
-    }
-
-    // Check artifact mode and fetch manual annotations if needed
-    const artifactMode = analysisData.config?.preprocessing?.artifact_mode || 'ica';
-    let manualArtifactEpochs: Array<{ start: number; end: number }> = [];
-
-    if (artifactMode === 'manual') {
-      const { data: artifactAnnotations } = await db
-        .from('eeg_annotations')
-        .select('start_time, end_time')
-        .eq('recording_id', analysisData.recording_id)
-        .eq('type', 'artifact')
-        .order('start_time')
-        .execute();
-
-      if (artifactAnnotations && artifactAnnotations.length > 0) {
-        manualArtifactEpochs = artifactAnnotations.map((a: any) => ({
-          start: Number(a.start_time),
-          end: Number(a.end_time),
-        }));
-      }
-    }
-
-    // Update status to processing
-    await db
-      .from('analyses')
-      .update({
-        status: 'processing',
-        started_at: new Date().toISOString(),
-      })
-      .eq('id', params.id)
-      .execute();
-
-    const workerConfig = getWorkerConfig();
-
-    // Check if we're in mock mode or real worker mode
-    if (workerConfig.mode === 'mock') {
-      // MOCK MODE: Generate fake results for development
-      console.log('[Development] Running in MOCK mode - generating fake results');
-
-      // Simulate processing time
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Generate mock analysis results with corrected segment times
-      const mockResults = generateMockResults({
-        ...recordingData,
-        eo_start: eoStart,
-        eo_end: eoEnd,
-        ec_start: ecStart,
-        ec_end: ecEnd,
-        artifact_mode: artifactMode,
-        manual_artifact_epochs: manualArtifactEpochs,
-      });
-
-      // Update analysis with results
-      await db
-        .from('analyses')
-        .update({
-          status: 'completed',
-          results: mockResults,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', params.id)
-        .execute();
-
-      return NextResponse.json({
-        success: true,
-        message: 'Analysis completed successfully (mock mode)',
-        analysis_id: params.id,
-        mode: 'mock',
-      });
-    } else {
-      // REAL WORKER MODE: Submit job to Python worker
-      console.log(`[Production] Submitting to ${workerConfig.mode} worker`);
-
-      try {
-        const result = await submitAnalysisJob(
-          {
-            analysisId: params.id,
-            filePath: recordingData.file_path,
-            eoStart: eoStart,
-            eoEnd: eoEnd,
-            ecStart: ecStart,
-            ecEnd: ecEnd,
-            config: analysisData.config || {},
-            artifactMode,
-            manualArtifactEpochs: artifactMode === 'manual' ? manualArtifactEpochs : undefined,
-          },
-          workerConfig
-        );
-
-        return NextResponse.json({
-          success: true,
-          message: result.message,
-          analysis_id: params.id,
-          mode: workerConfig.mode,
-        });
-      } catch (workerError: any) {
-        console.error('Worker submission failed:', workerError);
-
-        // Mark as failed
-        await db
-          .from('analyses')
-          .update({
-            status: 'failed',
-            error_log: `Worker submission failed: ${workerError.message}`,
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', params.id)
-          .execute();
-
-        return NextResponse.json(
-          { error: 'Failed to submit job to worker', details: workerError.message },
-          { status: 500 }
-        );
-      }
-    }
-  } catch (error: any) {
-    console.error('Error processing analysis:', error);
-
-    // Update status to failed
-    const db = getDatabaseClient();
-    await db
-      .from('analyses')
-      .update({
-        status: 'failed',
-        error_log: error.message,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', params.id)
-      .execute();
-
+    getServiceDatabaseClient();
+  } catch (err) {
+    console.error('Analysis engine is not configured:', err);
     return NextResponse.json(
-      { error: 'Failed to process analysis' },
+      { error: 'Analysis is not configured on this server (missing service credentials)' },
       { status: 500 }
     );
   }
-}
 
-function generateMockResults(recording: any) {
-  // Generate realistic mock data based on recording properties
-  const channels = [
-    'Fp1',
-    'Fp2',
-    'F7',
-    'F3',
-    'Fz',
-    'F4',
-    'F8',
-    'T7',
-    'C3',
-    'Cz',
-    'C4',
-    'T8',
-    'P7',
-    'P3',
-    'Pz',
-    'P4',
-    'P8',
-    'O1',
-    'O2',
-  ];
+  // Compare-and-swap on the state we read, so two concurrent starts cannot both win. The new
+  // started_at doubles as the run token the job checks before writing results.
+  const startedAt = new Date().toISOString();
+  let claim = db
+    .from('analyses')
+    .update({ status: 'processing', error_log: null, started_at: startedAt, completed_at: null })
+    .eq('id', params.id)
+    .eq('status', analysisData.status);
+  if (analysisData.started_at) claim = claim.eq('started_at', analysisData.started_at);
+  const { data: claimed, error: updateError } = await claim.select('id').execute();
+  if (updateError) {
+    return NextResponse.json({ error: 'Could not start analysis' }, { status: 500 });
+  }
+  const claimedRows = Array.isArray(claimed) ? claimed : claimed ? [claimed] : [];
+  if (claimedRows.length === 0) {
+    return NextResponse.json({ error: 'Analysis is already running' }, { status: 409 });
+  }
 
-  const bands = [
-    'delta',
-    'theta',
-    'alpha1',
-    'alpha2',
-    'smr',
-    'beta2',
-    'hibeta',
-    'lowgamma',
-  ];
-
-  // Calculate epochs (handle null EC segment)
-  const hasEO = recording.eo_start !== null && recording.eo_end !== null;
-  const hasEC = recording.ec_start !== null && recording.ec_end !== null;
-
-  // Calculate artifact rejection based on mode
-  const isManualMode = recording.artifact_mode === 'manual';
-  const manualEpochs = recording.manual_artifact_epochs || [];
-  const totalManualArtifactTime = manualEpochs.reduce(
-    (sum: number, e: { start: number; end: number }) => sum + (e.end - e.start),
-    0
+  runInBackground(() =>
+    runAnalysisJob({
+      analysisId: params.id,
+      startedAt,
+      filePath: rec.file_path,
+      segments,
+      preprocessing,
+      manualArtifacts,
+    })
   );
-  const totalDuration = (hasEO ? (recording.eo_end - recording.eo_start) : 0) +
-    (hasEC ? (recording.ec_end - recording.ec_start) : 0);
 
-  // QC Report
-  const qc_report = {
-    artifact_rejection_rate: isManualMode && totalDuration > 0
-      ? Math.min(100, (totalManualArtifactTime / totalDuration) * 100)
-      : Math.random() * 20 + 5, // 5-25% for ICA
-    bad_channels: [], // No bad channels for mock data
-    ica_components_removed: isManualMode ? 0 : Math.floor(Math.random() * 3 + 1), // 0 for manual, 1-3 for ICA
-    final_epochs_eo: hasEO ? Math.floor((recording.eo_end - recording.eo_start) / 2) : 0, // Assume 2s epochs
-    final_epochs_ec: hasEC ? Math.floor((recording.ec_end - recording.ec_start) / 2) : 0,
-    artifact_mode: isManualMode ? 'manual' : 'ica',
-    manual_artifact_epochs_count: isManualMode ? manualEpochs.length : undefined,
-  };
-
-  // Band Power Analysis
-  const band_power: any = {
-    eo: {},
-    ec: {},
-  };
-
-  channels.forEach((channel) => {
-    band_power.eo[channel] = {};
-    band_power.ec[channel] = {};
-
-    bands.forEach((band) => {
-      // Generate realistic values with some variation
-      const baseValue = Math.random() * 10 + 1;
-      band_power.eo[channel][band] = {
-        absolute: baseValue * (0.8 + Math.random() * 0.4),
-        relative: Math.random() * 0.3,
-      };
-      band_power.ec[channel][band] = {
-        absolute: baseValue * (0.8 + Math.random() * 0.4),
-        relative: Math.random() * 0.3,
-      };
-    });
-  });
-
-  // Coherence Analysis
-  const coherence_pairs = [
-    { ch1: 'Fp1', ch2: 'Fp2', type: 'interhemispheric' },
-    { ch1: 'F3', ch2: 'F4', type: 'interhemispheric' },
-    { ch1: 'C3', ch2: 'C4', type: 'interhemispheric' },
-    { ch1: 'P3', ch2: 'P4', type: 'interhemispheric' },
-    { ch1: 'O1', ch2: 'O2', type: 'interhemispheric' },
-    { ch1: 'F3', ch2: 'P3', type: 'long_range' },
-    { ch1: 'F4', ch2: 'P4', type: 'long_range' },
-  ];
-
-  const coherence: any = {
-    eo: [],
-    ec: [],
-  };
-
-  coherence_pairs.forEach((pair) => {
-    const eoValues: any = { ...pair };
-    const ecValues: any = { ...pair };
-
-    bands.forEach((band) => {
-      eoValues[band] = Math.random() * 0.5 + 0.3; // 0.3-0.8
-      ecValues[band] = Math.random() * 0.5 + 0.3;
-    });
-
-    coherence.eo.push(eoValues);
-    coherence.ec.push(ecValues);
-  });
-
-  // Risk Pattern Detection (randomly assign some patterns)
-  const risk_patterns = {
-    adhd_like: Math.random() > 0.7,
-    anxiety_like: Math.random() > 0.6,
-    depression_like: Math.random() > 0.8,
-    sleep_dysregulation: Math.random() > 0.75,
-    hyper_arousal: Math.random() > 0.7,
-  };
-
-  // Band Ratios
-  const band_ratios = {
-    theta_beta_ratio: {
-      frontal_avg: Math.random() * 2 + 1.5, // 1.5-3.5
-      central_avg: Math.random() * 2 + 1.5,
-    },
-    alpha_theta_ratio: {
-      occipital_avg: Math.random() * 1.5 + 0.5, // 0.5-2.0
-      parietal_avg: Math.random() * 1.5 + 0.5,
-    },
-  };
-
-  // Asymmetry Indices
-  const asymmetry = {
-    frontal_alpha: Math.random() * 0.4 - 0.2, // -0.2 to 0.2
-    parietal_alpha: Math.random() * 0.3 - 0.15,
-    frontal_theta: Math.random() * 0.3 - 0.15,
-  };
-
-  return {
-    qc_report,
-    band_power,
-    coherence,
-    risk_patterns,
-    band_ratios,
-    asymmetry,
-    processing_metadata: {
-      preprocessing_config: {
-        resample_freq: 250,
-        filter_low: 0.5,
-        filter_high: 45,
-        notch_freq: 60,
-      },
-      processing_time_seconds: 2,
-      mne_version: 'mock-1.0.0',
-    },
-  };
+  return NextResponse.json(
+    { success: true, status: 'processing', analysis_id: params.id },
+    { status: 202 }
+  );
 }

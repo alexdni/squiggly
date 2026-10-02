@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
 import { getStorageClient } from '@/lib/storage';
+import { checkProjectPermission } from '@/lib/rbac';
+
+/** Project that owns an analysis (via its recording), or null. */
+async function projectIdForRecording(
+  db: ReturnType<typeof getDatabaseClient>,
+  recordingId: string
+): Promise<string | null> {
+  const { data } = await db.from('recordings').select('project_id').eq('id', recordingId).single();
+  return (data as { project_id?: string } | null)?.project_id ?? null;
+}
 
 export async function GET(
   request: Request,
@@ -39,6 +49,11 @@ export async function GET(
       .eq('id', analysisData.recording_id)
       .single();
 
+    const projectId = (recording as { project_id?: string } | null)?.project_id;
+    if (!projectId || !(await checkProjectPermission(projectId, user.id, 'analysis:read'))) {
+      return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
+    }
+
     // Combine the data
     const result = {
       ...analysisData,
@@ -55,6 +70,13 @@ export async function GET(
   }
 }
 
+/**
+ * PATCH /api/analyses/[id] - update settings or reset an analysis for a re-run.
+ *
+ * Accepts `config` and `status: 'pending'` (which clears error_log/started_at/completed_at).
+ * Status transitions to processing/completed/failed and `results` are written only by the
+ * server-side analysis job, never by clients.
+ */
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
@@ -66,23 +88,57 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { status, results, error_log, config } = body;
-
-    const updateData: Record<string, any> = {};
-    if (status) updateData.status = status;
-    if (results) updateData.results = results;
-    if (error_log) updateData.error_log = error_log;
-    if (config) updateData.config = config;
-
-    if (status === 'processing') {
-      updateData.started_at = new Date().toISOString();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    if (status === 'completed' || status === 'failed') {
-      updateData.completed_at = new Date().toISOString();
+    const { status, config } = body as { status?: unknown; config?: unknown };
+    if (status !== undefined && status !== 'pending') {
+      return NextResponse.json(
+        { error: "Only status 'pending' (reset for a re-run) can be set by clients" },
+        { status: 400 }
+      );
+    }
+    if (config !== undefined && (typeof config !== 'object' || config === null || Array.isArray(config))) {
+      return NextResponse.json({ error: 'config must be an object' }, { status: 400 });
     }
 
     const db = getDatabaseClient();
+    const { data: existing, error: fetchError } = await db
+      .from('analyses')
+      .select('id, recording_id, status, started_at')
+      .eq('id', params.id)
+      .single();
+    const current = existing as
+      | { id: string; recording_id: string; status: string; started_at: string | null }
+      | null;
+    if (fetchError || !current) {
+      return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
+    }
+    const projectId = await projectIdForRecording(db, current.recording_id);
+    if (!projectId || !(await checkProjectPermission(projectId, user.id, 'analysis:create'))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // A run in progress owns the row until it finishes or goes stale (instance recycled).
+    const STALE_MS = 10 * 60 * 1000;
+    const startedAt = current.started_at ? Date.parse(current.started_at) : 0;
+    if (current.status === 'processing' && Date.now() - startedAt < STALE_MS) {
+      return NextResponse.json({ error: 'Analysis is running' }, { status: 409 });
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (config !== undefined) updateData.config = config;
+    if (status === 'pending') {
+      updateData.status = 'pending';
+      updateData.error_log = null;
+      updateData.started_at = null;
+      updateData.completed_at = null;
+    }
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
+    }
+
     const { data: analysis, error } = await db
       .from('analyses')
       .update(updateData)
@@ -102,63 +158,6 @@ export async function PATCH(
     console.error('Error updating analysis:', error);
     return NextResponse.json(
       { error: 'Failed to update analysis' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const db = getDatabaseClient();
-
-    // Fetch analysis
-    const { data: analysis, error: fetchError } = await db
-      .from('analyses')
-      .select('*')
-      .eq('id', params.id)
-      .single();
-
-    if (fetchError || !analysis) {
-      return NextResponse.json(
-        { error: 'Analysis not found' },
-        { status: 404 }
-      );
-    }
-
-    // Update status to processing
-    const { error: updateError } = await db
-      .from('analyses')
-      .update({
-        status: 'processing',
-        started_at: new Date().toISOString(),
-      })
-      .eq('id', params.id)
-      .execute();
-
-    if (updateError) {
-      return NextResponse.json(
-        { error: 'Failed to start analysis' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      message: 'Analysis processing started',
-      analysis_id: params.id,
-    });
-  } catch (error: any) {
-    console.error('Error starting analysis:', error);
-    return NextResponse.json(
-      { error: 'Failed to start analysis' },
       { status: 500 }
     );
   }
@@ -191,6 +190,11 @@ export async function DELETE(
         { error: 'Analysis not found' },
         { status: 404 }
       );
+    }
+
+    const projectId = await projectIdForRecording(db, (analysis as any).recording_id);
+    if (!projectId || !(await checkProjectPermission(projectId, user.id, 'recording:delete'))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Delete visual assets from storage

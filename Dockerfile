@@ -1,5 +1,10 @@
 # Multi-stage Dockerfile for Squiggly EEG Analysis
-# Combines Next.js frontend, Python worker, and PostgreSQL in a single container
+# Combines Next.js (UI + server-side analysis engine) and PostgreSQL in a single container.
+#
+# The analysis engine (@divergentneuro/biofeedback-core) is a private GitHub Packages module.
+# Build with a token that has read:packages, passed as a BuildKit secret so it never lands in a layer:
+#   NODE_AUTH_TOKEN=ghp_... docker compose build      (compose forwards it, see docker-compose.yml)
+#   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN .
 
 # ============================================
 # Stage 1: Build Next.js application
@@ -11,8 +16,11 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (token only exists for this RUN step)
+COPY .npmrc ./
+RUN --mount=type=secret,id=npm_token \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/npm_token 2>/dev/null)" npm ci \
+    || (echo "npm ci failed: is the npm_token build secret (NODE_AUTH_TOKEN) set?" && exit 1)
 
 # Copy source files
 COPY . .
@@ -24,50 +32,19 @@ ENV NEXT_PUBLIC_AUTH_MODE=local
 RUN npm run build
 
 # ============================================
-# Stage 2: Python dependencies
+# Stage 2: Runtime image
 # ============================================
-FROM python:3.11-slim AS python-builder
+FROM node:20-bookworm-slim
 
-WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    gfortran \
-    libopenblas-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY api/workers/requirements.txt ./
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# ============================================
-# Stage 3: Runtime image
-# ============================================
-FROM python:3.11-slim
-
-# Install Node.js, PostgreSQL, and supervisor
+# Install PostgreSQL and supervisor
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    gnupg \
-    lsb-release \
     supervisor \
-    libopenblas0 \
-    libgomp1 \
     postgresql \
     postgresql-contrib \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Copy Python dependencies from builder
-COPY --from=python-builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
 
 # Copy Next.js build from builder
 COPY --from=nextjs-builder /app/.next ./.next
@@ -75,6 +52,7 @@ COPY --from=nextjs-builder /app/node_modules ./node_modules
 COPY --from=nextjs-builder /app/public ./public
 COPY --from=nextjs-builder /app/package.json ./package.json
 COPY --from=nextjs-builder /app/next.config.js ./next.config.js
+COPY --from=nextjs-builder /app/.eeg-worker ./.eeg-worker
 
 # Copy source files needed at runtime
 COPY lib ./lib
@@ -84,9 +62,6 @@ COPY middleware.ts ./middleware.ts
 COPY tailwind.config.ts ./tailwind.config.ts
 COPY postcss.config.js ./postcss.config.js
 COPY tsconfig.json ./tsconfig.json
-
-# Copy Python worker files
-COPY api/workers ./api/workers
 
 # Copy scripts and configuration
 COPY scripts ./scripts
@@ -112,11 +87,8 @@ ENV AUTH_MODE=local
 ENV NEXT_PUBLIC_AUTH_MODE=local
 ENV STORAGE_PATH=/data/storage
 ENV DATABASE_URL=postgresql://squiggly:squiggly@localhost:5432/squiggly
-ENV WORKER_MODE=http
-ENV WORKER_SERVICE_URL=http://localhost:8000
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV PYTHONUNBUFFERED=1
 
 # Expose ports
 EXPOSE 3000

@@ -1,6 +1,8 @@
 # Docker Deployment Guide
 
-Run Squiggly EEG Analysis locally using Docker. This single container includes the Next.js frontend, Python worker, and PostgreSQL database.
+Run Squiggly EEG Analysis locally using Docker. This single container includes the Next.js app (UI, API routes and the server-side analysis engine) and the PostgreSQL database.
+
+The analysis engine is a private npm package (`@divergentneuro/biofeedback-core`). Building the image needs a GitHub token with `read:packages`, exported as `NODE_AUTH_TOKEN`; it is passed to the build as a BuildKit secret and is not stored in any image layer.
 
 ## Quick Start
 
@@ -33,7 +35,8 @@ ADMIN_PASSWORD=your-secure-password
 
 3. Start the container:
 ```bash
-docker-compose up -d
+export NODE_AUTH_TOKEN=ghp_your_token
+docker compose up -d --build
 ```
 
 4. View logs:
@@ -49,8 +52,8 @@ docker-compose down
 ## Building from Source
 
 ```bash
-# Build the image
-docker build -t squiggly .
+# Build the image (BuildKit secret carries the npm token)
+docker build --secret id=npm_token,env=NODE_AUTH_TOKEN -t squiggly .
 
 # Run the container
 docker run -d \
@@ -169,9 +172,9 @@ Common issues:
 
 ### Analysis fails
 
-Check Python worker logs:
+Analyses run inside the Next.js server; check its log for `[analysis <id>]` lines:
 ```bash
-docker exec squiggly cat /var/log/supervisor/python-worker.log
+docker exec squiggly cat /var/log/supervisor/nextjs.log
 ```
 
 ### Database connection issues
@@ -217,7 +220,6 @@ Expected response:
 | Port | Service |
 |------|---------|
 | 3000 | Web application (exposed) |
-| 8000 | Python worker (internal) |
 | 5432 | PostgreSQL (internal) |
 
 Only port 3000 is exposed by default. To access PostgreSQL directly:
@@ -243,7 +245,7 @@ docker run -d \
 
 ## Comparison: Docker vs Cloud
 
-| Feature | Docker | Cloud (Vercel+Railway+Supabase) |
+| Feature | Docker | Cloud (Vercel+Supabase) |
 |---------|--------|--------------------------------|
 | Setup | Single command | Multiple services |
 | Cost | Free (self-hosted) | ~$35-60/month |

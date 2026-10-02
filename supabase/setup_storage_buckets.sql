@@ -18,17 +18,20 @@ ON CONFLICT (id) DO UPDATE SET
   allowed_mime_types = ARRAY['application/octet-stream', 'application/x-edf', 'application/edf'];
 
 -- Create visuals bucket (private - only accessible to project members)
+-- Also holds the cleaned recording ({analysis_id}/cleaned_raw.{edf,bdf,csv}) written by the
+-- analysis job, so it must accept binary/CSV types and recording-sized files. Legacy analyses
+-- keep their PNGs here.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'visuals',
   'visuals',
   false,  -- private bucket
-  10485760,  -- 10 MB limit
-  ARRAY['image/png', 'image/jpeg']
+  104857600,  -- 100 MB limit
+  ARRAY['image/png', 'image/jpeg', 'application/octet-stream', 'text/csv']
 )
 ON CONFLICT (id) DO UPDATE SET
-  file_size_limit = 10485760,
-  allowed_mime_types = ARRAY['image/png', 'image/jpeg'];
+  file_size_limit = 104857600,
+  allowed_mime_types = ARRAY['image/png', 'image/jpeg', 'application/octet-stream', 'text/csv'];
 
 -- Create exports bucket (private - only accessible to project members)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

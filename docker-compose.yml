@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      secrets:
+        - npm_token
     container_name: squiggly
     ports:
       - "3000:3000"
@@ -31,3 +33,8 @@ services:
 volumes:
   squiggly-data:
     driver: local
+
+secrets:
+  # GitHub token with read:packages for the private analysis engine package
+  npm_token:
+    environment: NODE_AUTH_TOKEN

@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
 import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
+import { THERAQ_PHASES } from '@/lib/theraq';
 
 interface RecordingData {
   id: string;
@@ -12,6 +13,57 @@ interface RecordingData {
 
 interface AnalysisData {
   id: string;
+}
+
+// PATCH /api/recordings/[id] - Update editable recording fields (currently: TheraQ phase role)
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object' || !('phase' in body)) {
+      return NextResponse.json({ error: 'Request body must include "phase"' }, { status: 400 });
+    }
+    const phase = (body as { phase: unknown }).phase;
+    if (phase !== null && !(THERAQ_PHASES as readonly unknown[]).includes(phase)) {
+      return NextResponse.json(
+        { error: `phase must be one of ${THERAQ_PHASES.join(', ')} or null` },
+        { status: 400 }
+      );
+    }
+
+    const db = getDatabaseClient();
+    const { data: recording, error: fetchError } = await db
+      .from('recordings')
+      .select('id, project_id')
+      .eq('id', params.id)
+      .single();
+    const typed = recording as { id: string; project_id: string } | null;
+    if (fetchError || !typed) {
+      return NextResponse.json({ error: 'Recording not found' }, { status: 404 });
+    }
+    if (!(await checkProjectPermission(typed.project_id, user.id, 'recording:create'))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { data: updated, error } = await db
+      .from('recordings')
+      .update({ phase })
+      .eq('id', params.id)
+      .select('*')
+      .single();
+    if (error) {
+      console.error('Error updating recording phase:', error);
+      return NextResponse.json({ error: 'Failed to update recording' }, { status: 500 });
+    }
+    return NextResponse.json({ recording: updated });
+  } catch (error) {
+    console.error('Error updating recording:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
 
 // DELETE /api/recordings/[id] - Delete a recording

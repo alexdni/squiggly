@@ -151,21 +151,28 @@ export const REGIONAL_CHANNELS = {
 };
 
 // Preprocessing Defaults
+// Read by lib/server/eeg/pipeline.ts (resolvePreprocessing). `artifact_mode: 'pipeline'` runs the biofeedback-core
+// artifact profile; 'manual' only excludes user-marked artifact annotations.
+export const ARTIFACT_PROFILES = [
+  'full',
+  'conservative',
+  'aggressive',
+  'rejectionOnly',
+  'legacy',
+] as const;
+
 export const DEFAULT_PREPROCESSING_CONFIG = {
-  resample_freq: 250,
-  filter_low: 0.5,
-  filter_high: 45,
-  notch_freq: 60,
-  ica_enabled: true,
-  ica_method: 'sobi' as const,
-  ica_n_components: null as number | null,  // null = auto (use n_channels)
-  artifact_threshold: 0.7,
-  epoch_length: 2,
-  epoch_overlap: 0.5,
-  artifact_mode: 'ica' as const,
-  sobi_delta_threshold: 0.70,
-  sobi_hf_threshold: 0.40,
-  sobi_frontal_corr: 0.60,
+  artifact_mode: 'pipeline' as 'pipeline' | 'manual',
+  profile: 'full' as (typeof ARTIFACT_PROFILES)[number],
+  /** post-cleaning peak-to-peak ceiling per epoch, µV */
+  rejection_threshold_uv: 160,
+  /** ASR cutoff in standard deviations (lower = more aggressive); null = the profile's default */
+  asr_k: null as number | null,
+  line_freq: 60 as 50 | 60,
+  high_pass_hz: 1,
+  low_pass_hz: 45,
+  /** feature epoch length, seconds */
+  epoch_duration: 2,
 };
 
 // Feature Extraction Defaults

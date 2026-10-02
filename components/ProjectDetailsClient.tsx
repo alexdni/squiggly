@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ComparisonView from './ComparisonView';
+import TheraQReportClient from './TheraQReportClient';
+import type { TheraqPhase } from '@/lib/theraq';
 
 interface Project {
   id: string;
@@ -22,6 +24,7 @@ interface Recording {
   eo_end: number | null;
   ec_start: number | null;
   ec_end: number | null;
+  phase?: TheraqPhase | null;
 }
 
 interface ProjectDetailsClientProps {
@@ -29,7 +32,7 @@ interface ProjectDetailsClientProps {
   user: { id: string; email: string };
 }
 
-type TabType = 'recordings' | 'overview' | 'comparison';
+type TabType = 'recordings' | 'overview' | 'comparison' | 'theraq';
 
 export default function ProjectDetailsClient({
   project,
@@ -235,6 +238,16 @@ export default function ProjectDetailsClient({
               >
                 Comparison
               </button>
+              <button
+                onClick={() => setActiveTab('theraq')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'theraq'
+                    ? 'border-neuro-primary text-neuro-primary'
+                    : 'border-transparent text-gray-700 hover:text-gray-900 hover:border-gray-300'
+                }`}
+              >
+                TheraQ
+              </button>
             </nav>
           </div>
 
@@ -425,6 +438,19 @@ export default function ProjectDetailsClient({
             {/* Comparison Tab */}
             {activeTab === 'comparison' && (
               <ComparisonView projectId={project.id} />
+            )}
+
+            {/* TheraQ four-phase comparison */}
+            {activeTab === 'theraq' && (
+              <TheraQReportClient
+                projectId={project.id}
+                recordings={recordings.map((r) => ({
+                  id: r.id,
+                  filename: r.filename,
+                  phase: r.phase ?? null,
+                }))}
+                onRecordingsChanged={fetchRecordings}
+              />
             )}
           </div>
         </div>

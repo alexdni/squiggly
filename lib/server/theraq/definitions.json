@@ -1,0 +1,5733 @@
+{
+  "standardMetrics": [
+    {
+      "name": "Alpha Shift O1 (EO EC)",
+      "operation": "decimal to percent",
+      "display": "percent",
+      "tags": [
+        "posterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            70,
+            200
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            50,
+            70
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            -100,
+            50
+          ],
+          "colour": "red"
+        }
+      ],
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "O1",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Alpha Flexibility O1 (EO EO)",
+      "operation": "decimal to percent",
+      "display": "percent",
+      "tags": [
+        "posterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            -100,
+            0
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            0,
+            25
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            25,
+            250
+          ],
+          "colour": "red"
+        }
+      ],
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo2",
+              "electrode": "O1",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Peak Alpha O1 (EC)",
+      "display": "decimal",
+      "tags": [
+        "posterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            7,
+            9.5
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            9.5,
+            13
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "peak frequency",
+      "condition": "ec",
+      "electrode": "O1",
+      "band": [
+        7,
+        13
+      ]
+    },
+    {
+      "name": "TBR Shift O1 (EO EC)",
+      "display": "percent",
+      "tags": [
+        "posterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            -100,
+            -25
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            -25,
+            0
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0,
+            100
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "decimal to percent",
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    3.5,
+                    7.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    15.5,
+                    25.5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR O1 (EO)",
+      "display": "decimal",
+      "tags": [
+        "posterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            0.9
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0.9,
+            1.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.2,
+            2.7
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            2.7,
+            3
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            3,
+            5
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "eo1",
+          "electrode": "O1",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "eo1",
+          "electrode": "O1",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR O1 (EC)",
+      "display": "decimal",
+      "tags": [
+        "posterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            0.9
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0.9,
+            1.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.2,
+            2.7
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            2.7,
+            3
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            3,
+            5
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "O1",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "O1",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Alpha Shift Cz (EO EC)",
+      "display": "percent",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            -100,
+            30
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            30,
+            50
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            50,
+            200
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "decimal to percent",
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "ec",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Alpha Flexibility Cz (EO EO)",
+      "display": "percent",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            -100,
+            0
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            0,
+            25
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            25,
+            200
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "decimal to percent",
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo2",
+              "electrode": "Cz",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR Resting Cz (EO)",
+      "display": "decimal",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            2.2,
+            5
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            1.8,
+            2.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0,
+            1.8
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "eo1",
+          "electrode": "Cz",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "eo1",
+          "electrode": "Cz",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR Task Cz (EO)",
+      "display": "decimal",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            3,
+            5
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            2.2,
+            3
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0,
+            2.2
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "eoload",
+          "electrode": "Cz",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "eoload",
+          "electrode": "Cz",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR Shift Task Cz (EO EO)",
+      "display": "percent",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            15,
+            100
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0,
+            15
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            -100,
+            0
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "decimal to percent",
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eoload",
+                      "electrode": "Cz",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eoload",
+                      "electrode": "Cz",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    3.5,
+                    7.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    15.5,
+                    25.5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Beta Shift Task Cz (EO EO)",
+      "display": "dial",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            100
+          ],
+          "direction": "theta"
+        },
+        {
+          "range": [
+            -30,
+            0
+          ],
+          "direction": "nowhere"
+        },
+        {
+          "range": [
+            -100,
+            -30
+          ],
+          "direction": "beta"
+        }
+      ],
+      "operation": "decimal to percent",
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "difference",
+              "args": [
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eoload",
+                  "electrode": "Cz",
+                  "band": [
+                    15.5,
+                    25.5
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    15.5,
+                    25.5
+                  ]
+                }
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Theta/Low Beta Ratio Cz (EC)",
+      "display": "decimal",
+      "tags": [
+        "central"
+      ],
+      "norms": [
+        {
+          "range": [
+            1,
+            2.4
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            2.4,
+            3
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            3,
+            5
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "eo1",
+          "electrode": "Cz",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "eo1",
+          "electrode": "Cz",
+          "band": [
+            12.5,
+            16.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Theta Alpha Ratio F3 (EC)",
+      "display": "decimal",
+      "tags": [
+        "anterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            1
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            1,
+            1.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.2,
+            1.6
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            7.5,
+            12.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR F3 (EC)",
+      "display": "decimal",
+      "tags": [
+        "anterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            2.2,
+            5
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            1.8,
+            2.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0,
+            1.8
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Theta Alpha Ratio F4 (EC)",
+      "display": "decimal",
+      "tags": [
+        "anterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            1
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            1,
+            1.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.2,
+            1.6
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            7.5,
+            12.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TBR F4 (EC)",
+      "display": "decimal",
+      "tags": [
+        "anterior"
+      ],
+      "norms": [
+        {
+          "range": [
+            2.2,
+            5
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            1.8,
+            2.2
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0,
+            1.8
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Theta Symmetry (EC)",
+      "display": "decimal",
+      "tags": [
+        "symmetry"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            0.85
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0.85,
+            0.95
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0.95,
+            1.15
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            1.15,
+            1.25
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.25,
+            2
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            3.5,
+            7.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            3.5,
+            7.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Alpha Symmetry (EC)",
+      "display": "decimal",
+      "tags": [
+        "symmetry"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            0.85
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0.85,
+            0.95
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0.95,
+            1.15
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            1.15,
+            1.25
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.25,
+            2
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            7.5,
+            12.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            7.5,
+            12.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Beta Symmetry (EC)",
+      "display": "decimal",
+      "tags": [
+        "symmetry"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            0.85
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0.85,
+            0.95
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0.95,
+            1.15
+          ],
+          "colour": "green"
+        },
+        {
+          "range": [
+            1.15,
+            1.25
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            1.25,
+            2
+          ],
+          "colour": "red"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F3",
+          "band": [
+            15.5,
+            25.5
+          ]
+        },
+        {
+          "operation": "mean amplitude",
+          "condition": "ec",
+          "electrode": "F4",
+          "band": [
+            15.5,
+            25.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Frontal TBR Proportion Symmetry (EC)",
+      "display": "decimal",
+      "tags": [
+        "symmetry"
+      ],
+      "norms": [
+        {
+          "range": [
+            0,
+            0.8
+          ],
+          "colour": "red"
+        },
+        {
+          "range": [
+            0.8,
+            0.9
+          ],
+          "colour": "yellow"
+        },
+        {
+          "range": [
+            0.9,
+            2
+          ],
+          "colour": "green"
+        }
+      ],
+      "operation": "quotient",
+      "args": [
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dysregulationIndices": [
+    {
+      "name": "Emotional Dysregulation Index",
+      "operation": "count abnormalities",
+      "args": [
+        {
+          "name": "Alpha Shift O1 (EO EC)",
+          "operation": "decimal to percent",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                70,
+                200
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                50,
+                70
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                50
+              ],
+              "colour": "red"
+            }
+          ],
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Shift O1 (EO EC)",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                -25
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                -25,
+                0
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                100
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Shift Cz (EO EC)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                30
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                30,
+                50
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                50,
+                200
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Flexibility Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                25,
+                200
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo2",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Resting Cz (EO)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Shift Task Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                15,
+                100
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta/Low Beta Ratio Cz (EC)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                1,
+                2.4
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                2.4,
+                3
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                3,
+                5
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                12.5,
+                16.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F3 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F4 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cognitive Performance Index",
+      "operation": "count abnormalities",
+      "args": [
+        {
+          "name": "Alpha Flexibility Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                25,
+                200
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo2",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Resting Cz (EO)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Shift Task Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                15,
+                100
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta/Low Beta Ratio Cz (EC)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                1,
+                2.4
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                2.4,
+                3
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                3,
+                5
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                12.5,
+                16.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Alpha Ratio F3 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1,
+                1.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.2,
+                1.6
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F3 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Alpha Ratio F4 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1,
+                1.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.2,
+                1.6
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F4 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Potential Stress/Trauma Markers Index",
+      "operation": "count abnormalities",
+      "args": [
+        {
+          "name": "Alpha Shift O1 (EO EC)",
+          "operation": "decimal to percent",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                70,
+                200
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                50,
+                70
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                50
+              ],
+              "colour": "red"
+            }
+          ],
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Flexibility O1 (EO EO)",
+          "operation": "decimal to percent",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                25,
+                250
+              ],
+              "colour": "red"
+            }
+          ],
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo2",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Peak Alpha O1 (EC)",
+          "display": "decimal",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                7,
+                9.5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                9.5,
+                13
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "peak frequency",
+          "condition": "ec",
+          "electrode": "O1",
+          "band": [
+            7,
+            13
+          ]
+        },
+        {
+          "name": "TBR Shift O1 (EO EC)",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                -25
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                -25,
+                0
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                100
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Shift Cz (EO EC)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                30
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                30,
+                50
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                50,
+                200
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sleep Dysregulation Index",
+      "operation": "count abnormalities",
+      "args": [
+        {
+          "name": "Relative Delta O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                25,
+                100
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                15,
+                25
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    3.5
+                  ]
+                },
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    45
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Relative Theta O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                25,
+                100
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                15,
+                25
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    3.5,
+                    7.5
+                  ]
+                },
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    45
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Delta Shift O1 (EO EC)",
+          "norms": [
+            {
+              "range": [
+                2,
+                100
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                -100,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        1,
+                        3.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        1,
+                        3.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    3.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Shift O1 (EO EC)",
+          "norms": [
+            {
+              "range": [
+                2,
+                100
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                -100,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    3.5,
+                    7.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Delta Ratio O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1,
+                3
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                1,
+                3.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Theta Ratio O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1,
+                3
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                3.5,
+                7.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta/Low Beta Ratio Cz (EC)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                1,
+                2.4
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                2.4,
+                3
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                3,
+                5
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                12.5,
+                16.5
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dysregulatedIndexMetrics": [
+    {
+      "name": "Clinically Remarkable Emotional Dysregulation Markers",
+      "operation": "select abnormal metrics",
+      "args": [
+        {
+          "name": "Alpha Shift O1 (EO EC)",
+          "operation": "decimal to percent",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                70,
+                200
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                50,
+                70
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                50
+              ],
+              "colour": "red"
+            }
+          ],
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Shift O1 (EO EC)",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                -25
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                -25,
+                0
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                100
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Shift Cz (EO EC)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                30
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                30,
+                50
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                50,
+                200
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Flexibility Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                25,
+                200
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo2",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Resting Cz (EO)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Shift Task Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                15,
+                100
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta/Low Beta Ratio Cz (EC)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                1,
+                2.4
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                2.4,
+                3
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                3,
+                5
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                12.5,
+                16.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F3 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F4 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Clinically Remarkable Cognitive Performance Markers",
+      "operation": "select abnormal metrics",
+      "args": [
+        {
+          "name": "Alpha Flexibility Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                25,
+                200
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo2",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Resting Cz (EO)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR Shift Task Cz (EO EO)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                15,
+                100
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eoload",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "Cz",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta/Low Beta Ratio Cz (EC)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                1,
+                2.4
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                2.4,
+                3
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                3,
+                5
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                12.5,
+                16.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Alpha Ratio F3 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1,
+                1.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.2,
+                1.6
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F3 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Alpha Ratio F4 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1,
+                1.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.2,
+                1.6
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TBR F4 (EC)",
+          "display": "decimal",
+          "tags": [
+            "anterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                2.2,
+                5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                1.8,
+                2.2
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                1.8
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                3.5,
+                7.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                7.5,
+                12.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta Symmetry (EC)",
+          "display": "decimal",
+          "tags": [
+            "symmetry"
+          ],
+          "norms": [
+            {
+              "range": [
+                0,
+                0.85
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                0.85,
+                0.95
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0.95,
+                1.15
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                1.15,
+                1.25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1.25,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F3",
+              "band": [
+                15.5,
+                25.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "F4",
+              "band": [
+                15.5,
+                25.5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Clinically Remarkable Potential Stress/Trauma Markers",
+      "operation": "select abnormal metrics",
+      "args": [
+        {
+          "name": "Alpha Shift O1 (EO EC)",
+          "operation": "decimal to percent",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                70,
+                200
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                50,
+                70
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                -100,
+                50
+              ],
+              "colour": "red"
+            }
+          ],
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Flexibility O1 (EO EO)",
+          "operation": "decimal to percent",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                0
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                25
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                25,
+                250
+              ],
+              "colour": "red"
+            }
+          ],
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo2",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo2",
+                  "electrode": "O1",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Peak Alpha O1 (EC)",
+          "display": "decimal",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                7,
+                9.5
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                9.5,
+                13
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "peak frequency",
+          "condition": "ec",
+          "electrode": "O1",
+          "band": [
+            7,
+            13
+          ]
+        },
+        {
+          "name": "TBR Shift O1 (EO EC)",
+          "display": "percent",
+          "tags": [
+            "posterior"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                -25
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                -25,
+                0
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                0,
+                100
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "ec",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "operation": "quotient",
+                      "args": [
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            3.5,
+                            7.5
+                          ]
+                        },
+                        {
+                          "operation": "mean amplitude",
+                          "condition": "eo1",
+                          "electrode": "O1",
+                          "band": [
+                            15.5,
+                            25.5
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "quotient",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        15.5,
+                        25.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Shift Cz (EO EC)",
+          "display": "percent",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                -100,
+                30
+              ],
+              "colour": "red"
+            },
+            {
+              "range": [
+                30,
+                50
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                50,
+                200
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "Cz",
+                      "band": [
+                        7.5,
+                        12.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "Cz",
+                  "band": [
+                    7.5,
+                    12.5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Clinically Remarkable Sleep Dysregulation Markers",
+      "operation": "select abnormal metrics",
+      "args": [
+        {
+          "name": "Relative Delta O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                25,
+                100
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                15,
+                25
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    3.5
+                  ]
+                },
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    45
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Relative Theta O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                25,
+                100
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                15,
+                25
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                0,
+                15
+              ],
+              "colour": "yellow"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    3.5,
+                    7.5
+                  ]
+                },
+                {
+                  "operation": "sum amplitude",
+                  "condition": "ec",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    45
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Delta Shift O1 (EO EC)",
+          "norms": [
+            {
+              "range": [
+                2,
+                100
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                -100,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        1,
+                        3.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        1,
+                        3.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    1,
+                    3.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta Shift O1 (EO EC)",
+          "norms": [
+            {
+              "range": [
+                2,
+                100
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                -100,
+                2
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "decimal to percent",
+          "args": [
+            {
+              "operation": "quotient",
+              "args": [
+                {
+                  "operation": "difference",
+                  "args": [
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "ec",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    },
+                    {
+                      "operation": "mean amplitude",
+                      "condition": "eo1",
+                      "electrode": "O1",
+                      "band": [
+                        3.5,
+                        7.5
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "operation": "mean amplitude",
+                  "condition": "eo1",
+                  "electrode": "O1",
+                  "band": [
+                    3.5,
+                    7.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Delta Ratio O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1,
+                3
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                1,
+                3.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alpha Theta Ratio O1 (EC)",
+          "norms": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                1,
+                3
+              ],
+              "colour": "green"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                7.5,
+                12.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "ec",
+              "electrode": "O1",
+              "band": [
+                3.5,
+                7.5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Theta/Low Beta Ratio Cz (EC)",
+          "display": "decimal",
+          "tags": [
+            "central"
+          ],
+          "norms": [
+            {
+              "range": [
+                1,
+                2.4
+              ],
+              "colour": "green"
+            },
+            {
+              "range": [
+                2.4,
+                3
+              ],
+              "colour": "yellow"
+            },
+            {
+              "range": [
+                3,
+                5
+              ],
+              "colour": "red"
+            }
+          ],
+          "operation": "quotient",
+          "args": [
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                3.5,
+                7.5
+              ]
+            },
+            {
+              "operation": "mean amplitude",
+              "condition": "eo1",
+              "electrode": "Cz",
+              "band": [
+                12.5,
+                16.5
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
