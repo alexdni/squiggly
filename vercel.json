@@ -8,12 +8,10 @@
       "maxDuration": 60
     },
     "app/api/analyses/[id]/process/route.ts": {
-      "maxDuration": 300,
-      "memory": 3009
+      "maxDuration": 300
     },
     "app/api/projects/[id]/theraq-analysis/route.ts": {
-      "maxDuration": 300,
-      "memory": 3009
+      "maxDuration": 300
     }
   }
 }

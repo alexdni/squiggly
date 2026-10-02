@@ -213,7 +213,7 @@ for details.
 ### Prerequisites
 
 - Supabase account
-- Vercel account (Pro recommended: analyses run up to 300 s with 3 GB memory)
+- Vercel account (analyses run up to 300 s inside the function; the default 2 GB memory is enough)
 - Google Cloud project (for OAuth)
 - GitHub token with `read:packages` for the analysis engine
 

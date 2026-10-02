@@ -61,7 +61,7 @@
 
 ## Risks / Trade-offs
 - Server CPU and memory on Vercel: about 200 MB peak for 20 min recordings. Long BDF files (up to 200 MB) can exceed
-  this. Mitigation: decode only selected EEG channels as Float32, set function memory to 3 GB on `/process`, and fail
+  this. Mitigation: decode only selected EEG channels as Float32, keep the worker heap within the function's default 2 GB, and fail
   fast with a clear error above a duration cap (default 60 min).
 - `waitUntil` work is bounded by `maxDuration`. Jobs that exceed it are left `processing`, and the stale-processing
   guard resolves them.

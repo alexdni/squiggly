@@ -22,7 +22,7 @@
 - [x] 4.5 Parity tests against the 1.4 fixtures
 
 ## 5. API and types
-- [x] 5.1 `/process`: 202 plus `waitUntil`/background job, `maxDuration: 300` and memory override in `vercel.json`; stale-processing handling
+- [x] 5.1 `/process`: 202 plus `waitUntil`/background job, `maxDuration: 300` in `vercel.json` (default memory); stale-processing handling
 - [x] 5.2 Remove `lib/worker-client.ts`, `WORKER_*` config and mock mode; fix `DEFAULT_PREPROCESSING_CONFIG` keys
 - [x] 5.3 zod results schema in `lib/analysis-results.ts`; replace `AnalysisResults`; fix `computeComparison` (connectivity)
 

@@ -58,7 +58,7 @@ function getWorker(): Worker | null {
   if (state.worker) return state.worker;
   const file = workerBundlePath();
   if (!existsSync(file)) return null;
-  const w = new Worker(file, { resourceLimits: { maxOldGenerationSizeMb: 3072 } });
+  const w = new Worker(file, { resourceLimits: { maxOldGenerationSizeMb: 1536 } });
   w.on('message', (msg: { id: number; progress?: string; ok?: boolean; output?: JobOutput; error?: string; partialReport?: unknown }) => {
     const p = state.pending.get(msg.id);
     if (!p) return;

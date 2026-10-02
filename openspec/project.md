@@ -155,7 +155,7 @@ EEG EO/EC Diagnostics is an open-source web application for rapid, transparent a
 - Vercel free tier limits: 100GB bandwidth, 100 hours serverless execution/month
 - Vercel function timeout: 10s (Hobby), 60s (Pro), 900s (Enterprise) → require Pro or higher for long EDFs
 - EEG file size limit: 200MB (configurable; supports EDF, BDF, and CSV formats)
-- Analysis functions: 300 s / 3 GB on Vercel; recordings are decimated to ~250 Hz before cleaning
+- Analysis functions: 300 s / 2 GB on Vercel; recordings are decimated to ~250 Hz before cleaning
 
 **Regulatory:**
 - **Not a medical device:** Explicitly disclaim clinical use in UI, PDF, Terms of Service

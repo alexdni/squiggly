@@ -44,7 +44,7 @@ Environment variables (Production and Preview):
 `vercel.json` already sets:
 - `installCommand: npm ci` and `buildCommand: npm run build` (bundles the analysis worker, builds
   Next.js, then runs the client-bundle check)
-- `maxDuration: 300` and 3 GB memory for `app/api/analyses/[id]/process` and
+- `maxDuration: 300` for `app/api/analyses/[id]/process` and
   `app/api/projects/[id]/theraq-analysis`, where analyses run after the response via `waitUntil`
 
 ### 3. How an analysis runs
