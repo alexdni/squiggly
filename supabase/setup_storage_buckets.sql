@@ -112,6 +112,7 @@ USING (
 -- Step 3: Create storage policies for visuals bucket
 -- ============================================
 
+DROP POLICY IF EXISTS "Users can view visuals in their projects" ON storage.objects;
 CREATE POLICY "Users can view visuals in their projects"
 ON storage.objects FOR SELECT
 TO authenticated
@@ -124,6 +125,7 @@ USING (
   )
 );
 
+DROP POLICY IF EXISTS "Workers can upload visuals" ON storage.objects;
 CREATE POLICY "Workers can upload visuals"
 ON storage.objects FOR INSERT
 TO authenticated
@@ -140,6 +142,7 @@ WITH CHECK (
 -- Step 4: Create storage policies for exports bucket
 -- ============================================
 
+DROP POLICY IF EXISTS "Users can view exports in their projects" ON storage.objects;
 CREATE POLICY "Users can view exports in their projects"
 ON storage.objects FOR SELECT
 TO authenticated
@@ -152,6 +155,7 @@ USING (
   )
 );
 
+DROP POLICY IF EXISTS "Users can upload exports in their projects" ON storage.objects;
 CREATE POLICY "Users can upload exports in their projects"
 ON storage.objects FOR INSERT
 TO authenticated
