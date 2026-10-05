@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 import { canAccessRecording } from '@/lib/rbac';
 
 export async function GET(
@@ -7,10 +8,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -23,11 +21,13 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: annotations, error } = await (supabase as any)
+    const db = getDatabaseClient();
+    const { data: annotations, error } = await db
       .from('eeg_annotations')
       .select('*')
       .eq('recording_id', recordingId)
-      .order('start_time');
+      .order('start_time')
+      .execute();
 
     if (error) {
       console.error('Error fetching annotations:', error);
@@ -52,10 +52,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -85,7 +82,8 @@ export async function POST(
       );
     }
 
-    const { data: annotation, error } = await (supabase as any)
+    const db = getDatabaseClient();
+    const { data: annotation, error } = await db
       .from('eeg_annotations')
       .insert({
         recording_id: recordingId,
@@ -121,10 +119,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -140,8 +135,10 @@ export async function DELETE(
       );
     }
 
-    // Verify the annotation belongs to this recording
-    const { data: annotation, error: fetchError } = await (supabase as any)
+    const db = getDatabaseClient();
+
+    // Verify the annotation belongs to this recording and user owns it
+    const { data: annotation, error: fetchError } = await db
       .from('eeg_annotations')
       .select('id, created_by')
       .eq('id', annotationId)
@@ -155,10 +152,11 @@ export async function DELETE(
       );
     }
 
-    const { error: deleteError } = await (supabase as any)
+    const { error: deleteError } = await db
       .from('eeg_annotations')
       .delete()
-      .eq('id', annotationId);
+      .eq('id', annotationId)
+      .execute();
 
     if (deleteError) {
       console.error('Error deleting annotation:', deleteError);

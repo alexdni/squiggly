@@ -1,39 +1,37 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 
 // GET /api/projects - List all projects for current user
 export async function GET() {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Get projects where user is owner or member
-    // Note: RLS policies automatically filter to projects user has access to
-    // We don't need to JOIN project_members here as that causes RLS recursion
     console.log('[GET /api/projects] Fetching projects for user:', user.id);
 
-    const { data: projects, error } = await supabase
+    const db = getDatabaseClient();
+    const { data: projects, error } = await db
       .from('projects')
       .select('*')
-      .order('created_at', { ascending: false });
+      .eq('owner_id', user.id)
+      .order('created_at', { ascending: false })
+      .execute();
 
     if (error) {
       console.error('[GET /api/projects] Error fetching projects:', error);
       return NextResponse.json(
-        { error: 'Failed to fetch projects', details: error },
+        { error: 'Failed to fetch projects', details: error.message },
         { status: 500 }
       );
     }
 
-    console.log('[GET /api/projects] Successfully fetched', projects?.length || 0, 'projects');
-    return NextResponse.json({ projects });
+    console.log('[GET /api/projects] Successfully fetched', (projects || []).length, 'projects');
+    return NextResponse.json({ projects: projects || [] });
   } catch (error) {
     console.error('Error in GET /api/projects:', error);
     return NextResponse.json(
@@ -46,11 +44,7 @@ export async function GET() {
 // POST /api/projects - Create new project
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -66,15 +60,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const db = getDatabaseClient();
+
     // Create project
-    const { data: project, error: projectError } = await supabase
+    const { data: project, error: projectError } = await db
       .from('projects')
       .insert({
         name: name.trim(),
         description: description?.trim() || null,
         owner_id: user.id,
-      } as any)
-      .select()
+      })
+      .select('*')
       .single();
 
     if (projectError) {
@@ -94,18 +90,19 @@ export async function POST(request: Request) {
     }
 
     // Add owner as project member
-    const { error: memberError } = await supabase
+    const { error: memberError } = await db
       .from('project_members')
       .insert({
         project_id: projectData.id,
         user_id: user.id,
         role: 'owner',
-      } as any);
+      })
+      .execute();
 
     if (memberError) {
       console.error('Error adding project member:', memberError);
       // Rollback: delete the project
-      await supabase.from('projects').delete().eq('id', projectData.id);
+      await db.from('projects').delete().eq('id', projectData.id).execute();
       return NextResponse.json(
         { error: 'Failed to create project membership' },
         { status: 500 }

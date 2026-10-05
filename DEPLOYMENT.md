@@ -1,251 +1,78 @@
 # Deployment Guide
 
-This guide covers deploying the Squiggly EEG Analysis platform with separate services for the Next.js frontend and Python worker backend.
+Squiggly is a single Next.js application. EEG analysis runs server-side in Node.js (a
+`worker_threads` thread inside the Next.js server or Vercel function); there is no separate worker
+service to deploy. Two targets are supported:
 
-## Architecture Overview
+| Target | Database / Storage / Auth | Guide |
+|--------|---------------------------|-------|
+| Docker (self-hosted, single container) | PostgreSQL + local disk + email/password | [DOCKER.md](DOCKER.md) |
+| Vercel | Supabase (Postgres, Storage, Google OAuth) | below |
 
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   Vercel    │────────▶│   Railway    │────────▶│  Supabase   │
-│  Next.js    │  HTTP   │Python Worker │  API    │  Database   │
-│  Frontend   │         │   Service    │         │  + Storage  │
-└─────────────┘         └──────────────┘         └─────────────┘
-```
+## Analysis engine access
 
-- **Vercel**: Hosts the Next.js frontend and API routes (60s timeout limit)
-- **Railway**: Hosts the Python worker service (no timeout limit for long-running analysis)
-- **Supabase**: Database, authentication, and file storage
+Artifact cleaning uses the private package `@divergentneuro/biofeedback-core` from GitHub
+Packages. Every install needs `NODE_AUTH_TOKEN` set to a GitHub token with `read:packages`
+on the DivergentNeuro organization. `.npmrc` reads the variable; never commit the token.
 
-## 1. Deploy Python Worker to Railway
+The package is server-only:
+- `next.config.js` marks it as an external server package so it is never bundled for the browser.
+- `npm run build` ends with `scripts/check-client-bundle.mjs`, which fails the build if engine code
+  or a source map appears in `.next/static`.
 
-### Option A: Deploy from GitHub
+## Vercel + Supabase
 
-1. Go to [Railway](https://railway.app)
-2. Create a new project from your GitHub repository
-3. Railway will auto-detect the configuration from `nixpacks.toml` or `Procfile`
+### 1. Supabase
 
-### Option B: Deploy via Railway CLI
+1. Create a project and run `supabase/schema.sql`, then every file in `supabase/migrations/`.
+2. Create private Storage buckets `recordings`, `visuals`, `exports` (or run
+   `supabase/setup_storage_buckets.sql`).
+3. Enable Google OAuth under Authentication → Providers.
 
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
+### 2. Vercel project
 
-# Login
-railway login
+Environment variables (Production and Preview):
 
-# Initialize project
-railway init
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser/session client |
+| `SUPABASE_SERVICE_ROLE_KEY` | Background analysis jobs write results with the service role |
+| `NODE_AUTH_TOKEN` | Build-time install of the analysis engine (mark as sensitive; enable for Preview and Production). `GITHUB_PACKAGES_TOKEN`, the name the other DivergentNeuro apps use, is accepted as a fallback |
+| `OPENAI_API_KEY` | Optional, AI interpretation |
 
-# Deploy
-railway up
-```
+`vercel.json` already sets:
+- `installCommand: npm ci` and `buildCommand: npm run build` (bundles the analysis worker, builds
+  Next.js, then runs the client-bundle check)
+- `maxDuration: 300` for `app/api/analyses/[id]/process` and
+  `app/api/projects/[id]/theraq-analysis`, where analyses run after the response via `waitUntil`
 
-### Environment Variables (Railway)
+### 3. How an analysis runs
 
-Set these in your Railway project settings:
+1. The browser PATCHes the analysis config and POSTs `/api/analyses/[id]/process`.
+2. The route checks project permissions, sets `status = processing`, responds **202**, and keeps
+   running the job in the background.
+3. The job downloads the recording from Storage, cleans it, extracts features, uploads the cleaned
+   file to `visuals/{analysis_id}/cleaned_raw.{edf|bdf|csv}` and writes `analyses.results`.
+4. The browser polls `GET /api/analyses/[id]` and renders all visuals from the JSON.
 
-```bash
-PORT=8000
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-WORKER_AUTH_TOKEN=generate-a-secure-random-token
-```
+Runs still `processing` after 10 minutes (e.g. the instance was recycled) are shown as stalled and
+can be restarted.
 
-### Generate Secure Token
+### Sizing
 
-```bash
-# On Linux/Mac
-openssl rand -base64 32
+A 20-minute 19-channel recording takes roughly 30–60 s of CPU and about 200–400 MB of memory.
+Recordings above ~300 Hz are decimated to ~250 Hz before cleaning. Very long recordings may exceed
+the 300 s function budget; use Docker for those.
 
-# Or use Python
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-### Verify Deployment
-
-Once deployed, Railway will give you a URL like:
-```
-https://your-app-name.railway.app
-```
-
-Test the health endpoint:
-```bash
-curl https://your-app-name.railway.app/health
-```
-
-You should see:
-```json
-{
-  "status": "healthy",
-  "service": "EEG Analysis Worker",
-  "timestamp": "..."
-}
-```
-
-## 2. Configure Vercel Environment Variables
-
-In your Vercel project settings, add:
+## Local development
 
 ```bash
-# Worker Configuration
-WORKER_MODE=http
-WORKER_SERVICE_URL=https://your-app-name.railway.app
-WORKER_AUTH_TOKEN=same-token-as-railway
-
-# Supabase (already configured)
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+export NODE_AUTH_TOKEN=ghp_your_token
+npm ci
+npm run dev        # builds .eeg-worker/worker.mjs, then starts next dev
+npm test
 ```
 
-**Important**: The `WORKER_AUTH_TOKEN` must match on both Railway and Vercel.
-
-## 3. Redeploy Vercel
-
-After setting the environment variables:
-
-```bash
-# Via Vercel CLI
-vercel --prod
-
-# Or trigger a redeploy in the Vercel dashboard
-```
-
-## 4. Test End-to-End
-
-1. Upload an EEG file to your application
-2. Click "Run Analysis"
-3. The Next.js API route will:
-   - Set analysis status to "processing"
-   - Submit job to Railway worker via HTTP
-   - Return immediately (< 1 second)
-4. Railway worker will:
-   - Download EDF file from Supabase
-   - Run analysis (30-90 seconds)
-   - Generate visualizations
-   - Upload results back to Supabase
-5. Frontend will poll the analysis status and show results when complete
-
-## Monitoring
-
-### Railway Logs
-
-View logs in Railway dashboard or via CLI:
-```bash
-railway logs
-```
-
-### Vercel Logs
-
-View logs in Vercel dashboard or via CLI:
-```bash
-vercel logs
-```
-
-### Check Worker Health
-
-```bash
-# Manual health check
-curl https://your-railway-app.railway.app/health
-
-# From your Next.js app
-curl https://your-vercel-app.vercel.app/api/worker/health
-```
-
-## Scaling
-
-### Railway
-
-- Default: 512 MB RAM, 1 vCPU
-- Increase resources in Railway settings if needed
-- Consider adding multiple workers for parallel processing
-
-### Vercel
-
-- Hobby: 1 concurrent build, 100 GB bandwidth
-- Pro: Unlimited builds, 1 TB bandwidth
-- No code changes needed for scaling
-
-## Troubleshooting
-
-### "Worker service returned 401"
-- Check that `WORKER_AUTH_TOKEN` matches on both Railway and Vercel
-- Verify token doesn't have trailing spaces
-
-### "Worker service not responding"
-- Check Railway logs for errors
-- Verify `WORKER_SERVICE_URL` is correct
-- Test health endpoint directly
-
-### "Analysis stuck in 'processing'"
-- Check Railway logs for Python errors
-- Verify Supabase credentials are correct
-- Check file permissions in Supabase Storage
-
-### "Import errors in Railway"
-- Verify all dependencies in `requirements.txt`
-- Check build logs for missing system packages
-- May need to add packages to `nixpacks.toml`
-
-## Cost Estimates
-
-### Railway (Monthly)
-
-- Hobby Plan: $5/month (500 hours)
-- Pro Plan: $20/month + usage
-- Typical usage: ~$10-15/month for moderate traffic
-
-### Vercel (Monthly)
-
-- Hobby: Free (1 user, non-commercial)
-- Pro: $20/month (unlimited builds)
-
-### Supabase (Monthly)
-
-- Free: 500 MB database, 1 GB storage
-- Pro: $25/month (8 GB database, 100 GB storage)
-- Typical usage: ~$25/month for production
-
-**Total**: ~$35-60/month for production deployment
-
-## Local Development
-
-For local development, keep using mock mode:
-
-```bash
-# .env.local
-WORKER_MODE=mock
-```
-
-Or run the Python worker locally:
-
-```bash
-# Terminal 1: Start worker
-cd api/workers
-python server.py
-
-# Terminal 2: Start Next.js
-npm run dev
-
-# .env.local
-WORKER_MODE=http
-WORKER_SERVICE_URL=http://localhost:8000
-```
-
-## Security Notes
-
-1. **Never commit** `.env` files with real credentials
-2. Use different `WORKER_AUTH_TOKEN` for dev/staging/prod
-3. Enable Supabase RLS (Row Level Security) policies
-4. Restrict Supabase Storage bucket permissions
-5. Use HTTPS only in production (Railway provides this automatically)
-
-## Support
-
-If you encounter issues:
-
-1. Check Railway logs first
-2. Check Vercel logs second
-3. Verify all environment variables
-4. Test worker health endpoint
-5. Check Supabase Storage permissions
+If `.eeg-worker/worker.mjs` is missing, analyses run inline on the request thread (slower dev
+server, same results). Rebuild it after changing `lib/server/eeg/**` with `npm run build:worker`.

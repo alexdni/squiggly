@@ -8,6 +8,8 @@ interface EEGToolbarProps {
   onFilterChange: (settings: FilterSettings) => void;
   isAnnotateMode: boolean;
   onAnnotateModeToggle: () => void;
+  /** Disable HP/LP/notch inputs (e.g. when showing already-filtered cleaned data) */
+  filtersDisabled?: boolean;
 }
 
 export default function EEGToolbar({
@@ -15,6 +17,7 @@ export default function EEGToolbar({
   onFilterChange,
   isAnnotateMode,
   onAnnotateModeToggle,
+  filtersDisabled = false,
 }: EEGToolbarProps) {
   // Local state for debounced numeric inputs
   const [localSensitivity, setLocalSensitivity] = useState(
@@ -111,7 +114,9 @@ export default function EEGToolbar({
           step={0.1}
           value={localHP}
           onChange={(e) => setLocalHP(e.target.value)}
-          className="border border-gray-300 rounded px-1.5 py-0.5 w-14 text-sm text-gray-900 bg-white"
+          disabled={filtersDisabled}
+          title={filtersDisabled ? 'Cleaned data is already filtered' : 'Zero-phase 4th-order Butterworth high-pass (0 = off)'}
+          className="disabled:opacity-50 border border-gray-300 rounded px-1.5 py-0.5 w-14 text-sm text-gray-900 bg-white"
         />
         <span className="text-xs text-gray-600">Hz</span>
       </div>
@@ -126,7 +131,9 @@ export default function EEGToolbar({
           step={1}
           value={localLP}
           onChange={(e) => setLocalLP(e.target.value)}
-          className="border border-gray-300 rounded px-1.5 py-0.5 w-14 text-sm text-gray-900 bg-white"
+          disabled={filtersDisabled}
+          title={filtersDisabled ? 'Cleaned data is already filtered' : 'Zero-phase 4th-order Butterworth low-pass'}
+          className="disabled:opacity-50 border border-gray-300 rounded px-1.5 py-0.5 w-14 text-sm text-gray-900 bg-white"
         />
         <span className="text-xs text-gray-600">Hz</span>
       </div>
@@ -142,7 +149,9 @@ export default function EEGToolbar({
               notchHz: Number(e.target.value),
             })
           }
-          className="border border-gray-300 rounded px-1.5 py-0.5 text-sm text-gray-900 bg-white"
+          disabled={filtersDisabled}
+          title={filtersDisabled ? 'Cleaned data is already filtered' : 'Notch at mains frequency and harmonics'}
+          className="disabled:opacity-50 border border-gray-300 rounded px-1.5 py-0.5 text-sm text-gray-900 bg-white"
         >
           <option value={0}>Off</option>
           <option value={50}>50 Hz</option>

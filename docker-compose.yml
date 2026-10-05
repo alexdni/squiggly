@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  squiggly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - npm_token
+    container_name: squiggly
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    environment:
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-alexdni@gmail.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Pass1234!}
+      - DEPLOYMENT_MODE=docker
+      - DATABASE_MODE=postgres
+      - STORAGE_MODE=local
+      - AUTH_MODE=local
+      - NODE_ENV=production
+    volumes:
+      - squiggly-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  squiggly-data:
+    driver: local
+
+secrets:
+  # GitHub token with read:packages for the private analysis engine package
+  npm_token:
+    environment: NODE_AUTH_TOKEN

@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
-import type { User } from '@supabase/supabase-js';
 import ComparisonView from './ComparisonView';
+import TheraQReportClient from './TheraQReportClient';
+import type { TheraqPhase } from '@/lib/theraq';
 
 interface Project {
   id: string;
@@ -24,21 +24,21 @@ interface Recording {
   eo_end: number | null;
   ec_start: number | null;
   ec_end: number | null;
+  phase?: TheraqPhase | null;
 }
 
 interface ProjectDetailsClientProps {
   project: Project;
-  user: User;
+  user: { id: string; email: string };
 }
 
-type TabType = 'recordings' | 'overview' | 'comparison';
+type TabType = 'recordings' | 'overview' | 'comparison' | 'theraq';
 
 export default function ProjectDetailsClient({
   project,
   user,
 }: ProjectDetailsClientProps) {
   const router = useRouter();
-  const supabase = createClient();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('recordings');
@@ -49,14 +49,10 @@ export default function ProjectDetailsClient({
 
   const fetchRecordings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('recordings')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setRecordings(data || []);
+      const response = await fetch(`/api/recordings?project_id=${project.id}`);
+      if (!response.ok) throw new Error('Failed to fetch recordings');
+      const data = await response.json();
+      setRecordings(data.recordings || []);
     } catch (error) {
       console.error('Error fetching recordings:', error);
     } finally {
@@ -65,8 +61,9 @@ export default function ProjectDetailsClient({
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/');
+    router.refresh();
   };
 
   const formatFileSize = (bytes: number) => {
@@ -83,55 +80,41 @@ export default function ProjectDetailsClient({
 
   const handleViewAnalysis = async (recordingId: string) => {
     try {
-      // First, check if an analysis already exists for this recording
-      const { data: existingAnalysis, error: fetchError } = await (supabase as any)
-        .from('analyses')
-        .select('id')
-        .eq('recording_id', recordingId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // Fetch analyses for this recording to check if one exists
+      const checkResponse = await fetch(`/api/recordings?recording_id=${recordingId}&include_analyses=true`);
+      if (checkResponse.ok) {
+        const data = await checkResponse.json();
+        const recording = data.recordings?.[0];
+        if (recording?.analyses?.length > 0) {
+          // Navigate to most recent analysis
+          router.push(`/analyses/${recording.analyses[0].id}`);
+          return;
+        }
+      }
 
-      if (existingAnalysis) {
-        // Navigate to existing analysis
-        router.push(`/analyses/${existingAnalysis.id}`);
+      // If no analysis exists, create one via the recordings API
+      // This will be handled by the analysis page which creates analyses on-demand
+      // For now, we'll call a hypothetical create endpoint or navigate to trigger creation
+      const createResponse = await fetch('/api/recordings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recordingId,
+          createAnalysis: true,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        // If the special create doesn't work, just navigate to the recording
+        // and let the user trigger analysis from there
+        router.push(`/analyses/new?recording=${recordingId}`);
         return;
       }
 
-      // If no analysis exists, create one
-      const { data: newAnalysis, error: createError } = await (supabase as any)
-        .from('analyses')
-        .insert({
-          recording_id: recordingId,
-          status: 'pending',
-          config: {
-            preprocessing: {
-              resample_freq: 250,
-              filter_low: 0.5,
-              filter_high: 45,
-              notch_freq: 60,
-            },
-            features: {
-              bands: [
-                { name: 'delta', low: 1, high: 4 },
-                { name: 'theta', low: 4, high: 8 },
-                { name: 'alpha1', low: 8, high: 10 },
-                { name: 'alpha2', low: 10, high: 12 },
-                { name: 'smr', low: 12, high: 15 },
-                { name: 'beta2', low: 15, high: 20 },
-                { name: 'hibeta', low: 20, high: 30 },
-                { name: 'lowgamma', low: 30, high: 45 },
-              ],
-            },
-          },
-        })
-        .select()
-        .single();
-
-      if (createError) throw createError;
-
-      // Navigate to newly created analysis
-      router.push(`/analyses/${newAnalysis.id}`);
+      const result = await createResponse.json();
+      if (result.analysis?.id) {
+        router.push(`/analyses/${result.analysis.id}`);
+      }
     } catch (error) {
       console.error('Error handling analysis:', error);
       alert('Failed to load or create analysis. Please try again.');
@@ -254,6 +237,16 @@ export default function ProjectDetailsClient({
                 }`}
               >
                 Comparison
+              </button>
+              <button
+                onClick={() => setActiveTab('theraq')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'theraq'
+                    ? 'border-neuro-primary text-neuro-primary'
+                    : 'border-transparent text-gray-700 hover:text-gray-900 hover:border-gray-300'
+                }`}
+              >
+                TheraQ
               </button>
             </nav>
           </div>
@@ -445,6 +438,19 @@ export default function ProjectDetailsClient({
             {/* Comparison Tab */}
             {activeTab === 'comparison' && (
               <ComparisonView projectId={project.id} />
+            )}
+
+            {/* TheraQ four-phase comparison */}
+            {activeTab === 'theraq' && (
+              <TheraQReportClient
+                projectId={project.id}
+                recordings={recordings.map((r) => ({
+                  id: r.id,
+                  filename: r.filename,
+                  phase: r.phase ?? null,
+                }))}
+                onRecordingsChanged={fetchRecordings}
+              />
             )}
           </div>
         </div>

@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
-import type { User } from '@supabase/supabase-js';
 
 interface Project {
   id: string;
@@ -14,12 +12,11 @@ interface Project {
 }
 
 interface ProjectsClientProps {
-  user: User;
+  user: { id: string; email: string };
 }
 
 export default function ProjectsClient({ user }: ProjectsClientProps) {
   const router = useRouter();
-  const supabase = createClient();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -79,7 +76,7 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/');
   };
 

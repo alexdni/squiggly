@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import FileUploadZone from '@/components/upload/FileUploadZone';
 import EOECLabelingForm from '@/components/upload/EOECLabelingForm';
-import { createClient } from '@/lib/supabase-client';
 
 interface UploadState {
   file: File | null;
@@ -29,7 +28,6 @@ export default function UploadPage() {
   const router = useRouter();
   const params = useParams();
   const projectId = params.id as string;
-  const supabase = createClient();
 
   const [state, setState] = useState<UploadState>({
     file: null,

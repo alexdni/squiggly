@@ -8,19 +8,45 @@ import EEGUnifiedChart from './EEGUnifiedChart';
 import EEGToolbar from './EEGToolbar';
 import EEGTimeSlider from './EEGTimeSlider';
 import EEGAnnotationModal from './EEGAnnotationModal';
-import { DEFAULT_FILTER_SETTINGS, type FilterSettings, type EEGAnnotation, type RejectedEpoch } from './types';
+import { DEFAULT_FILTER_SETTINGS, type FilterSettings, type RejectedEpoch, type EEGAnnotation } from './types';
 
 interface EEGViewerProps {
   recordingId: string;
   filePath: string;
   rejectedEpochs?: RejectedEpoch[];
+  /** Cleaned recording written by the analysis (results.cleaned_file_url), if any */
+  cleanedFileUrl?: string | null;
+  /** results.cleaned_file_format, e.g. '.edf' */
+  cleanedFileFormat?: string | null;
 }
 
-export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEGViewerProps) {
-  const { signalData, isLoading, error } = useEEGData(recordingId, filePath);
+type SignalSource = 'raw' | 'cleaned';
+
+/** The cleaned file is already filtered by the pipeline; display filters would filter it twice. */
+const NO_FILTERS = { highpassHz: 0, lowpassHz: 0, notchHz: 0 };
+
+export default function EEGViewer({
+  recordingId,
+  filePath,
+  rejectedEpochs,
+  cleanedFileUrl,
+  cleanedFileFormat,
+}: EEGViewerProps) {
+  const [source, setSource] = useState<SignalSource>('raw');
+  const [cleanedRequested, setCleanedRequested] = useState(false);
+  const raw = useEEGData(recordingId, filePath);
+  // Fetched on first switch to "Cleaned", then kept for toggling back and forth
+  const cleaned = useEEGData(recordingId, filePath, {
+    url: cleanedFileUrl,
+    format: cleanedFileFormat,
+    enabled: Boolean(cleanedFileUrl) && cleanedRequested,
+  });
+  const active = source === 'cleaned' ? cleaned : raw;
+  const { signalData, isLoading, error } = active;
   const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
   const [selectedChannels, setSelectedChannels] = useState<number[]>([]);
   const [timeStart, setTimeStart] = useState(0);
+  const [showRejectedEpochs, setShowRejectedEpochs] = useState(true);
 
   // Auto-select all channels on load
   useEffect(() => {
@@ -44,12 +70,22 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
     }
   }, [signalData, filterSettings.windowDurationSeconds, timeStart]);
 
+  const effectiveFilters = useMemo(
+    () => (source === 'cleaned' ? { ...filterSettings, ...NO_FILTERS } : filterSettings),
+    [source, filterSettings]
+  );
+
   const { filteredSignals, timeLabels } = useEEGFilters(
     signalData,
     selectedChannels,
     timeStart,
-    filterSettings
+    effectiveFilters
   );
+
+  const handleSourceChange = useCallback((next: SignalSource) => {
+    if (next === 'cleaned') setCleanedRequested(true);
+    setSource(next);
+  }, []);
 
   const {
     annotations,
@@ -67,25 +103,24 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
     cancelAnnotation,
   } = useEEGAnnotations(recordingId);
 
-  const [showRejectedEpochs, setShowRejectedEpochs] = useState(true);
-
-  // Convert rejected epochs to EEGAnnotation format
+  // Convert rejected epochs to annotation objects
   const rejectedAnnotations = useMemo<EEGAnnotation[]>(() => {
     if (!rejectedEpochs || !showRejectedEpochs) return [];
-    return rejectedEpochs.map((epoch, i) => ({
+    return rejectedEpochs.map((ep, i) => ({
       id: `rejected-${i}`,
-      startTime: epoch.start,
-      endTime: epoch.end,
-      description: `${epoch.reason} (${epoch.condition})`,
+      startTime: ep.start,
+      endTime: ep.end,
+      description: `${ep.reason} (${ep.condition})`,
       type: 'rejected' as const,
       readOnly: true,
     }));
   }, [rejectedEpochs, showRejectedEpochs]);
 
   // Merge manual annotations with rejected epoch annotations
-  const allAnnotations = useMemo<EEGAnnotation[]>(() => {
-    return [...annotations, ...rejectedAnnotations];
-  }, [annotations, rejectedAnnotations]);
+  const allAnnotations = useMemo<EEGAnnotation[]>(
+    () => [...annotations, ...rejectedAnnotations],
+    [annotations, rejectedAnnotations]
+  );
 
   const handleFilterChange = useCallback((settings: FilterSettings) => {
     setFilterSettings(settings);
@@ -131,6 +166,14 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h3 className="text-red-900 font-semibold mb-2">Error Loading EEG Data</h3>
           <p className="text-red-700">{error}</p>
+          {source === 'cleaned' && (
+            <button
+              onClick={() => setSource('raw')}
+              className="mt-3 text-sm font-medium text-neuro-primary hover:underline"
+            >
+              Back to raw signals
+            </button>
+          )}
         </div>
       </div>
     );
@@ -140,9 +183,20 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-        Raw EEG Signals
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 className="text-2xl font-bold text-neuro-dark">
+          {source === 'cleaned' ? 'Cleaned EEG Signals' : 'Raw EEG Signals'}
+        </h2>
+        {cleanedFileUrl && (
+          <SourceToggle source={source} onChange={handleSourceChange} />
+        )}
+      </div>
+      {source === 'cleaned' && (
+        <p className="mb-3 text-xs text-gray-600">
+          Output of the analysis pipeline: filtered, re-referenced and artifact-corrected (ASR/ICA)
+          on the server. Display filters are off; shaded regions are epochs the analysis rejected.
+        </p>
+      )}
 
       {/* Channel selector */}
       <div className="mb-3">
@@ -171,10 +225,31 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
         <EEGToolbar
           filterSettings={filterSettings}
           onFilterChange={handleFilterChange}
+          filtersDisabled={source === 'cleaned'}
           isAnnotateMode={isAnnotateMode}
           onAnnotateModeToggle={handleAnnotateModeToggle}
         />
       </div>
+
+      {/* Rejected epochs toggle */}
+      {rejectedEpochs && rejectedEpochs.length > 0 && (
+        <div className="mb-2 flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showRejectedEpochs}
+              onChange={(e) => setShowRejectedEpochs(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-gray-700">
+              Show rejected epochs
+            </span>
+          </label>
+          <span className="text-xs text-red-500">
+            ({rejectedEpochs.length} epoch{rejectedEpochs.length !== 1 ? 's' : ''} rejected)
+          </span>
+        </div>
+      )}
 
       {/* Chart */}
       {selectedChannels.length > 0 ? (
@@ -218,21 +293,6 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
         />
       )}
 
-      {/* Rejected epochs toggle */}
-      {rejectedEpochs && rejectedEpochs.length > 0 && (
-        <div className="mt-3">
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showRejectedEpochs}
-              onChange={(e) => setShowRejectedEpochs(e.target.checked)}
-              className="rounded"
-            />
-            Show rejected epochs ({rejectedEpochs.length})
-          </label>
-        </div>
-      )}
-
       {/* Annotations list */}
       {allAnnotations.length > 0 && (
         <div className="mt-3 border border-gray-200 rounded-lg p-3">
@@ -250,9 +310,7 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
                 }`}
               >
                 <span className="text-gray-900">
-                  <span className={`font-medium capitalize ${a.type === 'rejected' ? 'text-red-700' : ''}`}>
-                    {a.type}
-                  </span>
+                  <span className="font-medium capitalize">{a.type}</span>
                   {' '}{a.startTime.toFixed(2)}s - {a.endTime.toFixed(2)}s
                   {a.description && `: ${a.description}`}
                 </span>
@@ -270,6 +328,36 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SourceToggle({
+  source,
+  onChange,
+}: {
+  source: SignalSource;
+  onChange: (source: SignalSource) => void;
+}) {
+  const options: { value: SignalSource; label: string }[] = [
+    { value: 'raw', label: 'Raw' },
+    { value: 'cleaned', label: 'Cleaned' },
+  ];
+  return (
+    <div role="radiogroup" aria-label="Signal source" className="inline-flex rounded-md border border-gray-300 overflow-hidden">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          role="radio"
+          aria-checked={source === o.value}
+          onClick={() => onChange(o.value)}
+          className={`px-3 py-1 text-xs font-medium transition-colors ${
+            source === o.value ? 'bg-neuro-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }

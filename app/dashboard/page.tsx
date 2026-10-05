@@ -1,17 +1,14 @@
-import { createClient } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import DashboardClient from '@/components/DashboardClient';
+import { getCurrentUser } from '@/lib/auth';
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
-    redirect('/login');
+    // Use ?expired=1 so middleware clears the stale cookie and breaks the redirect loop
+    redirect('/login?expired=1');
   }
 
-  return <DashboardClient user={user} />;
+  return <DashboardClient user={user as any} />;
 }

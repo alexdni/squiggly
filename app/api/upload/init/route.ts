@@ -1,14 +1,12 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
 import { checkProjectPermission } from '@/lib/rbac';
+import { getStorageClient } from '@/lib/storage';
 
 // POST /api/upload/init - Generate signed URL for upload
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -40,25 +38,24 @@ export async function POST(request: Request) {
     const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
     const filePath = `${projectId}/${timestamp}-${sanitizedFilename}`;
 
-    // Generate signed URL for upload (valid for 1 hour)
-    const { data: signedUrlData, error: signedUrlError } = await supabase
-      .storage
-      .from('recordings')
-      .createSignedUploadUrl(filePath);
+    // Use storage abstraction to generate signed URL
+    const storage = getStorageClient();
 
-    if (signedUrlError) {
+    try {
+      const signedUrlData = await storage.createSignedUploadUrl('recordings', filePath);
+
+      return NextResponse.json({
+        uploadUrl: signedUrlData.signedUrl,
+        filePath: filePath,
+        token: signedUrlData.token,
+      });
+    } catch (signedUrlError) {
       console.error('Error creating signed URL:', signedUrlError);
       return NextResponse.json(
         { error: 'Failed to generate upload URL' },
         { status: 500 }
       );
     }
-
-    return NextResponse.json({
-      uploadUrl: signedUrlData.signedUrl,
-      filePath: filePath,
-      token: signedUrlData.token,
-    });
   } catch (error) {
     console.error('Error in upload init:', error);
     return NextResponse.json(

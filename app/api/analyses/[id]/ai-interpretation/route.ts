@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 import {
   generateEEGInterpretation,
   AIInterpretation,
@@ -11,36 +12,35 @@ import {
 } from '@/lib/prompts/eeg-interpretation';
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 // GET - Retrieve cached AI interpretation
 export async function GET(request: Request, { params }: RouteParams) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { id: analysisId } = await params;
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data: analysis, error } = await (supabase as any)
+    const db = getDatabaseClient();
+
+    const { data: analysis } = await db
       .from('analyses')
       .select('results')
-      .eq('id', params.id)
+      .eq('id', analysisId)
       .single();
 
-    if (error || !analysis) {
+    if (!analysis) {
       return NextResponse.json(
         { error: 'Analysis not found' },
         { status: 404 }
       );
     }
 
-    const aiInterpretation = analysis.results?.ai_interpretation;
+    const aiInterpretation = (analysis as any).results?.ai_interpretation;
     if (!aiInterpretation) {
       return NextResponse.json(
         { error: 'No AI interpretation available' },
@@ -61,11 +61,8 @@ export async function GET(request: Request, { params }: RouteParams) {
 // POST - Generate new AI interpretation
 export async function POST(request: Request, { params }: RouteParams) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { id: analysisId } = await params;
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -79,32 +76,26 @@ export async function POST(request: Request, { params }: RouteParams) {
       );
     }
 
-    // Fetch analysis with recording and project data
-    const { data: analysis, error: fetchError } = await (supabase as any)
+    const db = getDatabaseClient();
+
+    // Fetch analysis
+    const { data: analysis } = await db
       .from('analyses')
-      .select(`
-        *,
-        recording:recordings (
-          id,
-          duration_seconds,
-          sampling_rate,
-          n_channels,
-          montage,
-          project_id
-        )
-      `)
-      .eq('id', params.id)
+      .select('*')
+      .eq('id', analysisId)
       .single();
 
-    if (fetchError || !analysis) {
+    if (!analysis) {
       return NextResponse.json(
         { error: 'Analysis not found' },
         { status: 404 }
       );
     }
 
+    const analysisData = analysis as any;
+
     // Verify analysis is completed
-    if (analysis.status !== 'completed') {
+    if (analysisData.status !== 'completed') {
       return NextResponse.json(
         { error: 'Analysis must be completed before generating AI interpretation' },
         { status: 400 }
@@ -112,69 +103,77 @@ export async function POST(request: Request, { params }: RouteParams) {
     }
 
     // Verify we have results
-    if (!analysis.results) {
+    if (!analysisData.results) {
       return NextResponse.json(
         { error: 'Analysis data is incomplete. Cannot generate AI interpretation.' },
         { status: 400 }
       );
     }
 
+    // Fetch recording data
+    const { data: recording } = await db
+      .from('recordings')
+      .select('id, duration_seconds, sampling_rate, n_channels, montage, project_id')
+      .eq('id', analysisData.recording_id)
+      .single();
+
+    const recordingData = recording as any;
+
     // Fetch project metadata if available
     let clientMetadata: any = null;
-    if (analysis.recording?.project_id) {
-      const { data: project } = await (supabase as any)
+    if (recordingData?.project_id) {
+      const { data: project } = await db
         .from('projects')
         .select('client_metadata')
-        .eq('id', analysis.recording.project_id)
+        .eq('id', recordingData.project_id)
         .single();
-      clientMetadata = project?.client_metadata;
+      clientMetadata = (project as any)?.client_metadata;
     }
 
     // Build the data payload for the LLM
     const payload: EEGDataPayload = {
       recording_info: {
-        duration_seconds: analysis.recording?.duration_seconds || 0,
-        sampling_rate: analysis.recording?.sampling_rate || 250,
-        n_channels: analysis.recording?.n_channels || 19,
-        montage: analysis.recording?.montage || '10-20',
+        duration_seconds: recordingData?.duration_seconds || 0,
+        sampling_rate: recordingData?.sampling_rate || 250,
+        n_channels: recordingData?.n_channels || 19,
+        montage: recordingData?.montage || '10-20',
       },
     };
 
     // Add QC report if available
-    if (analysis.results.qc_report) {
+    if (analysisData.results.qc_report) {
       payload.qc_report = {
-        artifact_rejection_rate: analysis.results.qc_report.artifact_rejection_rate || 0,
-        bad_channels: analysis.results.qc_report.bad_channels || [],
-        ica_components_removed: analysis.results.qc_report.ica_components_removed || 0,
-        final_epochs_eo: analysis.results.qc_report.final_epochs_eo || 0,
-        final_epochs_ec: analysis.results.qc_report.final_epochs_ec || 0,
+        artifact_rejection_rate: analysisData.results.qc_report.artifact_rejection_rate || 0,
+        bad_channels: analysisData.results.qc_report.bad_channels || [],
+        ica_components_removed: analysisData.results.qc_report.ica_components_removed || 0,
+        final_epochs_eo: analysisData.results.qc_report.final_epochs_eo || 0,
+        final_epochs_ec: analysisData.results.qc_report.final_epochs_ec || 0,
       };
     }
 
     // Add band power if available
-    if (analysis.results.band_power) {
+    if (analysisData.results.band_power) {
       payload.band_power = {
-        eo: analysis.results.band_power.eo,
-        ec: analysis.results.band_power.ec,
+        eo: analysisData.results.band_power.eo,
+        ec: analysisData.results.band_power.ec,
       };
     }
 
     // Add band ratios if available
-    if (analysis.results.band_ratios) {
-      payload.band_ratios = analysis.results.band_ratios;
+    if (analysisData.results.band_ratios) {
+      payload.band_ratios = analysisData.results.band_ratios;
     }
 
     // Add asymmetry if available
-    if (analysis.results.asymmetry) {
-      payload.asymmetry = analysis.results.asymmetry;
+    if (analysisData.results.asymmetry) {
+      payload.asymmetry = analysisData.results.asymmetry;
     }
 
     // Add LZC values if available - extract normalized_lzc from nested structure
-    // Structure: lzc[condition][channel] = { lzc: number, normalized_lzc: number }
-    if (analysis.results.lzc) {
+    if (analysisData.results.lzc) {
       const lzcPayload: Record<string, Record<string, number>> = {};
       for (const condition of ['eo', 'ec']) {
-        const conditionData = analysis.results.lzc[condition];
+        const conditionData = analysisData.results.lzc[condition];
         if (conditionData && typeof conditionData === 'object') {
           lzcPayload[condition] = {};
           for (const [ch, data] of Object.entries(conditionData)) {
@@ -190,12 +189,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
     }
 
-    // Add alpha peak frequency if available - extract peak_frequency from nested structure
-    // Structure: alpha_peak[condition][channel] = { peak_frequency: number, peak_power: number }
-    if (analysis.results.alpha_peak) {
+    // Add alpha peak frequency if available
+    if (analysisData.results.alpha_peak) {
       const alphaPeakPayload: { eo?: Record<string, number>; ec?: Record<string, number> } = {};
       for (const condition of ['eo', 'ec'] as const) {
-        const conditionData = analysis.results.alpha_peak[condition];
+        const conditionData = analysisData.results.alpha_peak[condition];
         if (conditionData && typeof conditionData === 'object') {
           alphaPeakPayload[condition] = {};
           for (const [ch, data] of Object.entries(conditionData)) {
@@ -269,19 +267,15 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     // Store interpretation in analysis results
     const updatedResults = {
-      ...analysis.results,
+      ...analysisData.results,
       ai_interpretation: interpretation,
     };
 
-    const { error: updateError } = await (supabase as any)
+    await db
       .from('analyses')
       .update({ results: updatedResults })
-      .eq('id', params.id);
-
-    if (updateError) {
-      console.error('Error storing AI interpretation:', updateError);
-      // Still return the interpretation even if storage failed
-    }
+      .eq('id', analysisId)
+      .execute();
 
     return NextResponse.json({ interpretation });
   } catch (error: any) {

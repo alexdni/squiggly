@@ -1,5 +1,7 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
+import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
 
 interface RecordingData {
@@ -17,16 +19,15 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const projectId = params.id;
+    const db = getDatabaseClient();
+    const storage = getStorageClient();
 
     // Check if user is owner (only owners can delete projects)
     const hasPermission = await checkProjectPermission(
@@ -43,10 +44,11 @@ export async function DELETE(
     }
 
     // Fetch all recordings in this project
-    const { data: recordings } = await supabase
+    const { data: recordings } = await db
       .from('recordings')
       .select('id, file_path')
-      .eq('project_id', projectId);
+      .eq('project_id', projectId)
+      .execute();
 
     const typedRecordings = recordings as RecordingData[] | null;
 
@@ -54,10 +56,11 @@ export async function DELETE(
       // Delete all analyses and their visual assets
       for (const recording of typedRecordings) {
         const recordingId = recording.id;
-        const { data: analyses } = await supabase
+        const { data: analyses } = await db
           .from('analyses')
           .select('id')
-          .eq('recording_id', recordingId);
+          .eq('recording_id', recordingId)
+          .execute();
 
         const typedAnalyses = analyses as AnalysisData[] | null;
 
@@ -66,60 +69,50 @@ export async function DELETE(
           for (const analysis of typedAnalyses) {
             const analysisId = analysis.id;
             try {
-              const { data: files } = await supabase
-                .storage
-                .from('visuals')
-                .list(analysisId);
+              const files = await storage.list('visuals', analysisId);
 
               if (files && files.length > 0) {
                 const filePaths = files.map(f => `${analysisId}/${f.name}`);
-                await supabase.storage.from('visuals').remove(filePaths);
+                await storage.remove('visuals', filePaths);
               }
             } catch (storageError) {
               console.error(`Error deleting visuals for analysis ${analysisId}:`, storageError);
               // Continue anyway
             }
-          }
 
-          // Delete analyses
-          await supabase
-            .from('analyses')
-            .delete()
-            .eq('recording_id', recordingId);
+            // Delete analysis
+            await db.from('analyses').delete().eq('id', analysisId).execute();
+          }
         }
 
         // Delete EDF file from storage
         if (recording.file_path) {
           try {
-            await supabase
-              .storage
-              .from('recordings')
-              .remove([recording.file_path]);
+            await storage.remove('recordings', [recording.file_path]);
           } catch (storageError) {
             console.error(`Error deleting file ${recording.file_path}:`, storageError);
             // Continue anyway
           }
         }
-      }
 
-      // Delete all recordings
-      await supabase
-        .from('recordings')
-        .delete()
-        .eq('project_id', projectId);
+        // Delete recording
+        await db.from('recordings').delete().eq('id', recordingId).execute();
+      }
     }
 
     // Delete project members
-    await supabase
+    await db
       .from('project_members')
       .delete()
-      .eq('project_id', projectId);
+      .eq('project_id', projectId)
+      .execute();
 
     // Delete project
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await db
       .from('projects')
       .delete()
-      .eq('id', projectId);
+      .eq('id', projectId)
+      .execute();
 
     if (deleteError) {
       console.error('Error deleting project:', deleteError);

@@ -2,9 +2,33 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
-import type { User } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
+import { ARTIFACT_PROFILES } from '@/lib/constants';
+import type { AnalysisResults } from '@/lib/analysis-results';
+import {
+  LEGACY_ICA_METHOD_LABELS,
+  MAX_POLL_MS,
+  PHYSIOLOGICAL_PATH_LABELS,
+  POLL_INTERVAL_MS,
+  PROFILE_ASR_K,
+  PROFILE_DESCRIPTIONS,
+  SETTING_LIMITS,
+  buildPreprocessingConfig,
+  clampSetting,
+  engineLabel,
+  isProcessingStale,
+  settingsFromConfig,
+  type ArtifactSettings,
+} from './analysis-settings';
+import LegacyOrLive, { hasAnyLegacyVisual } from './visuals/LegacyOrLive';
+import TopomapGrid from './visuals/TopomapGrid';
+import LzcTopomaps from './visuals/LzcTopomaps';
+import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
+import ConnectivityHead from './visuals/ConnectivityHead';
+import SpectrogramGrid from './visuals/Spectrogram';
+
+// chart.js renders client-side only
+const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
 
 // Dynamically import EEG Viewer to avoid SSR issues with Chart.js
 const RawEEGViewer = dynamic(() => import('./eeg-viewer/EEGViewer'), {
@@ -47,12 +71,13 @@ interface Analysis {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+  updated_at?: string | null;
   recording: Recording;
 }
 
 interface AnalysisDetailsClientProps {
   analysis: Analysis;
-  user: User;
+  user: { id: string; email: string };
 }
 
 interface AIInterpretationContent {
@@ -71,12 +96,19 @@ interface AIInterpretation {
   content: AIInterpretationContent;
 }
 
+const PROCESSING_STEPS = [
+  { label: 'Loading recording', threshold: 0 },
+  { label: 'Channel checks & filtering', threshold: 3 },
+  { label: 'Artifact removal (ASR / ICA)', threshold: 6 },
+  { label: 'Band power, connectivity & complexity', threshold: 15 },
+  { label: 'Saving results & cleaned file', threshold: 25 },
+];
+
 export default function AnalysisDetailsClient({
   analysis: initialAnalysis,
   user,
 }: AnalysisDetailsClientProps) {
   const router = useRouter();
-  const supabase = createClient();
   const [analysis, setAnalysis] = useState(initialAnalysis);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pollingElapsed, setPollingElapsed] = useState(0);
@@ -84,134 +116,117 @@ export default function AnalysisDetailsClient({
   const [aiError, setAiError] = useState<string | null>(null);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
-  const [artifactMode, setArtifactMode] = useState<'ica' | 'manual'>('ica');
-  const [icaMethod, setIcaMethod] = useState<'fastica' | 'infomax' | 'picard' | 'sobi'>(
-    (initialAnalysis.config?.preprocessing?.ica_method as any) || 'sobi'
+  const [settings, setSettings] = useState<ArtifactSettings>(() =>
+    settingsFromConfig(initialAnalysis.config?.preprocessing)
   );
-  const [sobiDeltaThreshold, setSobiDeltaThreshold] = useState(
-    initialAnalysis.config?.preprocessing?.sobi_delta_threshold ?? 0.70
-  );
-  const [sobiHfThreshold, setSobiHfThreshold] = useState(
-    initialAnalysis.config?.preprocessing?.sobi_hf_threshold ?? 0.40
-  );
-  const [sobiFrontalCorr, setSobiFrontalCorr] = useState(
-    initialAnalysis.config?.preprocessing?.sobi_frontal_corr ?? 0.60
-  );
+  const [startError, setStartError] = useState<string | null>(null);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
-  // Polling timeout: 2 minutes
-  const ANALYSIS_TIMEOUT_SECONDS = 120;
-  const POLL_INTERVAL_MS = 2000;
+  const updateSetting = <K extends keyof ArtifactSettings>(key: K, value: ArtifactSettings[K]) =>
+    setSettings((prev) => ({ ...prev, [key]: value }));
 
-  // Auto-refresh when processing
+  // Poll while processing. The job runs server-side after /process returns 202; stop after
+  // MAX_POLL_MS and treat the job as stalled.
   useEffect(() => {
-    if (analysis.status === 'processing') {
-      let pollCount = 0;
-      const startTime = Date.now();
+    if (analysis.status !== 'processing') return;
+    setPollTimedOut(false);
+    const startTime = Date.now();
 
-      const interval = setInterval(async () => {
-        pollCount++;
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        setPollingElapsed(elapsed);
+    const interval = setInterval(async () => {
+      const elapsedMs = Date.now() - startTime;
+      setPollingElapsed(Math.floor(elapsedMs / 1000));
+      setNow(Date.now());
 
-        // Check if timeout exceeded
-        if (elapsed >= ANALYSIS_TIMEOUT_SECONDS) {
-          console.warn(`Analysis polling timeout exceeded after ${ANALYSIS_TIMEOUT_SECONDS} seconds`);
-          clearInterval(interval);
-          setPollingElapsed(0);
-          return;
-        }
+      if (elapsedMs >= MAX_POLL_MS) {
+        console.warn(`Analysis polling stopped after ${MAX_POLL_MS / 1000} seconds`);
+        clearInterval(interval);
+        setPollTimedOut(true);
+        return;
+      }
 
-        const { data } = await (supabase as any)
-          .from('analyses')
-          .select(`
-            *,
-            recording:recordings (
-              id,
-              filename,
-              file_path,
-              file_size,
-              duration_seconds,
-              sampling_rate,
-              n_channels,
-              montage,
-              reference,
-              eo_start,
-              eo_end,
-              ec_start,
-              ec_end,
-              project_id,
-              created_at
-            )
-          `)
-          .eq('id', analysis.id)
-          .single();
-
-        if (data) {
-          setAnalysis(data);
-          if (data.status !== 'processing') {
-            clearInterval(interval);
-            setPollingElapsed(0);
+      try {
+        const response = await fetch(`/api/analyses/${analysis.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data) {
+            setAnalysis((prev) => ({ ...prev, ...data, recording: data.recording ?? prev.recording }));
+            if (data.status !== 'processing') {
+              clearInterval(interval);
+              setPollingElapsed(0);
+            }
           }
         }
-      }, POLL_INTERVAL_MS);
+      } catch (err) {
+        console.error('Error polling analysis:', err);
+      }
+    }, POLL_INTERVAL_MS);
 
-      return () => {
-        clearInterval(interval);
-        setPollingElapsed(0);
-      };
-    }
-  }, [analysis.status, analysis.id, supabase]);
+    return () => {
+      clearInterval(interval);
+      setPollingElapsed(0);
+    };
+  }, [analysis.status, analysis.id]);
+
+  const isStalled =
+    analysis.status === 'processing' && (pollTimedOut || isProcessingStale(analysis, now));
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/');
+    router.refresh();
   };
 
+  // Saves the artifact settings and starts the job. /process answers 202 right away; the job
+  // writes completed/failed itself and the polling effect picks it up.
   const handleStartAnalysis = async () => {
     setIsProcessing(true);
+    setStartError(null);
     try {
-      // Update config with chosen artifact mode and ICA settings before starting
       const updatedConfig = {
         ...analysis.config,
-        preprocessing: {
-          ...analysis.config?.preprocessing,
-          artifact_mode: artifactMode,
-          ica_method: icaMethod,
-          ...(icaMethod === 'sobi' ? {
-            sobi_delta_threshold: sobiDeltaThreshold,
-            sobi_hf_threshold: sobiHfThreshold,
-            sobi_frontal_corr: sobiFrontalCorr,
-          } : {}),
-        },
+        preprocessing: buildPreprocessingConfig(analysis.config?.preprocessing, settings),
       };
 
+      // A retry also clears a failed or stalled run
+      const isRetry = analysis.status !== 'pending';
       const patchResponse = await fetch(`/api/analyses/${analysis.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: updatedConfig }),
+        body: JSON.stringify(
+          isRetry
+            ? { config: updatedConfig, status: 'pending', error_log: null, started_at: null, completed_at: null }
+            : { config: updatedConfig }
+        ),
       });
 
       if (!patchResponse.ok) {
-        throw new Error('Failed to update analysis config');
+        const body = await patchResponse.json().catch(() => null);
+        throw new Error(body?.error || 'Failed to update analysis config');
       }
 
-      // Set processing state immediately (optimistic) so the spinner shows
-      // even if the POST to the worker takes a moment
-      setAnalysis({ ...analysis, status: 'processing', config: updatedConfig });
-
-      // Dispatch to worker — this returns quickly (fire-and-forget)
       const response = await fetch(`/api/analyses/${analysis.id}/process`, {
         method: 'POST',
       });
 
       if (!response.ok) {
-        // Revert to pending if the dispatch itself failed
-        setAnalysis({ ...analysis, status: 'pending', config: updatedConfig });
-        throw new Error('Failed to start analysis');
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || 'Failed to start analysis');
       }
-    } catch (error) {
+
+      setPollTimedOut(false);
+      setNow(Date.now());
+      setAnalysis({
+        ...analysis,
+        status: 'processing',
+        config: updatedConfig,
+        error_log: null,
+        started_at: new Date().toISOString(),
+        completed_at: null,
+      });
+    } catch (error: any) {
       console.error('Error starting analysis:', error);
-      alert('Failed to start analysis. Please try again.');
+      setStartError(error.message || 'Failed to start analysis. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -327,6 +342,7 @@ export default function AnalysisDetailsClient({
   };
 
   const aiInterpretation: AIInterpretation | null = analysis.results?.ai_interpretation || null;
+  const results = analysis.results as Partial<AnalysisResults> | null;
 
   return (
     <main className="min-h-screen bg-neuro-light">
@@ -495,6 +511,8 @@ export default function AnalysisDetailsClient({
           recordingId={analysis.recording.id}
           filePath={analysis.recording.file_path}
           rejectedEpochs={analysis.results?.rejected_epochs}
+          cleanedFileUrl={analysis.results?.cleaned_file_url}
+          cleanedFileFormat={analysis.results?.cleaned_file_format}
         />
 
         {/* Analysis Results or Status Message */}
@@ -524,126 +542,159 @@ export default function AnalysisDetailsClient({
               </div>
             </div>
 
-            {/* De-Artifacting Mode Selector */}
+            {/* De-Artifacting Settings */}
             <div className="bg-white border border-yellow-200 rounded-lg p-4 mb-4">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">
-                De-Artifacting Method
-              </h4>
-              <div className="space-y-3">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="artifactMode"
-                    value="ica"
-                    checked={artifactMode === 'ica'}
-                    onChange={() => setArtifactMode('ica')}
-                    className="mt-1"
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">ICA (Automatic)</div>
-                    <div className="text-sm text-gray-600">
-                      Automatically detects and removes artifacts using Independent Component Analysis
+              <fieldset>
+                <legend className="text-sm font-semibold text-gray-900 mb-3">
+                  De-Artifacting Method
+                </legend>
+                <div className="space-y-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="artifactMode"
+                      value="pipeline"
+                      checked={settings.artifact_mode === 'pipeline'}
+                      onChange={() => updateSetting('artifact_mode', 'pipeline')}
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900">Automatic pipeline</div>
+                      <div className="text-sm text-gray-600">
+                        Channel quality checks, artifact subspace reconstruction, ICA and adaptive epoch rejection
+                      </div>
                     </div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="artifactMode"
-                    value="manual"
-                    checked={artifactMode === 'manual'}
-                    onChange={() => setArtifactMode('manual')}
-                    className="mt-1"
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">Manual</div>
-                    <div className="text-sm text-gray-600">
-                      Mark artifact epochs by hand in the EEG viewer above, then analyze
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="artifactMode"
+                      value="manual"
+                      checked={settings.artifact_mode === 'manual'}
+                      onChange={() => updateSetting('artifact_mode', 'manual')}
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900">Manual</div>
+                      <div className="text-sm text-gray-600">
+                        Mark artifact epochs by hand in the EEG viewer above, then analyze
+                      </div>
                     </div>
-                  </div>
-                </label>
-              </div>
-              {artifactMode === 'manual' && (
+                  </label>
+                </div>
+              </fieldset>
+              {settings.artifact_mode === 'manual' && (
                 <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-3">
                   <p className="text-sm text-blue-800">
                     Use the annotation tool in the EEG viewer above to mark artifact regions before starting analysis. Select &ldquo;Annotate&rdquo; mode, then drag across artifact regions.
                   </p>
                 </div>
               )}
+
+              {/* Pipeline profile and knobs */}
+              {settings.artifact_mode === 'pipeline' && (
+                <div className="mt-4 pt-3 border-t border-gray-200 space-y-4">
+                  <div>
+                    <label htmlFor="artifact-profile" className="block text-sm font-semibold text-gray-900 mb-2">
+                      Artifact Profile
+                    </label>
+                    <select
+                      id="artifact-profile"
+                      value={settings.profile}
+                      onChange={(e) => updateSetting('profile', e.target.value as ArtifactSettings['profile'])}
+                      aria-describedby="artifact-profile-description"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white text-gray-900"
+                    >
+                      {ARTIFACT_PROFILES.map((p) => (
+                        <option key={p} value={p}>
+                          {PROFILE_DESCRIPTIONS[p].label}
+                          {p === 'full' ? ' (Recommended)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p id="artifact-profile-description" className="text-xs text-gray-600 mt-1">
+                      {PROFILE_DESCRIPTIONS[settings.profile].description}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 pt-3 border-t border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">Advanced Settings</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label htmlFor="rejection-threshold" className="block text-xs text-gray-700 mb-1">
+                      Rejection threshold (µV)
+                    </label>
+                    <input
+                      id="rejection-threshold"
+                      type="number"
+                      min={SETTING_LIMITS.rejection_threshold_uv.min}
+                      max={SETTING_LIMITS.rejection_threshold_uv.max}
+                      step={10}
+                      value={Number.isFinite(settings.rejection_threshold_uv) ? settings.rejection_threshold_uv : ''}
+                      onChange={(e) => updateSetting('rejection_threshold_uv', e.target.valueAsNumber)}
+                      onBlur={(e) =>
+                        updateSetting('rejection_threshold_uv', clampSetting('rejection_threshold_uv', e.target.valueAsNumber))
+                      }
+                      aria-describedby="rejection-threshold-help"
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900"
+                    />
+                    <p id="rejection-threshold-help" className="text-[11px] text-gray-500 mt-0.5">
+                      Peak-to-peak ceiling per epoch after cleaning ({SETTING_LIMITS.rejection_threshold_uv.min}–{SETTING_LIMITS.rejection_threshold_uv.max})
+                    </p>
+                  </div>
+                  <div>
+                    <label htmlFor="asr-k" className="block text-xs text-gray-700 mb-1">
+                      ASR cutoff k (SD)
+                    </label>
+                    <input
+                      id="asr-k"
+                      type="number"
+                      min={SETTING_LIMITS.asr_k.min}
+                      max={SETTING_LIMITS.asr_k.max}
+                      step={1}
+                      value={settings.asr_k ?? ''}
+                      placeholder={
+                        PROFILE_ASR_K[settings.profile] !== null
+                          ? `profile default (${PROFILE_ASR_K[settings.profile]})`
+                          : 'not used'
+                      }
+                      disabled={settings.artifact_mode !== 'pipeline' || settings.profile === 'rejectionOnly' || settings.profile === 'legacy'}
+                      onChange={(e) => updateSetting('asr_k', Number.isFinite(e.target.valueAsNumber) ? e.target.valueAsNumber : null)}
+                      onBlur={(e) => updateSetting('asr_k', clampSetting('asr_k', e.target.valueAsNumber))}
+                      aria-describedby="asr-k-help"
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <p id="asr-k-help" className="text-[11px] text-gray-500 mt-0.5">
+                      Blank uses the profile default; lower is more aggressive ({SETTING_LIMITS.asr_k.min}–{SETTING_LIMITS.asr_k.max})
+                    </p>
+                  </div>
+                  <div>
+                    <label htmlFor="line-freq" className="block text-xs text-gray-700 mb-1">
+                      Line frequency
+                    </label>
+                    <select
+                      id="line-freq"
+                      value={settings.line_freq}
+                      onChange={(e) => updateSetting('line_freq', Number(e.target.value) === 50 ? 50 : 60)}
+                      aria-describedby="line-freq-help"
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900"
+                    >
+                      <option value={60}>60 Hz (Americas)</option>
+                      <option value={50}>50 Hz (Europe, Asia)</option>
+                    </select>
+                    <p id="line-freq-help" className="text-[11px] text-gray-500 mt-0.5">
+                      Mains interference to notch out
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* ICA Method Selector (only when ICA mode is selected) */}
-            {artifactMode === 'ica' && (
-              <div className="bg-white border border-yellow-200 rounded-lg p-4 mb-4">
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">
-                  ICA Method
-                </h4>
-                <select
-                  value={icaMethod}
-                  onChange={(e) => setIcaMethod(e.target.value as any)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
-                >
-                  <option value="sobi">SOBI (Recommended)</option>
-                  <option value="fastica">FastICA</option>
-                  <option value="infomax">Infomax</option>
-                  <option value="picard">Picard</option>
-                </select>
-
-                {/* SOBI Configuration */}
-                {icaMethod === 'sobi' && (
-                  <div className="mt-3 space-y-3">
-                    <p className="text-xs text-gray-600">
-                      SOBI artifact detection thresholds. Higher values = more aggressive rejection.
-                    </p>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Delta Power Ratio
-                        </label>
-                        <input
-                          type="number"
-                          step="0.05"
-                          min="0.1"
-                          max="1.0"
-                          value={sobiDeltaThreshold}
-                          onChange={(e) => setSobiDeltaThreshold(parseFloat(e.target.value) || 0.70)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
-                        />
-                        <p className="text-xs text-gray-500 mt-0.5">Slow drift threshold</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          HF Power Ratio
-                        </label>
-                        <input
-                          type="number"
-                          step="0.05"
-                          min="0.1"
-                          max="1.0"
-                          value={sobiHfThreshold}
-                          onChange={(e) => setSobiHfThreshold(parseFloat(e.target.value) || 0.40)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
-                        />
-                        <p className="text-xs text-gray-500 mt-0.5">Muscle artifact threshold</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Frontal Correlation
-                        </label>
-                        <input
-                          type="number"
-                          step="0.05"
-                          min="0.1"
-                          max="1.0"
-                          value={sobiFrontalCorr}
-                          onChange={(e) => setSobiFrontalCorr(parseFloat(e.target.value) || 0.60)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
-                        />
-                        <p className="text-xs text-gray-500 mt-0.5">EOG detection threshold</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+            {startError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3" role="alert">
+                <p className="text-red-800 text-sm">{startError}</p>
               </div>
             )}
 
@@ -659,49 +710,30 @@ export default function AnalysisDetailsClient({
           </div>
         )}
 
-        {analysis.status === 'processing' && (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6 overflow-hidden relative">
-            {/* Animated shimmer bar across the top */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-200 overflow-hidden">
-              <div className="h-full w-1/3 bg-gradient-to-r from-blue-400 via-indigo-500 to-blue-400 animate-[shimmer_2s_ease-in-out_infinite]" style={{ animation: 'shimmer 2s ease-in-out infinite' }} />
-            </div>
-            <style jsx>{`
-              @keyframes shimmer {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(400%); }
-              }
-            `}</style>
-
-            <div className="flex items-start gap-4">
-              {/* Pulsing brain icon */}
-              <div className="flex-shrink-0 relative">
-                <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
-                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714a2.25 2.25 0 0 0 .659 1.591L19 14.5m-4.25-11.396c.251.023.501.05.75.082M5 14.5l-1.395.747a1.125 1.125 0 0 0-.39 1.54l1.64 2.844a1.126 1.126 0 0 0 1.544.39L9 18.75m-4-4.25 1.5.75M19 14.5l1.395.747a1.125 1.125 0 0 1 .39 1.54l-1.64 2.844a1.126 1.126 0 0 1-1.544.39L15 18.75m4-4.25-1.5.75" />
-                  </svg>
-                </div>
-                <div className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-blue-500 animate-ping" />
-              </div>
-
-              <div className="flex-1 min-w-0">
+        {analysis.status === 'processing' && !isStalled && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6" role="status" aria-live="polite">
+            <div className="flex items-center">
+              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-blue-900">
                   Analysis in progress...
                 </h3>
-                <p className="text-blue-700 text-sm mt-1">
-                  This may take up to 2 minutes. Please do not close this page.
+                <p className="text-blue-700">
+                  This usually takes under a minute. You can leave this page; processing continues on the server.
+                  {pollingElapsed > 0 && (
+                    <span className="ml-2">
+                      ({pollingElapsed}s elapsed)
+                    </span>
+                  )}
                 </p>
 
                 {/* Processing steps */}
                 <div className="mt-4 space-y-2">
-                  {[
-                    { label: 'Preprocessing EEG data', threshold: 0 },
-                    { label: 'Filtering & artifact rejection', threshold: 15 },
-                    { label: 'Computing band power', threshold: 35 },
-                    { label: 'Coherence & connectivity analysis', threshold: 55 },
-                    { label: 'Generating report', threshold: 80 },
-                  ].map((step, i) => {
-                    const isActive = pollingElapsed >= step.threshold && (i === 4 || pollingElapsed < [15, 35, 55, 80, 999][i]);
-                    const isDone = i < 4 && pollingElapsed >= [15, 35, 55, 80, 999][i];
+                  {/* Approximate timeline of the server pipeline; the job reports only done/failed. */}
+                  {PROCESSING_STEPS.map((step, i) => {
+                    const next = PROCESSING_STEPS[i + 1]?.threshold ?? Infinity;
+                    const isActive = pollingElapsed >= step.threshold && pollingElapsed < next;
+                    const isDone = pollingElapsed >= next;
                     return (
                       <div key={step.label} className={`flex items-center gap-2 text-sm transition-opacity duration-500 ${pollingElapsed >= step.threshold ? 'opacity-100' : 'opacity-0'}`}>
                         {isDone ? (
@@ -723,27 +755,23 @@ export default function AnalysisDetailsClient({
                   })}
                 </div>
 
-                {/* Elapsed time */}
-                {pollingElapsed > 0 && (
-                  <p className="text-blue-500 text-xs mt-3">
-                    {pollingElapsed}s elapsed
-                  </p>
-                )}
               </div>
             </div>
           </div>
         )}
 
-        {analysis.status === 'failed' && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+        {(analysis.status === 'failed' || isStalled) && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6" role="alert">
             <div>
               <h3 className="text-lg font-semibold text-red-900 mb-2">
-                Analysis Failed
+                {isStalled ? 'Analysis Stalled' : 'Analysis Failed'}
               </h3>
               <p className="text-red-700 mb-2">
-                An error occurred while processing your EEG data.
+                {isStalled
+                  ? 'Processing has not finished after 10 minutes and has most likely stopped. You can retry it.'
+                  : 'An error occurred while processing your EEG data.'}
               </p>
-              {analysis.error_log && (
+              {analysis.status === 'failed' && analysis.error_log && (
                 <div className="bg-white border border-red-300 rounded p-3 mt-3">
                   <div className="text-sm text-gray-700 mb-1">Error Details:</div>
                   <pre className="text-sm text-red-800 whitespace-pre-wrap">
@@ -751,6 +779,25 @@ export default function AnalysisDetailsClient({
                   </pre>
                 </div>
               )}
+              {startError && (
+                <p className="text-sm text-red-800 mt-3">{startError}</p>
+              )}
+              <div className="flex flex-wrap gap-3 mt-4">
+                <button
+                  onClick={handleStartAnalysis}
+                  disabled={isProcessing}
+                  className="bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isProcessing ? 'Retrying...' : 'Retry'}
+                </button>
+                <button
+                  onClick={handleReanalyze}
+                  disabled={isReanalyzing || isProcessing}
+                  className="bg-white text-neuro-primary border-2 border-neuro-primary px-4 py-2 rounded-lg hover:bg-neuro-light transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Change Settings
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -758,7 +805,14 @@ export default function AnalysisDetailsClient({
         {analysis.status === 'completed' && analysis.results && (
           <>
             {/* QC Report */}
-            {analysis.results.qc_report && (
+            {results?.qc_report && (() => {
+              const r = results!;
+              const qc = r.qc_report!;
+              const isLegacyIca = qc.artifact_mode === 'ica' || Boolean(qc.ica_method);
+              const engine = r.processing_metadata?.engine;
+              const listOrNone = (items: string[] | undefined) =>
+                items && items.length > 0 ? items.join(', ') : 'None';
+              return (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Quality Control Report
@@ -769,13 +823,18 @@ export default function AnalysisDetailsClient({
                       Artifact Rejection
                     </div>
                     <div className="text-lg font-semibold text-gray-900">
-                      {analysis.results.qc_report.artifact_rejection_rate}%
+                      {qc.artifact_rejection_rate}%
                     </div>
+                    {(qc.eo_rejection_rate !== undefined || qc.ec_rejection_rate !== undefined) && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        EO {qc.eo_rejection_rate ?? '–'}% / EC {qc.ec_rejection_rate ?? '–'}%
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="text-sm text-gray-700">Bad Channels</div>
                     <div className="text-lg font-semibold text-gray-900">
-                      {analysis.results.qc_report.bad_channels?.length || 0}
+                      {qc.bad_channels?.length || 0}
                     </div>
                   </div>
                   <div>
@@ -783,21 +842,134 @@ export default function AnalysisDetailsClient({
                       ICA Components Removed
                     </div>
                     <div className="text-lg font-semibold text-gray-900">
-                      {analysis.results.qc_report.ica_components_removed}
+                      {qc.ica_components_removed}
                     </div>
+                    {isLegacyIca && qc.ica_method && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        via {LEGACY_ICA_METHOD_LABELS[qc.ica_method] ?? qc.ica_method}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="text-sm text-gray-700">
                       Final Epochs (EO/EC)
                     </div>
                     <div className="text-lg font-semibold text-gray-900">
-                      {analysis.results.qc_report.final_epochs_eo} /{' '}
-                      {analysis.results.qc_report.final_epochs_ec}
+                      {qc.final_epochs_eo} /{' '}
+                      {qc.final_epochs_ec}
                     </div>
                   </div>
                 </div>
+
+                {/* Pipeline details */}
+                <dl className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-gray-700">Method:</dt>
+                    <dd className="text-gray-900 font-medium">
+                      {qc.artifact_mode === 'manual'
+                        ? 'Manual annotations'
+                        : isLegacyIca
+                          ? `ICA (legacy${qc.ica_method ? `, ${LEGACY_ICA_METHOD_LABELS[qc.ica_method] ?? qc.ica_method}` : ''})`
+                          : `Automatic pipeline${qc.profile ? ` – ${PROFILE_DESCRIPTIONS[qc.profile]?.label ?? qc.profile} profile` : ''}`}
+                    </dd>
+                  </div>
+                  {qc.physiological_path && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-gray-700">Eye/muscle correction:</dt>
+                      <dd className="text-gray-900 font-medium">
+                        {PHYSIOLOGICAL_PATH_LABELS[qc.physiological_path] ?? qc.physiological_path}
+                      </dd>
+                    </div>
+                  )}
+                  {qc.ica_removed_labels && qc.ica_removed_labels.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2 sm:col-span-2">
+                      <dt className="text-gray-700">Removed components:</dt>
+                      <dd className="flex flex-wrap gap-1">
+                        {qc.ica_removed_labels.map((label, i) => (
+                          <span key={`${label}-${i}`} className="px-2 py-0.5 rounded bg-gray-100 text-gray-800 text-xs">
+                            {label}
+                          </span>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                  {qc.asr && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-gray-700">ASR:</dt>
+                      <dd className="text-gray-900 font-medium">
+                        {qc.asr.ran
+                          ? `k = ${qc.asr.k}, ${(qc.asr.fraction_windows_modified * 100).toFixed(1)}% of windows corrected`
+                          : `Not applied${qc.asr.skipped_reason ? ` (${qc.asr.skipped_reason})` : ''}`}
+                      </dd>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-gray-700">Bad channels:</dt>
+                    <dd className="text-gray-900 font-medium">{listOrNone(qc.bad_channels)}</dd>
+                  </div>
+                  {qc.interpolated_channels !== undefined && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-gray-700">Interpolated:</dt>
+                      <dd className="text-gray-900 font-medium">{listOrNone(qc.interpolated_channels)}</dd>
+                    </div>
+                  )}
+                  {qc.manual_artifact_epochs_count !== undefined && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-gray-700">Manual artifact regions:</dt>
+                      <dd className="text-gray-900 font-medium">{qc.manual_artifact_epochs_count}</dd>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-gray-700">Engine:</dt>
+                    <dd className="text-gray-900 font-medium break-all">{engineLabel(engine)}</dd>
+                  </div>
+                </dl>
+                {qc.physiological_path === 'ica' && !isLegacyIca && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Component labels come from a heuristic classifier (not ICLabel).
+                  </p>
+                )}
+
+                {qc.warnings && qc.warnings.length > 0 && (
+                  <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <h3 className="text-sm font-semibold text-amber-900 mb-1">Warnings</h3>
+                    <ul className="list-disc pl-5 text-sm text-amber-800 space-y-0.5">
+                      {qc.warnings.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Download cleaned file */}
+                {r.cleaned_file_url && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    {(() => {
+                      const fmt = r.cleaned_file_format || '.edf';
+                      const fmtLabel = fmt === '.bdf' ? 'BDF' : fmt === '.csv' ? 'CSV' : 'EDF';
+                      return (
+                        <>
+                          <a
+                            href={r.cleaned_file_url}
+                            download={`cleaned_raw${fmt}`}
+                            className="inline-flex items-center gap-2 text-sm text-neuro-primary hover:text-neuro-accent font-medium"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download Cleaned Raw File ({fmtLabel})
+                          </a>
+                          <span className="text-xs text-gray-500 ml-2">
+                            Artifact-cleaned data in the original format
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
             {/* Raw Band Power Values */}
             {analysis.results.band_power && (
@@ -878,7 +1050,7 @@ export default function AnalysisDetailsClient({
             )}
 
             {/* Topographic Brain Maps Grid */}
-            {analysis.results.visuals?.topomap_grid && (
+            {(hasAnyLegacyVisual(results, ['topomap_grid']) || results?.band_power) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Band Power Topographic Maps
@@ -886,18 +1058,14 @@ export default function AnalysisDetailsClient({
                 <p className="text-sm text-gray-800 mb-4">
                   Spatial distribution of EEG band power across the scalp for all frequency bands (blue = low, red = high)
                 </p>
-                <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                  <img
-                    src={analysis.results.visuals.topomap_grid as string}
-                    alt="Band power topographic maps"
-                    className="w-full h-auto"
-                  />
-                </div>
+                <LegacyOrLive results={results} visual={{ key: 'topomap_grid', alt: 'Band power topographic maps' }}>
+                  <TopomapGrid bandPower={results?.band_power} />
+                </LegacyOrLive>
               </div>
             )}
 
             {/* Complexity & Connectivity Analysis */}
-            {(analysis.results.visuals?.lzc_topomap_EO || analysis.results.visuals?.lzc_topomap_EC) && (
+            {(hasAnyLegacyVisual(results, ['lzc_topomap_EO', 'lzc_topomap_EC']) || results?.lzc?.eo || results?.lzc?.ec) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Signal Complexity (Lempel-Ziv Complexity)
@@ -905,41 +1073,21 @@ export default function AnalysisDetailsClient({
                 <p className="text-sm text-gray-800 mb-4">
                   Higher LZC (red) indicates more complex, less predictable signals. Lower LZC (blue) indicates simpler, more regular patterns.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {analysis.results.visuals.lzc_topomap_EO && (
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3 text-center">
-                        Eyes Open
-                      </h3>
-                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                        <img
-                          src={analysis.results.visuals.lzc_topomap_EO as string}
-                          alt="LZC Eyes Open"
-                          className="w-full h-auto"
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {analysis.results.visuals.lzc_topomap_EC && (
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3 text-center">
-                        Eyes Closed
-                      </h3>
-                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                        <img
-                          src={analysis.results.visuals.lzc_topomap_EC as string}
-                          alt="LZC Eyes Closed"
-                          className="w-full h-auto"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <LegacyOrLive
+                  results={results}
+                  layout="pair"
+                  visual={[
+                    { key: 'lzc_topomap_EO', title: 'Eyes Open', alt: 'LZC Eyes Open' },
+                    { key: 'lzc_topomap_EC', title: 'Eyes Closed', alt: 'LZC Eyes Closed' },
+                  ]}
+                >
+                  <LzcTopomaps lzc={results?.lzc} />
+                </LegacyOrLive>
               </div>
             )}
 
             {/* Brain Connectivity Graph (wPLI) */}
-            {analysis.results.visuals?.connectivity_grid && (
+            {(hasAnyLegacyVisual(results, ['connectivity_grid']) || results?.connectivity?.eo || results?.connectivity?.ec) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Brain Connectivity (wPLI)
@@ -948,18 +1096,14 @@ export default function AnalysisDetailsClient({
                   Weighted Phase Lag Index (wPLI) connectivity between electrode sites. Line color and thickness indicate connection strength.
                   wPLI is robust to volume conduction and measures true phase-lagged interactions.
                 </p>
-                <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                  <img
-                    src={analysis.results.visuals.connectivity_grid as string}
-                    alt="Brain connectivity graphs"
-                    className="w-full h-auto"
-                  />
-                </div>
+                <LegacyOrLive results={results} visual={{ key: 'connectivity_grid', alt: 'Brain connectivity graphs' }}>
+                  <ConnectivityHead connectivity={results?.connectivity} />
+                </LegacyOrLive>
               </div>
             )}
 
             {/* Network Metrics Summary */}
-            {analysis.results.visuals?.network_metrics && (
+            {(hasAnyLegacyVisual(results, ['network_metrics']) || results?.connectivity?.eo || results?.connectivity?.ec) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Network Metrics Comparison
@@ -969,13 +1113,9 @@ export default function AnalysisDetailsClient({
                   Global efficiency measures network integration, clustering coefficient measures local connectivity,
                   small-worldness indicates optimal balance of segregation and integration.
                 </p>
-                <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                  <img
-                    src={analysis.results.visuals.network_metrics as string}
-                    alt="Network metrics comparison"
-                    className="w-full h-auto"
-                  />
-                </div>
+                <LegacyOrLive results={results} visual={{ key: 'network_metrics', alt: 'Network metrics comparison' }}>
+                  <NetworkMetricsBars connectivity={results?.connectivity} />
+                </LegacyOrLive>
               </div>
             )}
 
@@ -1042,7 +1182,8 @@ export default function AnalysisDetailsClient({
             )}
 
             {/* Individual Alpha Frequency (IAF) */}
-            {(analysis.results.visuals?.alpha_peak_topomap_EO || analysis.results.visuals?.alpha_peak_topomap_EC) && (
+            {(hasAnyLegacyVisual(results, ['alpha_peak_topomap_EO', 'alpha_peak_topomap_EC']) ||
+              results?.alpha_peak?.eo || results?.alpha_peak?.ec) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Individual Alpha Frequency (IAF)
@@ -1051,41 +1192,21 @@ export default function AnalysisDetailsClient({
                   The dominant frequency within the alpha band (8-12 Hz) varies by individual and brain region.
                   Higher IAF is associated with better cognitive performance and neural efficiency.
                 </p>
-                <div className="grid grid-cols-1 gap-6">
-                  {analysis.results.visuals.alpha_peak_topomap_EO && (
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                        Eyes Open
-                      </h3>
-                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                        <img
-                          src={analysis.results.visuals.alpha_peak_topomap_EO as string}
-                          alt="Alpha Peak Frequency Eyes Open"
-                          className="w-full h-auto"
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {analysis.results.visuals.alpha_peak_topomap_EC && (
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                        Eyes Closed
-                      </h3>
-                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                        <img
-                          src={analysis.results.visuals.alpha_peak_topomap_EC as string}
-                          alt="Alpha Peak Frequency Eyes Closed"
-                          className="w-full h-auto"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <LegacyOrLive
+                  results={results}
+                  visual={[
+                    { key: 'alpha_peak_topomap_EO', title: 'Eyes Open', alt: 'Alpha Peak Frequency Eyes Open' },
+                    { key: 'alpha_peak_topomap_EC', title: 'Eyes Closed', alt: 'Alpha Peak Frequency Eyes Closed' },
+                  ]}
+                >
+                  <AlphaPeakTopomaps alphaPeak={results?.alpha_peak} />
+                </LegacyOrLive>
               </div>
             )}
 
             {/* Spectrograms */}
-            {(analysis.results.visuals?.spectrogram_EO || analysis.results.visuals?.spectrogram_EC) && (
+            {(hasAnyLegacyVisual(results, ['spectrogram_EO', 'spectrogram_EC']) ||
+              results?.spectrograms?.eo || results?.spectrograms?.ec) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Spectrograms
@@ -1093,36 +1214,15 @@ export default function AnalysisDetailsClient({
                 <p className="text-sm text-gray-800 mb-4">
                   Time-frequency analysis showing how signal power changes over time for key electrode sites
                 </p>
-                <div className="grid grid-cols-1 gap-6">
-                  {analysis.results.visuals.spectrogram_EO && (
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                        Eyes Open
-                      </h3>
-                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                        <img
-                          src={analysis.results.visuals.spectrogram_EO as string}
-                          alt="Spectrogram Eyes Open"
-                          className="w-full h-auto"
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {analysis.results.visuals.spectrogram_EC && (
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                        Eyes Closed
-                      </h3>
-                      <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                        <img
-                          src={analysis.results.visuals.spectrogram_EC as string}
-                          alt="Spectrogram Eyes Closed"
-                          className="w-full h-auto"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <LegacyOrLive
+                  results={results}
+                  visual={[
+                    { key: 'spectrogram_EO', title: 'Eyes Open', alt: 'Spectrogram Eyes Open' },
+                    { key: 'spectrogram_EC', title: 'Eyes Closed', alt: 'Spectrogram Eyes Closed' },
+                  ]}
+                >
+                  <SpectrogramGrid spectrograms={results?.spectrograms} />
+                </LegacyOrLive>
               </div>
             )}
 

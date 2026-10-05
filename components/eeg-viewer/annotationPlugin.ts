@@ -13,7 +13,9 @@ export const annotationPlugin: Plugin<'line'> = {
     const options = (chart.options.plugins as any)?.eegAnnotations as
       | AnnotationPluginOptions
       | undefined;
-    if (!options) return;
+    // Registered globally (ChartJS.register), so it also runs on unrelated charts such as the
+    // network-metric bars; Chart.js hands those an empty options object.
+    if (!options || !Array.isArray(options.annotations)) return;
 
     const { ctx } = chart;
     const xScale = chart.scales.x;
@@ -56,7 +58,7 @@ export const annotationPlugin: Plugin<'line'> = {
     }
 
     // Draw active drag selection
-    if (options.dragState.isDragging) {
+    if (options.dragState?.isDragging) {
       const x1 = options.dragState.startX;
       const x2 = options.dragState.endX;
 

@@ -1,7 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase-client';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
+import { hasLegacyVisual, type AnalysisResults } from '@/lib/analysis-results';
+import { engineLabel } from './analysis-settings';
+import LegacyOrLive from './visuals/LegacyOrLive';
+import TopomapGrid, { PowerModeToggle } from './visuals/TopomapGrid';
+import LzcTopomaps from './visuals/LzcTopomaps';
+import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
+import ConnectivityHead, { DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
+import { CONDITIONS, computeBandScales, computeLzcScale, connectivityScale, type PowerMode } from './visuals/data';
+
+// chart.js renders client-side only
+const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
 
 interface Recording {
   id: string;
@@ -62,21 +73,42 @@ interface EOECInterpretation {
   content: EOECInterpretationContent;
 }
 
-interface AnalysisVisuals {
-  topomap_grid?: string;
-  lzc_topomap_EO?: string;
-  lzc_topomap_EC?: string;
-  connectivity_grid?: string;
-  network_metrics?: string;
-  spectrogram_EO?: string;
-  spectrogram_EC?: string;
-  alpha_peak_topomap_EO?: string;
-  alpha_peak_topomap_EC?: string;
+type SideResults = Partial<AnalysisResults> | null;
+
+interface ComparisonSides {
+  a: SideResults;
+  b: SideResults;
+  /** False when the API returned only legacy visual URLs (no results), so engines are unknown. */
+  hasResults: boolean;
 }
 
-interface ComparisonVisuals {
-  a: AnalysisVisuals;
-  b: AnalysisVisuals;
+type LiveSection = 'band_power' | 'lzc' | 'connectivity' | 'alpha_peak';
+
+function hasLiveSection(r: SideResults, section: LiveSection): boolean {
+  const byCondition = r?.[section] as Record<string, unknown> | null | undefined;
+  return CONDITIONS.some((c) => Boolean(byCondition?.[c]));
+}
+
+/** Recording A / Recording B cards side by side (stacked on narrow screens). */
+function ComparisonColumns({
+  sides,
+  render,
+}: {
+  sides: ComparisonSides;
+  render: (side: 'A' | 'B', results: SideResults) => ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 min-w-0">
+        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">Recording A</h4>
+        <div className="bg-white rounded border border-gray-200 p-2 sm:p-3">{render('A', sides.a)}</div>
+      </div>
+      <div className="border border-green-200 rounded-lg p-4 bg-green-50 min-w-0">
+        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">Recording B</h4>
+        <div className="bg-white rounded border border-gray-200 p-2 sm:p-3">{render('B', sides.b)}</div>
+      </div>
+    </div>
+  );
 }
 
 interface ComparisonViewProps {
@@ -84,7 +116,6 @@ interface ComparisonViewProps {
 }
 
 export default function ComparisonView({ projectId }: ComparisonViewProps) {
-  const supabase = createClient();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [analyzedRecordings, setAnalyzedRecordings] = useState<Recording[]>([]);
   const [selectedAId, setSelectedAId] = useState<string>('');
@@ -100,7 +131,47 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Visual comparisons state
-  const [comparisonVisuals, setComparisonVisuals] = useState<ComparisonVisuals | null>(null);
+  const [comparisonSides, setComparisonSides] = useState<ComparisonSides | null>(null);
+  const [powerMode, setPowerMode] = useState<PowerMode>('absolute');
+  const [wpliThreshold, setWpliThreshold] = useState(DEFAULT_WPLI_THRESHOLD);
+
+  // Shared colour scales so A and B maps of the same band are directly comparable
+  const sharedBandScales = useMemo(
+    () =>
+      computeBandScales(
+        [comparisonSides?.a, comparisonSides?.b].flatMap((r) => CONDITIONS.map((c) => r?.band_power?.[c])),
+        powerMode
+      ),
+    [comparisonSides, powerMode]
+  );
+  const sharedLzcScale = useMemo(
+    () => computeLzcScale([comparisonSides?.a, comparisonSides?.b].flatMap((r) => CONDITIONS.map((c) => r?.lzc?.[c]))),
+    [comparisonSides]
+  );
+  const sharedConnectivityScale = useMemo(
+    () =>
+      connectivityScale(
+        [comparisonSides?.a, comparisonSides?.b].flatMap((r) => CONDITIONS.map((c) => r?.connectivity?.[c])),
+        wpliThreshold
+      ),
+    [comparisonSides, wpliThreshold]
+  );
+
+  const sectionVisible = (section: LiveSection, legacyKeys: string[]) =>
+    Boolean(comparisonSides) &&
+    [comparisonSides!.a, comparisonSides!.b].some(
+      (r) => hasLiveSection(r, section) || legacyKeys.some((k) => hasLegacyVisual(r, k))
+    );
+  const hasAnyVisual =
+    sectionVisible('band_power', ['topomap_grid']) ||
+    sectionVisible('lzc', ['lzc_topomap_EO', 'lzc_topomap_EC']) ||
+    sectionVisible('connectivity', ['connectivity_grid', 'network_metrics']) ||
+    sectionVisible('alpha_peak', ['alpha_peak_topomap_EO', 'alpha_peak_topomap_EC']);
+
+  // Engine is absent on Python-era analyses
+  const engineA = comparisonSides?.a?.processing_metadata?.engine ?? null;
+  const engineB = comparisonSides?.b?.processing_metadata?.engine ?? null;
+  const engineMismatch = Boolean(comparisonSides?.hasResults) && engineA !== engineB;
 
   // Helper to determine if selected recordings are an EO/EC pair
   const isEOECComparison = (): boolean => {
@@ -141,41 +212,30 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       setIsLoading(true);
       setError(null);
 
-      // Fetch all recordings for this project
-      const { data: recordingsData, error: recordingsError } = await supabase
-        .from('recordings')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false });
-
-      if (recordingsError) throw recordingsError;
-
-      const allRecordings = recordingsData || [];
+      // Fetch all recordings for this project via API
+      const recordingsResponse = await fetch(`/api/recordings?project_id=${projectId}`);
+      if (!recordingsResponse.ok) throw new Error('Failed to fetch recordings');
+      const recordingsJson = await recordingsResponse.json();
+      const allRecordings = recordingsJson.recordings || [];
       setRecordings(allRecordings);
 
-      // Fetch all analyses to check which recordings have completed analyses
-      const recordingIds = allRecordings.map((r: Recording) => r.id);
-      if (recordingIds.length === 0) {
+      if (allRecordings.length === 0) {
         setAnalyzedRecordings([]);
         return;
       }
 
-      const { data: analysesData, error: analysesError } = await supabase
-        .from('analyses')
-        .select('id, recording_id, status')
-        .in('recording_id', recordingIds)
-        .eq('status', 'completed');
-
-      if (analysesError) throw analysesError;
-
-      const completedRecordingIds = new Set(
-        (analysesData || []).map((a: Analysis) => a.recording_id)
-      );
-
-      // Filter recordings with completed analyses
-      const recordingsWithAnalyses: Recording[] = allRecordings.filter((r: Recording) =>
-        completedRecordingIds.has(r.id)
-      );
+      // For now, filter based on whether recordings have analyses attached
+      // The API should ideally return this info, but we'll work with what we have
+      // Check each recording for completed analyses by looking at the recordings data
+      // If the API doesn't include analyses, we'll need to fetch separately
+      const recordingsWithAnalyses: Recording[] = allRecordings.filter((r: Recording & { analyses?: Analysis[] }) => {
+        // If the API includes analyses, check for completed ones
+        if (r.analyses && r.analyses.length > 0) {
+          return r.analyses.some((a: Analysis) => a.status === 'completed');
+        }
+        // Otherwise include all recordings and let the comparison handle it
+        return true;
+      });
 
       setAnalyzedRecordings(recordingsWithAnalyses);
     } catch (err: any) {
@@ -217,9 +277,13 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       const data = await response.json();
       setComparisonResult(data.comparison);
 
-      // Set visual comparisons if available
-      if (data.visuals) {
-        setComparisonVisuals(data.visuals);
+      // Full results drive the live visuals; older API responses carry only legacy PNG URLs
+      if (data.results) {
+        setComparisonSides({ a: data.results.a ?? null, b: data.results.b ?? null, hasResults: true });
+      } else if (data.visuals) {
+        setComparisonSides({ a: { visuals: data.visuals.a }, b: { visuals: data.visuals.b }, hasResults: false });
+      } else {
+        setComparisonSides(null);
       }
 
       // Try to fetch cached AI interpretation (only for EO/EC comparisons)
@@ -564,62 +628,50 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
           </div>
 
           {/* Visual Comparisons Section */}
-          {comparisonVisuals && (comparisonVisuals.a.topomap_grid || comparisonVisuals.b.topomap_grid ||
-            comparisonVisuals.a.connectivity_grid || comparisonVisuals.b.connectivity_grid ||
-            comparisonVisuals.a.lzc_topomap_EO || comparisonVisuals.b.lzc_topomap_EC) && (
+          {comparisonSides && hasAnyVisual && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                 Visual Comparisons
               </h2>
-              <p className="text-sm text-gray-800 mb-6">
-                Side-by-side visualizations comparing the selected recordings.
+              <p className="text-sm text-gray-800 mb-4">
+                Side-by-side visualizations comparing the selected recordings. Live maps of the same band share one colour scale across both recordings.
               </p>
 
+              {engineMismatch && (
+                <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4" role="alert">
+                  <p className="text-sm text-amber-900">
+                    <strong>Different processing engines:</strong> Recording A was processed by{' '}
+                    {engineLabel(engineA)} and Recording B by {engineLabel(engineB)}. Numerical results are not
+                    directly comparable; re-analyze the older recording for a like-for-like comparison.
+                  </p>
+                </div>
+              )}
+
               {/* Topographic Maps Comparison */}
-              {(comparisonVisuals.a.topomap_grid || comparisonVisuals.b.topomap_grid) && (
+              {sectionVisible('band_power', ['topomap_grid']) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Band Power Topographic Maps
                   </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Spatial distribution of power across frequency bands for each recording.
-                  </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {comparisonVisuals.a.topomap_grid && (
-                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
-                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          Recording A
-                        </h4>
-                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                          <img
-                            src={comparisonVisuals.a.topomap_grid}
-                            alt="EO Band Power Topographic Maps"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {comparisonVisuals.b.topomap_grid && (
-                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
-                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          Recording B
-                        </h4>
-                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                          <img
-                            src={comparisonVisuals.b.topomap_grid}
-                            alt="EC Band Power Topographic Maps"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </div>
-                    )}
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <p className="text-sm text-gray-600">
+                      Spatial distribution of power across frequency bands for each recording.
+                    </p>
+                    <PowerModeToggle mode={powerMode} onChange={setPowerMode} />
                   </div>
+                  <ComparisonColumns
+                    render={(side, r) => (
+                      <LegacyOrLive results={r} visual={{ key: 'topomap_grid', alt: `Recording ${side} band power topographic maps` }}>
+                        <TopomapGrid bandPower={r?.band_power} mode={powerMode} scales={sharedBandScales} hideToggle compact />
+                      </LegacyOrLive>
+                    )}
+                    sides={comparisonSides}
+                  />
                 </div>
               )}
 
               {/* LZC Complexity Comparison */}
-              {((comparisonVisuals.a.lzc_topomap_EO || comparisonVisuals.a.lzc_topomap_EC) ||
-                (comparisonVisuals.b.lzc_topomap_EO || comparisonVisuals.b.lzc_topomap_EC)) && (
+              {sectionVisible('lzc', ['lzc_topomap_EO', 'lzc_topomap_EC']) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Signal Complexity (Lempel-Ziv)
@@ -627,123 +679,54 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   <p className="text-sm text-gray-600 mb-4">
                     Higher LZC (red) indicates more complex signals. Lower LZC (blue) indicates more regular patterns.
                   </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* EO Recording LZC */}
-                    {(comparisonVisuals.a.lzc_topomap_EO || comparisonVisuals.a.lzc_topomap_EC) && (
-                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
-                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          Recording A
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          {comparisonVisuals.a.lzc_topomap_EO && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.a.lzc_topomap_EO}
-                                  alt="EO Recording - LZC Eyes Open"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {comparisonVisuals.a.lzc_topomap_EC && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.a.lzc_topomap_EC}
-                                  alt="EO Recording - LZC Eyes Closed"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                  <ComparisonColumns
+                    sides={comparisonSides}
+                    render={(side, r) => (
+                      <LegacyOrLive
+                        results={r}
+                        visual={[
+                          { key: 'lzc_topomap_EO', title: 'Eyes Open', alt: `Recording ${side} - LZC Eyes Open` },
+                          { key: 'lzc_topomap_EC', title: 'Eyes Closed', alt: `Recording ${side} - LZC Eyes Closed` },
+                        ]}
+                      >
+                        <LzcTopomaps lzc={r?.lzc} scale={sharedLzcScale} />
+                      </LegacyOrLive>
                     )}
-                    {/* EC Recording LZC */}
-                    {(comparisonVisuals.b.lzc_topomap_EO || comparisonVisuals.b.lzc_topomap_EC) && (
-                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
-                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          Recording B
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          {comparisonVisuals.b.lzc_topomap_EO && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.b.lzc_topomap_EO}
-                                  alt="EC Recording - LZC Eyes Open"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {comparisonVisuals.b.lzc_topomap_EC && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.b.lzc_topomap_EC}
-                                  alt="EC Recording - LZC Eyes Closed"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  />
                 </div>
               )}
 
               {/* Brain Connectivity Comparison */}
-              {(comparisonVisuals.a.connectivity_grid || comparisonVisuals.b.connectivity_grid) && (
+              {sectionVisible('connectivity', ['connectivity_grid']) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Brain Connectivity (wPLI)
                   </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Weighted Phase Lag Index connectivity between electrode sites. Line color and thickness indicate connection strength.
-                  </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {comparisonVisuals.a.connectivity_grid && (
-                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
-                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          Recording A
-                        </h4>
-                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                          <img
-                            src={comparisonVisuals.a.connectivity_grid}
-                            alt="EO Brain Connectivity"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {comparisonVisuals.b.connectivity_grid && (
-                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
-                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          Recording B
-                        </h4>
-                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                          <img
-                            src={comparisonVisuals.b.connectivity_grid}
-                            alt="EC Brain Connectivity"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </div>
-                    )}
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <p className="text-sm text-gray-600">
+                      Weighted Phase Lag Index connectivity between electrode sites. Line color and thickness indicate connection strength.
+                    </p>
+                    <ThresholdSlider value={wpliThreshold} onChange={setWpliThreshold} />
                   </div>
+                  <ComparisonColumns
+                    sides={comparisonSides}
+                    render={(side, r) => (
+                      <LegacyOrLive results={r} visual={{ key: 'connectivity_grid', alt: `Recording ${side} brain connectivity` }}>
+                        <ConnectivityHead
+                          connectivity={r?.connectivity}
+                          threshold={wpliThreshold}
+                          scale={sharedConnectivityScale}
+                          hideSlider
+                          compact
+                        />
+                      </LegacyOrLive>
+                    )}
+                  />
                 </div>
               )}
 
               {/* Network Metrics Comparison */}
-              {(comparisonVisuals.a.network_metrics || comparisonVisuals.b.network_metrics) && (
+              {sectionVisible('connectivity', ['network_metrics']) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Network Metrics
@@ -752,42 +735,19 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                     Graph-theoretic metrics comparing EO vs EC. Global efficiency measures integration,
                     clustering coefficient measures local processing, small-worldness indicates optimal network organization.
                   </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {comparisonVisuals.a.network_metrics && (
-                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
-                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          Recording A
-                        </h4>
-                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                          <img
-                            src={comparisonVisuals.a.network_metrics}
-                            alt="EO Network Metrics"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </div>
+                  <ComparisonColumns
+                    sides={comparisonSides}
+                    render={(side, r) => (
+                      <LegacyOrLive results={r} visual={{ key: 'network_metrics', alt: `Recording ${side} network metrics` }}>
+                        <NetworkMetricsBars connectivity={r?.connectivity} />
+                      </LegacyOrLive>
                     )}
-                    {comparisonVisuals.b.network_metrics && (
-                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
-                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          Recording B
-                        </h4>
-                        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                          <img
-                            src={comparisonVisuals.b.network_metrics}
-                            alt="EC Network Metrics"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  />
                 </div>
               )}
 
               {/* Individual Alpha Frequency Comparison */}
-              {((comparisonVisuals.a.alpha_peak_topomap_EO || comparisonVisuals.a.alpha_peak_topomap_EC) ||
-                (comparisonVisuals.b.alpha_peak_topomap_EO || comparisonVisuals.b.alpha_peak_topomap_EC)) && (
+              {sectionVisible('alpha_peak', ['alpha_peak_topomap_EO', 'alpha_peak_topomap_EC']) && (
                 <div className="mb-8">
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Individual Alpha Frequency (IAF)
@@ -796,76 +756,20 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                     Peak alpha frequency (8-12 Hz) at each electrode site. Higher IAF is associated with
                     better cognitive performance and neural efficiency.
                   </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* EO Recording IAF */}
-                    {(comparisonVisuals.a.alpha_peak_topomap_EO || comparisonVisuals.a.alpha_peak_topomap_EC) && (
-                      <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
-                        <h4 className="text-lg font-semibold text-blue-900 mb-3 text-center">
-                          Recording A
-                        </h4>
-                        <div className="space-y-4">
-                          {comparisonVisuals.a.alpha_peak_topomap_EO && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.a.alpha_peak_topomap_EO}
-                                  alt="EO Recording - IAF Eyes Open"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {comparisonVisuals.a.alpha_peak_topomap_EC && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.a.alpha_peak_topomap_EC}
-                                  alt="EO Recording - IAF Eyes Closed"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                  <ComparisonColumns
+                    sides={comparisonSides}
+                    render={(side, r) => (
+                      <LegacyOrLive
+                        results={r}
+                        visual={[
+                          { key: 'alpha_peak_topomap_EO', title: 'Eyes Open', alt: `Recording ${side} - IAF Eyes Open` },
+                          { key: 'alpha_peak_topomap_EC', title: 'Eyes Closed', alt: `Recording ${side} - IAF Eyes Closed` },
+                        ]}
+                      >
+                        <AlphaPeakTopomaps alphaPeak={r?.alpha_peak} />
+                      </LegacyOrLive>
                     )}
-                    {/* EC Recording IAF */}
-                    {(comparisonVisuals.b.alpha_peak_topomap_EO || comparisonVisuals.b.alpha_peak_topomap_EC) && (
-                      <div className="border border-green-200 rounded-lg p-4 bg-green-50">
-                        <h4 className="text-lg font-semibold text-green-900 mb-3 text-center">
-                          Recording B
-                        </h4>
-                        <div className="space-y-4">
-                          {comparisonVisuals.b.alpha_peak_topomap_EO && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Open</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.b.alpha_peak_topomap_EO}
-                                  alt="EC Recording - IAF Eyes Open"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {comparisonVisuals.b.alpha_peak_topomap_EC && (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-2 text-center">Eyes Closed</p>
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <img
-                                  src={comparisonVisuals.b.alpha_peak_topomap_EC}
-                                  alt="EC Recording - IAF Eyes Closed"
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  />
                 </div>
               )}
             </div>

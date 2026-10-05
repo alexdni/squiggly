@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import { getDatabaseClient } from '@/lib/db';
 import { checkProjectPermission } from '@/lib/rbac';
 import type { ComparisonResult, Analysis } from '@/types/database';
 
@@ -9,14 +10,11 @@ import type { ComparisonResult, Analysis } from '@/types/database';
  */
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { id: projectId } = await params;
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -24,7 +22,7 @@ export async function GET(
 
     // Check project access
     const hasAccess = await checkProjectPermission(
-      params.id,
+      projectId,
       user.id,
       'project:read'
     );
@@ -55,54 +53,77 @@ export async function GET(
       );
     }
 
-    // Fetch analyses for both recordings
-    const { data: analysisA, error: errorA } = await (supabase as any)
+    const db = getDatabaseClient();
+
+    // Verify recording A belongs to this project
+    const { data: recordingA } = await db
+      .from('recordings')
+      .select('id, project_id, condition_type')
+      .eq('id', recordingAId)
+      .eq('project_id', projectId)
+      .single();
+
+    if (!recordingA) {
+      return NextResponse.json(
+        { error: 'Recording A not found in this project' },
+        { status: 404 }
+      );
+    }
+
+    // Verify recording B belongs to this project
+    const { data: recordingB } = await db
+      .from('recordings')
+      .select('id, project_id, condition_type')
+      .eq('id', recordingBId)
+      .eq('project_id', projectId)
+      .single();
+
+    if (!recordingB) {
+      return NextResponse.json(
+        { error: 'Recording B not found in this project' },
+        { status: 404 }
+      );
+    }
+
+    // Fetch completed analysis for recording A
+    const { data: analysesA } = await db
       .from('analyses')
-      .select(`
-        *,
-        recording:recordings!inner (
-          id,
-          project_id,
-          condition_type
-        )
-      `)
+      .select('*')
       .eq('recording_id', recordingAId)
-      .eq('recording.project_id', params.id)
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .execute();
 
-    if (errorA || !analysisA) {
+    const analysisA = analysesA?.[0] as Analysis | undefined;
+    if (!analysisA) {
       return NextResponse.json(
         { error: 'Recording A analysis not found or not completed' },
         { status: 404 }
       );
     }
 
-    const { data: analysisB, error: errorB } = await (supabase as any)
+    // Fetch completed analysis for recording B
+    const { data: analysesB } = await db
       .from('analyses')
-      .select(`
-        *,
-        recording:recordings!inner (
-          id,
-          project_id,
-          condition_type
-        )
-      `)
+      .select('*')
       .eq('recording_id', recordingBId)
-      .eq('recording.project_id', params.id)
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .execute();
 
-    if (errorB || !analysisB) {
+    const analysisB = analysesB?.[0] as Analysis | undefined;
+    if (!analysisB) {
       return NextResponse.json(
         { error: 'Recording B analysis not found or not completed' },
         { status: 404 }
       );
     }
+
+    // Add recording info to analyses for computeComparison
+    (analysisA as any).recording = recordingA;
+    (analysisB as any).recording = recordingB;
 
     // Compute comparison (B - A)
     const comparison = computeComparison(analysisA, analysisB);
@@ -114,9 +135,14 @@ export async function GET(
     return NextResponse.json({
       success: true,
       comparison,
+      // Legacy PNG URLs (Python-era analyses); new analyses render from `results`.
       visuals: {
         a: visualsA,
         b: visualsB,
+      },
+      results: {
+        a: analysisA.results ?? null,
+        b: analysisB.results ?? null,
       },
     });
   } catch (error: any) {
@@ -179,8 +205,16 @@ function computeComparison(
   // Compute coherence deltas
   const coherenceDeltas: Record<string, Record<string, number>> = {};
 
-  const coherenceA = (resultsA as any).coherence?.eo || (resultsA as any).coherence?.ec || [];
-  const coherenceB = (resultsB as any).coherence?.eo || (resultsB as any).coherence?.ec || [];
+  // wPLI per channel pair, preferring EO like the band-power deltas above. `coherence` is the
+  // pre-wPLI field some early analyses carried.
+  const pairsOf = (r: any): any[] =>
+    r?.connectivity?.eo?.pair_data ||
+    r?.connectivity?.ec?.pair_data ||
+    r?.coherence?.eo ||
+    r?.coherence?.ec ||
+    [];
+  const coherenceA = pairsOf(resultsA);
+  const coherenceB = pairsOf(resultsB);
 
   // Build a map for easy lookup
   const coherenceMap: Record<string, any> = {};
@@ -202,7 +236,10 @@ function computeComparison(
     const a = coherenceMap[pairKey].a || {};
     const b = coherenceMap[pairKey].b || {};
 
-    bands.forEach((band) => {
+    const pairBands = Object.keys({ ...a, ...b }).filter(
+      (k) => !['ch1', 'ch2', 'type', 'region'].includes(k)
+    );
+    pairBands.forEach((band) => {
       const cohA = a[band] || 0;
       const cohB = b[band] || 0;
       coherenceDeltas[pairKey][band] = cohB - cohA;

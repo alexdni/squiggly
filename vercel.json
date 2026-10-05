@@ -1,11 +1,17 @@
 {
-  "buildCommand": "next build",
+  "buildCommand": "npm run build",
   "devCommand": "next dev",
-  "installCommand": "npm install",
+  "installCommand": "sh scripts/vercel-install.sh",
   "framework": "nextjs",
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 60
+    },
+    "app/api/analyses/[id]/process/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/projects/[id]/theraq-analysis/route.ts": {
+      "maxDuration": 300
     }
   }
 }

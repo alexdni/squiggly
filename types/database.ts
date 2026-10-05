@@ -1,3 +1,9 @@
+import type { AnalysisResults } from '@/lib/analysis-results';
+import type { DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
+
+export type { AnalysisResults } from '@/lib/analysis-results';
+export type PreprocessingConfig = typeof DEFAULT_PREPROCESSING_CONFIG;
+
 // Database Schema Types for Supabase
 
 export type ProjectRole = 'owner' | 'collaborator' | 'viewer';
@@ -72,21 +78,8 @@ export interface Analysis {
 }
 
 export interface AnalysisConfig {
-  preprocessing: {
-    resample_freq: number;
-    filter_low: number;
-    filter_high: number;
-    notch_freq: number | null;
-    ica_enabled: boolean;
-    ica_method: 'fastica' | 'infomax' | 'picard' | 'sobi';
-    ica_n_components: number;
-    artifact_threshold: number;
-    epoch_length: number;
-    epoch_overlap: number;
-    sobi_delta_threshold?: number;
-    sobi_hf_threshold?: number;
-    sobi_frontal_corr?: number;
-  };
+  /** see DEFAULT_PREPROCESSING_CONFIG; Python-era rows may also carry ica_method / sobi_* keys */
+  preprocessing: PreprocessingConfig & Record<string, unknown>;
   features: {
     bands: BandDefinition[];
     coherence_pairs: CoherencePair[];
@@ -110,145 +103,6 @@ export interface CoherencePair {
   ch1: string;
   ch2: string;
   type: 'interhemispheric' | 'long_range';
-}
-
-export interface AnalysisResults {
-  qc: QualityControl;
-  features: Features;
-  visuals: VisualAssets;
-  risks: RiskAssessment[];
-}
-
-export interface QualityControl {
-  channels_dropped: string[];
-  epochs_total: number;
-  epochs_rejected: number;
-  rejection_rate: number;
-  ica_components: ICAComponent[];
-  pre_ica_power: Record<string, number>;
-  post_ica_power: Record<string, number>;
-}
-
-export interface ICAComponent {
-  component_id: number;
-  label: 'blink' | 'ecg' | 'emg' | 'motion' | 'brain' | 'unknown';
-  confidence: number;
-  dominant_frequency: number;
-  kurtosis: number;
-  variance_explained: number;
-}
-
-export interface Features {
-  power: PowerFeatures;
-  coherence: CoherenceFeatures;
-  complexity: ComplexityFeatures;
-  asymmetry: AsymmetryFeatures;
-  reactivity: ReactivityFeatures;
-}
-
-export interface PowerFeatures {
-  absolute: Record<string, BandPower>;
-  relative: Record<string, BandPower>;
-  ratios: {
-    theta_beta: Record<string, number>;
-    theta_alpha: Record<string, number>;
-    slowing_index: Record<string, number>;
-  };
-  apf: {
-    eo: Record<string, number>;
-    ec: Record<string, number>;
-  };
-  alpha_blocking: Record<string, number>;
-  smr: {
-    eo: Record<string, number>;
-    ec: Record<string, number>;
-  };
-  regional: {
-    frontal: BandPower;
-    central: BandPower;
-    parietal: BandPower;
-    occipital: BandPower;
-    temporal: BandPower;
-  };
-}
-
-export interface BandPower {
-  delta: Record<string, number>;
-  theta: Record<string, number>;
-  alpha1: Record<string, number>;
-  alpha2: Record<string, number>;
-  smr: Record<string, number>;
-  beta2: Record<string, number>;
-  hibeta: Record<string, number>;
-  lowgamma: Record<string, number>;
-}
-
-export interface CoherenceFeatures {
-  magnitude_squared: Record<string, CoherencePairValue>;
-  hyper_flags: string[];
-  hypo_flags: string[];
-}
-
-export interface CoherencePairValue {
-  eo: Record<string, number>;
-  ec: Record<string, number>;
-  delta: Record<string, number>;
-}
-
-export interface ComplexityFeatures {
-  lzc: {
-    eo: Record<string, number>;
-    ec: Record<string, number>;
-    delta: Record<string, number>;
-  };
-  gradients: {
-    anterior_posterior: number;
-  };
-}
-
-export interface AsymmetryFeatures {
-  pai: {
-    eo: Record<string, Record<string, number>>;
-    ec: Record<string, Record<string, number>>;
-  };
-  faa: {
-    eo: number;
-    ec: number;
-  };
-  alpha_gradient: {
-    eo: number;
-    ec: number;
-  };
-}
-
-export interface ReactivityFeatures {
-  absolute_change: Record<string, Record<string, number>>;
-  percent_change: Record<string, Record<string, number>>;
-}
-
-export interface VisualAssets {
-  topomaps: Record<string, string>;
-  spectrograms: Record<string, string>;
-  coherence_matrices: Record<string, string>;
-  ratio_charts: Record<string, string>;
-  apf_chart: string;
-  alpha_blocking_gauge: string;
-  qc_dashboard: string;
-}
-
-export interface RiskAssessment {
-  pattern: 'adhd_like' | 'anxiety_like' | 'depression_like' | 'sleep_dysregulation' | 'hyper_arousal';
-  level: 'low' | 'medium' | 'high';
-  confidence: number;
-  criteria_met: string[];
-  trace: RiskTrace[];
-}
-
-export interface RiskTrace {
-  criterion: string;
-  value: number;
-  threshold: number;
-  met: boolean;
 }
 
 export interface ExportLog {
