@@ -11,41 +11,44 @@ import {
 import { ALL_EEG_CHANNELS, EXCLUDED_CHANNEL_PATTERNS } from '@/lib/constants';
 import type { UnifiedSignalData } from './types';
 
-export function useEEGData(recordingId: string, filePath: string) {
+export interface EEGDataSource {
+  /** Fetch this URL directly (e.g. an analysis's cleaned file) instead of the recording. */
+  url?: string | null;
+  /** File type of `url`: 'edf' | 'bdf' | 'csv', with or without a leading dot. */
+  format?: string | null;
+  /** Load only when true (default true), so optional sources are fetched on demand. */
+  enabled?: boolean;
+}
+
+export function useEEGData(recordingId: string, filePath: string, source: EEGDataSource = {}) {
   const [signalData, setSignalData] = useState<UnifiedSignalData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(source.enabled !== false);
   const [error, setError] = useState<string | null>(null);
+  const { url: sourceUrl, format: sourceFormat, enabled = true } = source;
 
   const loadFile = useCallback(async () => {
+    if (!enabled) return;
     try {
       setIsLoading(true);
       setError(null);
 
-      const fileExtension = filePath.toLowerCase().split('.').pop();
+      const fileExtension = sourceUrl
+        ? (sourceFormat || 'edf').replace(/^\./, '').toLowerCase()
+        : filePath.toLowerCase().split('.').pop();
 
-      // Download the file via API
-      const signedUrlResponse = await fetch(
-        `/api/recordings/${recordingId || 'unknown'}/download?path=${encodeURIComponent(filePath)}`
-      );
-
-      let data: Blob;
-      if (signedUrlResponse.ok) {
-        const { signedUrl } = await signedUrlResponse.json();
-        const downloadResponse = await fetch(signedUrl);
-        if (!downloadResponse.ok) throw new Error('Failed to download file');
-        data = await downloadResponse.blob();
-      } else {
-        const token = btoa(
-          JSON.stringify({
-            bucket: 'recordings',
-            path: filePath,
-            expires: Date.now() + 60000,
-          })
-        );
-        const downloadResponse = await fetch(`/api/storage/download?token=${token}`);
-        if (!downloadResponse.ok) throw new Error('Failed to download file');
-        data = await downloadResponse.blob();
+      let downloadUrl = sourceUrl;
+      if (!downloadUrl) {
+        // Short-lived signed URL for the recording (works with Supabase and local storage)
+        const signedUrlResponse = await fetch(`/api/recordings/${recordingId}/download`);
+        if (!signedUrlResponse.ok) {
+          const body = await signedUrlResponse.json().catch(() => null);
+          throw new Error(body?.error || 'Failed to get a download link for the recording');
+        }
+        downloadUrl = (await signedUrlResponse.json()).signedUrl as string;
       }
+      const downloadResponse = await fetch(downloadUrl);
+      if (!downloadResponse.ok) throw new Error('Failed to download file');
+      const data = await downloadResponse.blob();
 
       if (fileExtension === 'csv') {
         const text = await data.text();
@@ -91,7 +94,7 @@ export function useEEGData(recordingId: string, filePath: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [recordingId, filePath]);
+  }, [recordingId, filePath, sourceUrl, sourceFormat, enabled]);
 
   useEffect(() => {
     loadFile();

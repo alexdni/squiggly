@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { applyEEGFilters } from '@/lib/eeg-filters';
+import { applyEEGFilters, filterPaddingSeconds } from '@/lib/eeg-filters';
 import type { UnifiedSignalData, FilterSettings } from './types';
 
 interface FilteredOutput {
@@ -21,8 +21,8 @@ export function useEEGFilters(
     const { signals, sampleRate } = signalData;
     const { windowDurationSeconds, highpassHz, lowpassHz, notchHz } = filterSettings;
 
-    // 1. Over-fetch with 1s padding on each side to avoid filter edge transients
-    const padSeconds = 1;
+    // 1. Over-fetch padding on each side so the high-pass has settled at the visible edges
+    const padSeconds = filterPaddingSeconds(highpassHz);
     const padSamples = Math.floor(padSeconds * sampleRate);
 
     const visibleStartSample = Math.floor(timeStart * sampleRate);

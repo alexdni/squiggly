@@ -14,10 +14,35 @@ interface EEGViewerProps {
   recordingId: string;
   filePath: string;
   rejectedEpochs?: RejectedEpoch[];
+  /** Cleaned recording written by the analysis (results.cleaned_file_url), if any */
+  cleanedFileUrl?: string | null;
+  /** results.cleaned_file_format, e.g. '.edf' */
+  cleanedFileFormat?: string | null;
 }
 
-export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEGViewerProps) {
-  const { signalData, isLoading, error } = useEEGData(recordingId, filePath);
+type SignalSource = 'raw' | 'cleaned';
+
+/** The cleaned file is already filtered by the pipeline; display filters would filter it twice. */
+const NO_FILTERS = { highpassHz: 0, lowpassHz: 0, notchHz: 0 };
+
+export default function EEGViewer({
+  recordingId,
+  filePath,
+  rejectedEpochs,
+  cleanedFileUrl,
+  cleanedFileFormat,
+}: EEGViewerProps) {
+  const [source, setSource] = useState<SignalSource>('raw');
+  const [cleanedRequested, setCleanedRequested] = useState(false);
+  const raw = useEEGData(recordingId, filePath);
+  // Fetched on first switch to "Cleaned", then kept for toggling back and forth
+  const cleaned = useEEGData(recordingId, filePath, {
+    url: cleanedFileUrl,
+    format: cleanedFileFormat,
+    enabled: Boolean(cleanedFileUrl) && cleanedRequested,
+  });
+  const active = source === 'cleaned' ? cleaned : raw;
+  const { signalData, isLoading, error } = active;
   const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
   const [selectedChannels, setSelectedChannels] = useState<number[]>([]);
   const [timeStart, setTimeStart] = useState(0);
@@ -45,12 +70,22 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
     }
   }, [signalData, filterSettings.windowDurationSeconds, timeStart]);
 
+  const effectiveFilters = useMemo(
+    () => (source === 'cleaned' ? { ...filterSettings, ...NO_FILTERS } : filterSettings),
+    [source, filterSettings]
+  );
+
   const { filteredSignals, timeLabels } = useEEGFilters(
     signalData,
     selectedChannels,
     timeStart,
-    filterSettings
+    effectiveFilters
   );
+
+  const handleSourceChange = useCallback((next: SignalSource) => {
+    if (next === 'cleaned') setCleanedRequested(true);
+    setSource(next);
+  }, []);
 
   const {
     annotations,
@@ -131,6 +166,14 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h3 className="text-red-900 font-semibold mb-2">Error Loading EEG Data</h3>
           <p className="text-red-700">{error}</p>
+          {source === 'cleaned' && (
+            <button
+              onClick={() => setSource('raw')}
+              className="mt-3 text-sm font-medium text-neuro-primary hover:underline"
+            >
+              Back to raw signals
+            </button>
+          )}
         </div>
       </div>
     );
@@ -140,9 +183,20 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-        Raw EEG Signals
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 className="text-2xl font-bold text-neuro-dark">
+          {source === 'cleaned' ? 'Cleaned EEG Signals' : 'Raw EEG Signals'}
+        </h2>
+        {cleanedFileUrl && (
+          <SourceToggle source={source} onChange={handleSourceChange} />
+        )}
+      </div>
+      {source === 'cleaned' && (
+        <p className="mb-3 text-xs text-gray-600">
+          Output of the analysis pipeline: filtered, re-referenced and artifact-corrected (ASR/ICA)
+          on the server. Display filters are off; shaded regions are epochs the analysis rejected.
+        </p>
+      )}
 
       {/* Channel selector */}
       <div className="mb-3">
@@ -171,6 +225,7 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
         <EEGToolbar
           filterSettings={filterSettings}
           onFilterChange={handleFilterChange}
+          filtersDisabled={source === 'cleaned'}
           isAnnotateMode={isAnnotateMode}
           onAnnotateModeToggle={handleAnnotateModeToggle}
         />
@@ -273,6 +328,36 @@ export default function EEGViewer({ recordingId, filePath, rejectedEpochs }: EEG
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SourceToggle({
+  source,
+  onChange,
+}: {
+  source: SignalSource;
+  onChange: (source: SignalSource) => void;
+}) {
+  const options: { value: SignalSource; label: string }[] = [
+    { value: 'raw', label: 'Raw' },
+    { value: 'cleaned', label: 'Cleaned' },
+  ];
+  return (
+    <div role="radiogroup" aria-label="Signal source" className="inline-flex rounded-md border border-gray-300 overflow-hidden">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          role="radio"
+          aria-checked={source === o.value}
+          onClick={() => onChange(o.value)}
+          className={`px-3 py-1 text-xs font-medium transition-colors ${
+            source === o.value ? 'bg-neuro-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }

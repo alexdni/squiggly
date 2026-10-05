@@ -143,3 +143,29 @@ describe('decimate', () => {
     expect(err).toBeLessThan(0.02);
   });
 });
+
+describe('cleaned files open in the browser viewer', () => {
+  const fs = 250;
+  const labels = ['Fp1', 'Cz', 'O2'];
+  const data = labels.map((_, c) => sine(fs * 6, fs, 8 + c, 30 + 5 * c));
+
+  it.each([false, true])('browser EDF/BDF reader parses writer output (bdf=%s)', async (bdf) => {
+    const { parseEDFFile } = await import('@/lib/edf-reader-browser');
+    const bytes = writeEdf({ labels, data, sampleRate: fs }, { bdf });
+    const parsed = await parseEDFFile(bytes.slice().buffer);
+    expect(parsed.sampleRate).toBe(fs);
+    expect(parsed.header.channels.map((c) => c.label)).toEqual(labels);
+    expect(parsed.signals[2].length).toBe(fs * 6);
+    const tol = bdf ? 1e-3 : 0.01;
+    parsed.signals.forEach((ch, c) => ch.forEach((v, i) => expect(Math.abs(v - data[c][i])).toBeLessThan(tol)));
+  });
+
+  it('browser CSV reader parses writer output', async () => {
+    const { parseCSVFile } = await import('@/lib/csv-reader-browser');
+    const text = new TextDecoder().decode(writeCsv({ labels, data, sampleRate: fs }));
+    const parsed = await parseCSVFile(text);
+    expect(parsed.channelNames).toEqual(labels);
+    expect(parsed.sampleRate).toBe(fs);
+    expect(Math.abs(parsed.signals[1][100] - data[1][100])).toBeLessThan(1e-3);
+  });
+});

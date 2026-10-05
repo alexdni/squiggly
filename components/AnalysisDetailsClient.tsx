@@ -503,6 +503,8 @@ export default function AnalysisDetailsClient({
           recordingId={analysis.recording.id}
           filePath={analysis.recording.file_path}
           rejectedEpochs={analysis.results?.rejected_epochs}
+          cleanedFileUrl={analysis.results?.cleaned_file_url}
+          cleanedFileFormat={analysis.results?.cleaned_file_format}
         />
 
         {/* Analysis Results or Status Message */}

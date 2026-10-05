@@ -1,6 +1,8 @@
 // EEG signal filtering functions
 // Extracted from csv-reader-browser.ts for shared use across the application
 
+import { filterEeg } from './dsp/zeroPhase';
+
 /**
  * Butterworth filter coefficient calculator
  * Compute biquad (second-order section) coefficients for Butterworth filter
@@ -125,33 +127,19 @@ export function notchCoeffs(notchFreq: number, sampleRate: number, Q: number = 3
 }
 
 /**
- * Apply the full prefiltered EEG processing pipeline
- * Matches the DivergenceWebapp/biofeedback-core processing:
- * 1. Highpass at 1 Hz (removes DC and slow drift)
- * 2. Lowpass at 45 Hz (removes high-frequency noise, muscle artifact)
- * 3. Notch at 60 Hz (removes power line interference)
+ * Fixed display prefilter: 1 Hz high-pass, 45 Hz low-pass, 60 Hz notch, using the same
+ * zero-phase design as the server-side cleaning pipeline (see lib/dsp/zeroPhase.ts).
  */
 export function prefilterEEG(signal: number[], sampleRate: number): number[] {
   if (signal.length < 10) return signal;
-
-  // 1. Highpass filter at 1 Hz to remove DC offset and slow drift
-  const hpCoeffs = butterworthCoeffs('highpass', 1, sampleRate);
-  let filtered = filtfilt(signal, hpCoeffs.b, hpCoeffs.a);
-
-  // 2. Lowpass filter at 45 Hz to remove high-frequency noise
-  const lpCoeffs = butterworthCoeffs('lowpass', 45, sampleRate);
-  filtered = filtfilt(filtered, lpCoeffs.b, lpCoeffs.a);
-
-  // 3. Notch filter at 60 Hz to remove power line noise
-  const notch = notchCoeffs(60, sampleRate, 30);
-  filtered = filtfilt(filtered, notch.b, notch.a);
-
-  return filtered;
+  return Array.from(filterEeg(signal, sampleRate, { highpassHz: 1, lowpassHz: 45, notchHz: 60 }));
 }
 
 /**
- * Apply configurable EEG filters to a signal
- * Allows specifying custom highpass, lowpass, and notch frequencies
+ * Configurable display filters for the EEG viewer. Same design as the server-side cleaning
+ * pipeline's temporal filter: 4th-order Butterworth high/low-pass as second-order sections,
+ * notches at the mains frequency and its harmonics (Q 30), median DC removal, zero phase.
+ * A value of 0 disables that stage.
  */
 export function applyEEGFilters(
   signal: number[],
@@ -163,26 +151,20 @@ export function applyEEGFilters(
   }
 ): number[] {
   if (signal.length < 10) return signal;
+  return Array.from(
+    filterEeg(signal, sampleRate, {
+      highpassHz: config.highpassHz,
+      lowpassHz: config.lowpassHz,
+      notchHz: config.notchHz,
+    })
+  );
+}
 
-  let filtered = signal;
-
-  // 1. Highpass filter (if > 0)
-  if (config.highpassHz > 0) {
-    const hpCoeffs = butterworthCoeffs('highpass', config.highpassHz, sampleRate);
-    filtered = filtfilt(filtered, hpCoeffs.b, hpCoeffs.a);
-  }
-
-  // 2. Lowpass filter (if > 0 and below Nyquist)
-  if (config.lowpassHz > 0 && config.lowpassHz < sampleRate / 2) {
-    const lpCoeffs = butterworthCoeffs('lowpass', config.lowpassHz, sampleRate);
-    filtered = filtfilt(filtered, lpCoeffs.b, lpCoeffs.a);
-  }
-
-  // 3. Notch filter (if > 0)
-  if (config.notchHz > 0) {
-    const notch = notchCoeffs(config.notchHz, sampleRate, 30);
-    filtered = filtfilt(filtered, notch.b, notch.a);
-  }
-
-  return filtered;
+/**
+ * Seconds of signal to include on each side of the visible window before filtering, so the
+ * high-pass has settled by the time the visible part starts (about 3 time constants).
+ */
+export function filterPaddingSeconds(highpassHz: number): number {
+  if (!(highpassHz > 0)) return 1;
+  return Math.min(10, Math.max(1, 3 / highpassHz));
 }
