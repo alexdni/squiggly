@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { writeEdf } from '../export/writers';
 import { readEdfHeader } from '../io/edf';
-import { AnalysisJobError, buildPipelineConfig, resolvePreprocessing, runAnalysis, spansFromKeep } from '../pipeline';
+import { AnalysisJobError, buildPipelineConfig, removeMains, resolvePreprocessing, runAnalysis, spansFromKeep } from '../pipeline';
 import { runTheraq } from '../theraqJob';
 
 const LABELS = ['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8', 'T7', 'C3', 'Cz', 'C4', 'T8', 'P7', 'P3', 'Pz', 'P4', 'P8', 'O1', 'O2'];
@@ -199,4 +199,35 @@ describe('spansFromKeep', () => {
     ]);
     expect(spansFromKeep(new Uint8Array(4).fill(1), 2)).toEqual([]);
   });
+});
+
+describe('mains hum', () => {
+  it('removeMains suppresses off-centre hum and its harmonics, leaving EEG-band signal', () => {
+    const n = FS * 20;
+    const alpha = Float64Array.from({ length: n }, (_, i) => 20 * Math.sin((2 * Math.PI * 10 * i) / FS));
+    const x = Float64Array.from(alpha, (v, i) => v + 5000 * Math.sin((2 * Math.PI * 59.95 * i) / FS) + 800 * Math.sin((2 * Math.PI * 120 * i) / FS));
+    const [y] = removeMains([x], FS, 60);
+    let err = 0;
+    for (let i = 2 * FS; i < n - 2 * FS; i++) err = Math.max(err, Math.abs(y[i] - alpha[i]));
+    // The Q-30 notch (2 Hz wide) leaves ~0.25 % of hum 0.05 Hz off-centre (12 µV of 5 mV); the
+    // pipeline's 45 Hz low-pass then removes ~96 % of that. 120 Hz is notched completely.
+    expect(err).toBeLessThan(0.005 * 5000);
+  });
+
+  it('a recording with heavy 60 Hz hum (dry electrodes) is not rejected wholesale', () => {
+    // Regression: with the 45 Hz analysis low-pass the pipeline skipped its own 60 Hz notch, so
+    // ~5 mV of hum left ~250 µV in every window and every epoch was rejected.
+    const seconds = 60;
+    const data = synthetic(seconds).map((ch, c) =>
+      Float64Array.from(ch, (v, i) => v + 5000 * Math.sin((2 * Math.PI * 59.95 * i) / FS + c))
+    );
+    const { results } = runAnalysis({
+      bytes: edfBytes(data),
+      format: 'edf',
+      segments: { eo: { start: 0, end: seconds } },
+      preprocessing: { profile: 'conservative' },
+      engine: 'test',
+    });
+    expect(results.qc_report.final_epochs_eo).toBeGreaterThan(20);
+  }, 120_000);
 });

@@ -23,6 +23,7 @@ import type {
   TimeSpan,
 } from '@/lib/analysis-results';
 import { DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
+import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeSpectrograms, extractFeatures, type EpochSet } from './features';
 import {
@@ -264,6 +265,21 @@ export interface CleanedEeg {
   data: Float64Array[];
 }
 
+/**
+ * Zero-phase notch at the mains frequency and every harmonic below Nyquist, applied before the
+ * artifact pipeline. The pipeline only notches mains below its own low-pass cutoff, so with the
+ * 45 Hz analysis low-pass the 60 Hz notch is skipped and only the low-pass's ~0.04 gain is left:
+ * a dry-electrode headband with ~5 mV of hum then keeps ~250 µV of 60 Hz in every window and
+ * every epoch fails the 160 µV ceiling. Notching here makes mains removal independent of the
+ * low-pass setting.
+ */
+export function removeMains(data: Float64Array[], sampleRate: number, lineHz: number): Float64Array[] {
+  const sections = eegFilterSections(sampleRate, { notchHz: lineHz, notchHarmonics: true });
+  if (sections.length === 0) return data;
+  const pad = Math.round(sampleRate); // a Q-30 notch rings for ~0.2 s; 1 s of padding is ample
+  return data.map((d) => (d.length > 2 * pad ? sosFiltFilt(sections, d, pad) : d));
+}
+
 /** Run the artifact pipeline and re-reference to the average of the usable channels. */
 export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig): CleanedEeg {
   if (eeg.labels.length < 2) {
@@ -277,7 +293,7 @@ export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig): Cleaned
       {
         sampleRate: eeg.sampleRate,
         channels: eeg.labels.map((label) => ({ label })),
-        data: eeg.data,
+        data: removeMains(eeg.data, eeg.sampleRate, config.filter?.lineHz ?? 60),
         nSamples: eeg.data[0].length,
         reference: 'source',
       },

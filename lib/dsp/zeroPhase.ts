@@ -53,12 +53,18 @@ export function butterworthSections(
   return sections;
 }
 
-/** Second-order notch at `freqHz` with quality factor `q` (bandwidth = freq / q). */
+/**
+ * Second-order notch at `freqHz` with quality factor `q`: -3 dB bandwidth = freq / q at every
+ * frequency (scipy.signal.iirnotch's definition, as the cleaning pipeline uses). The RBJ
+ * "cookbook" form scales the bandwidth by sin(w0), which near Nyquist (e.g. 120 Hz at 250 Hz)
+ * makes the notch hair-thin and ring for seconds.
+ */
 export function notchSection(freqHz: number, sampleRate: number, q = 30): Biquad {
   const w0 = (2 * Math.PI * freqHz) / sampleRate;
-  const alpha = Math.sin(w0) / (2 * q);
+  const bw = w0 / q;
+  const gain = 1 / (1 + Math.tan(bw / 2));
   const c = -2 * Math.cos(w0);
-  return normalized(1, c, 1, 1 + alpha, c, 1 - alpha);
+  return { b0: gain, b1: gain * c, b2: gain, a1: gain * c, a2: 2 * gain - 1 };
 }
 
 export interface EegFilterDesign {

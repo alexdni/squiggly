@@ -55,6 +55,27 @@ describe('notch', () => {
     expect(magnitudeAt(s, 10, FS)).toBeGreaterThan(0.999);
   });
 
+  it('matches scipy.signal.iirnotch (60 Hz, Q 30, fs 250)', () => {
+    // scipy.signal.iirnotch(60, 30, 250): b = [0.97547839, -0.12250159, 0.97547839],
+    // a = [1, -0.12250159, 0.95095678]
+    const s = notchSection(60, 250, 30);
+    expect(s.b0).toBeCloseTo(0.97547839, 7);
+    expect(s.b1).toBeCloseTo(-0.12250159, 7);
+    expect(s.b2).toBeCloseTo(0.97547839, 7);
+    expect(s.a1).toBeCloseTo(-0.12250159, 7);
+    expect(s.a2).toBeCloseTo(0.95095678, 7);
+  });
+
+  it('keeps the bandwidth near Nyquist, so it settles quickly (120 Hz at 250 Hz)', () => {
+    const s = notchSection(120, 250, 30);
+    // -3 dB points at 120 ± 2 Hz
+    expect(magnitudeAt([s], 118, 250)).toBeGreaterThan(0.65);
+    expect(magnitudeAt([s], 118, 250)).toBeLessThan(0.76);
+    // pole radius sqrt(a2) well inside the unit circle: transient below 5 % within 0.3 s
+    // (the old sin(w0)-scaled form took several seconds here)
+    expect(Math.sqrt(s.a2) ** 75).toBeLessThan(0.05);
+  });
+
   it('adds harmonics below the low-pass, not above it', () => {
     const withLp = eegFilterSections(500, { notchHz: 60, lowpassHz: 100 });
     expect(withLp.length).toBe(2 /* 4th-order LP = 2 biquads */ + 2 /* 60, 120 Hz */);
