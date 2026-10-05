@@ -271,10 +271,85 @@ CREATE POLICY "Users can view analyses for recordings they have access to"
     )
   );
 
-CREATE POLICY "System can manage analyses"
-  ON analyses FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- Writes: project editors create/delete, any member may update (status, settings, AI
+-- interpretation). Server-side jobs use the service role, which bypasses RLS. Never add a
+-- FOR ALL USING (true) policy here: without TO <role> it also applies to the public anon key.
+-- (Same as supabase/migrations/restrict_analyses_rls_to_project_members.sql.)
+
+DROP POLICY IF EXISTS "Editors can create analyses" ON public.analyses;
+CREATE POLICY "Editors can create analyses"
+  ON public.analyses FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.recordings r
+      JOIN public.projects p ON p.id = r.project_id
+      WHERE r.id = analyses.recording_id
+        AND (
+          p.owner_id = auth.uid()
+          OR EXISTS (
+            SELECT 1 FROM public.project_members pm
+            WHERE pm.project_id = p.id
+              AND pm.user_id = auth.uid()
+              AND pm.role IN ('owner', 'collaborator')
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "Members can update analyses" ON public.analyses;
+CREATE POLICY "Members can update analyses"
+  ON public.analyses FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.recordings r
+      JOIN public.projects p ON p.id = r.project_id
+      WHERE r.id = analyses.recording_id
+        AND (
+          p.owner_id = auth.uid()
+          OR EXISTS (
+            SELECT 1 FROM public.project_members pm
+            WHERE pm.project_id = p.id AND pm.user_id = auth.uid()
+          )
+        )
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.recordings r
+      JOIN public.projects p ON p.id = r.project_id
+      WHERE r.id = analyses.recording_id
+        AND (
+          p.owner_id = auth.uid()
+          OR EXISTS (
+            SELECT 1 FROM public.project_members pm
+            WHERE pm.project_id = p.id AND pm.user_id = auth.uid()
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "Editors can delete analyses" ON public.analyses;
+CREATE POLICY "Editors can delete analyses"
+  ON public.analyses FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.recordings r
+      JOIN public.projects p ON p.id = r.project_id
+      WHERE r.id = analyses.recording_id
+        AND (
+          p.owner_id = auth.uid()
+          OR EXISTS (
+            SELECT 1 FROM public.project_members pm
+            WHERE pm.project_id = p.id
+              AND pm.user_id = auth.uid()
+              AND pm.role IN ('owner', 'collaborator')
+          )
+        )
+    )
+  );
 
 -- Export logs policies
 CREATE POLICY "Users can view their own export logs"
