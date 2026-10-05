@@ -100,6 +100,24 @@ export interface SpectrogramData {
 export type ArtifactMode = 'pipeline' | 'manual';
 export type ArtifactProfile = 'full' | 'conservative' | 'aggressive' | 'rejectionOnly' | 'legacy';
 
+/** Rejected stretch of the recording, [start, end] in seconds from recording start. */
+export type TimeSpan = [number, number];
+
+/**
+ * Where the cleaning pipeline rejected data over the whole recording, derived from its epoch
+ * masks: a sample is rejected when no kept pipeline epoch covers it.
+ */
+export interface RejectionTimeline {
+  duration_sec: number;
+  /** every input channel, in recording order */
+  labels: string[];
+  /** whole-recording decision (what the features use) */
+  spans: TimeSpan[];
+  /** per-channel decision */
+  channel_spans: Record<string, TimeSpan[]>;
+  bad_channels: { label: string; reasons: string[]; interpolated: boolean }[];
+}
+
 export interface QcReportSummary {
   artifact_mode: ArtifactMode | 'ica';
   profile?: ArtifactProfile;
@@ -121,13 +139,15 @@ export interface QcReportSummary {
   n_channels: number;
   manual_artifact_epochs_count?: number;
   warnings?: string[];
+  /** Absent on Python-era analyses */
+  timeline?: RejectionTimeline;
   // Legacy (Python) fields, present on old analyses only
   ica_method?: string;
   [key: string]: unknown;
 }
 
 export interface ProcessingMetadata {
-  /** e.g. 'node/biofeedback-core@0.33.0-beta.1'; absent on Python-era analyses */
+  /** e.g. 'hybrid-asr-ica@0.33.0-beta.1' (earlier runs: 'node/...'); absent on Python-era analyses */
   engine?: string;
   config?: Record<string, unknown>;
   preprocessing_config?: Record<string, unknown>;

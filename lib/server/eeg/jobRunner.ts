@@ -35,7 +35,7 @@ export function workerBundlePath(): string {
 }
 
 let engineCache: string | null = null;
-/** e.g. "node/biofeedback-core@0.33.0-beta.1" — stored in processing_metadata.engine */
+/** e.g. "hybrid-asr-ica@0.33.0-beta.1" — stored in processing_metadata.engine (no package name: results are user-visible) */
 export function engineId(): string {
   if (engineCache) return engineCache;
   let version = 'unknown';
@@ -45,7 +45,7 @@ export function engineId(): string {
   } catch {
     // package.json not traced into the deployment; keep 'unknown'
   }
-  engineCache = `node/biofeedback-core@${version}`;
+  engineCache = `hybrid-asr-ica@${version}`;
   return engineCache;
 }
 

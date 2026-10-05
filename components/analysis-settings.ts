@@ -118,7 +118,11 @@ export const LEGACY_ICA_METHOD_LABELS: Record<string, string> = {
   fastica: 'FastICA',
 };
 
-/** 'node/biofeedback-core@x' or absent (Python worker). */
+/** Which processing engine produced an analysis: the server ASR + ICA pipeline, or the former Python worker. */
+export function engineFamily(engine: string | null | undefined): 'hybrid' | 'python' {
+  return engine ? 'hybrid' : 'python';
+}
+
 export function engineLabel(engine: string | null | undefined): string {
-  return engine ? engine : 'Python worker (legacy)';
+  return engineFamily(engine) === 'hybrid' ? 'Hybrid ASR + ICA pipeline' : 'Python worker (legacy)';
 }

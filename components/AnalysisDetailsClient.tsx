@@ -26,6 +26,7 @@ import LzcTopomaps from './visuals/LzcTopomaps';
 import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
+import RejectionTimeline from './visuals/RejectionTimeline';
 
 // chart.js renders client-side only
 const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
@@ -513,6 +514,11 @@ export default function AnalysisDetailsClient({
           rejectedEpochs={analysis.results?.rejected_epochs}
           cleanedFileUrl={analysis.results?.cleaned_file_url}
           cleanedFileFormat={analysis.results?.cleaned_file_format}
+          pipelineFilters={{
+            highpassHz: analysis.results?.processing_metadata?.config?.high_pass_hz as number | undefined,
+            lowpassHz: analysis.results?.processing_metadata?.config?.low_pass_hz as number | undefined,
+            notchHz: analysis.results?.processing_metadata?.config?.line_freq as number | undefined,
+          }}
         />
 
         {/* Analysis Results or Status Message */}
@@ -940,6 +946,9 @@ export default function AnalysisDetailsClient({
                     </ul>
                   </div>
                 )}
+
+                {/* Where data was rejected, per channel (Hybrid pipeline analyses only) */}
+                {qc.timeline && <RejectionTimeline timeline={qc.timeline} />}
 
                 {/* Download cleaned file */}
                 {r.cleaned_file_url && (

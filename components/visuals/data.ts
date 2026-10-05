@@ -1,6 +1,7 @@
 // Pure data shaping for the visual components: pulls per-channel values out of the results JSON
 // and computes the shared colour scales (per band across conditions, and across two analyses in
-// the comparison view).
+// the comparison view). Map scales are the min/max of the electrode values, as DivergenceWebapp's
+// topomaps, pooled over every map that shares the scale.
 
 import {
   BAND_NAMES,
@@ -14,7 +15,8 @@ import {
   type Lzc,
   type SpectrogramData,
 } from '@/lib/analysis-results';
-import { electrodePosition, percentile, percentileScale, type Scale } from './topo';
+import { electrodePosition, percentile, type Scale } from './topo';
+import { topoPosition } from './topoRender';
 
 export const CONDITIONS: Condition[] = ['eo', 'ec'];
 export const CONDITION_LABELS: Record<Condition, string> = { eo: 'Eyes Open', ec: 'Eyes Closed' };
@@ -49,16 +51,28 @@ export function bandValues(
   return out;
 }
 
-/** Only channels that can be placed on the head contribute to a map's scale. */
+/** Only channels that can be placed on the map contribute to its scale. */
 function placedValues(values: Record<string, number>): number[] {
   return Object.entries(values)
-    .filter(([ch]) => electrodePosition(ch))
+    .filter(([ch]) => topoPosition(ch))
     .map(([, v]) => v);
 }
 
+/** Min/max of the values (the topomap vMin/vMax); null without data. */
+export function minMaxScale(values: number[]): Scale | null {
+  let vmin = Infinity;
+  let vmax = -Infinity;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    if (v < vmin) vmin = v;
+    if (v > vmax) vmax = v;
+  }
+  return vmin <= vmax ? { vmin, vmax } : null;
+}
+
 /**
- * One 2nd–98th percentile scale per band, pooled over every band-power set given (EO and EC of one
- * analysis, or of both analyses in a comparison) so maps of the same band are directly comparable.
+ * One min/max scale per band, pooled over every band-power set given (EO and EC of one analysis,
+ * or of both analyses in a comparison) so maps of the same band are directly comparable.
  */
 export function computeBandScales(
   bandPowers: Array<BandPower | null | undefined>,
@@ -67,7 +81,7 @@ export function computeBandScales(
   const scales: Partial<Record<BandName, Scale>> = {};
   for (const band of BAND_NAMES) {
     const pooled = bandPowers.flatMap((bp) => placedValues(bandValues(bp, band, mode)));
-    const s = percentileScale(pooled);
+    const s = minMaxScale(pooled);
     if (s) scales[band] = s;
   }
   return scales;
@@ -82,7 +96,7 @@ export function lzcValues(lzc: Lzc | null | undefined): Record<string, number> {
 }
 
 export function computeLzcScale(lzcs: Array<Lzc | null | undefined>): Scale | null {
-  return percentileScale(lzcs.flatMap((l) => placedValues(lzcValues(l))));
+  return minMaxScale(lzcs.flatMap((l) => placedValues(lzcValues(l))));
 }
 
 export function alphaPeakValues(peaks: AlphaPeak | null | undefined): Record<string, number> {

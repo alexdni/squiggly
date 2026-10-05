@@ -76,6 +76,8 @@ function cleanChannelLabel(label: string): string {
 
 interface EEGUnifiedChartProps {
   filteredSignals: number[][];
+  /** Optional second trace per channel (e.g. the original signal behind the corrected one) */
+  overlaySignals?: (number[] | null)[];
   timeLabels: number[];
   channelNames: string[];
   selectedChannels: number[];
@@ -89,8 +91,13 @@ interface EEGUnifiedChartProps {
   onDragCancel: () => void;
 }
 
+const MAIN_COLOR = '#374151';
+const MAIN_COLOR_OVER_OVERLAY = '#111827';
+const OVERLAY_COLOR = 'rgba(220, 38, 38, 0.45)';
+
 export default function EEGUnifiedChart({
   filteredSignals,
+  overlaySignals,
   timeLabels,
   channelNames,
   selectedChannels,
@@ -106,7 +113,7 @@ export default function EEGUnifiedChart({
   const chartRef = useRef<ChartJS<'line'> | null>(null);
 
   const cleanedLabels = useMemo(
-    () => selectedChannels.map((idx) => cleanChannelLabel(channelNames[idx])),
+    () => selectedChannels.map((idx) => cleanChannelLabel(channelNames[idx] ?? '')),
     [selectedChannels, channelNames]
   );
 
@@ -119,21 +126,40 @@ export default function EEGUnifiedChart({
 
   // Build chart data: each channel as a separate dataset, offset vertically
   const chartData = useMemo(() => {
-    const datasets = filteredSignals.map((signal, i) => ({
+    const hasOverlay = Boolean(overlaySignals?.some(Boolean));
+    // Main traces first so dataset index i maps to channel i (tooltips, labels); `order` puts
+    // them in front of the overlay, which Chart.js draws first.
+    const datasets: any[] = filteredSignals.map((signal, i) => ({
       label: cleanedLabels[i],
       data: signal.map((v, j) => ({
         x: timeLabels[j],
         y: v + offsets[i],
       })),
-      borderColor: '#374151',
+      borderColor: hasOverlay ? MAIN_COLOR_OVER_OVERLAY : MAIN_COLOR,
       backgroundColor: 'transparent',
       borderWidth: 1,
       pointRadius: 0,
       tension: 0,
+      order: 0,
     }));
+    if (hasOverlay) {
+      overlaySignals!.forEach((signal, i) => {
+        if (!signal) return;
+        datasets.push({
+          label: `${cleanedLabels[i]} (original)`,
+          data: signal.map((v, j) => ({ x: timeLabels[j], y: v + offsets[i] })),
+          borderColor: OVERLAY_COLOR,
+          backgroundColor: 'transparent',
+          borderWidth: 1.25,
+          pointRadius: 0,
+          tension: 0,
+          order: 1,
+        });
+      });
+    }
 
     return { datasets };
-  }, [filteredSignals, timeLabels, cleanedLabels, offsets]);
+  }, [filteredSignals, overlaySignals, timeLabels, cleanedLabels, offsets]);
 
   // Y-axis range
   const yMin = -(selectedChannels.length - 1) * spacing - sensitivityMicrovolts;
@@ -158,6 +184,7 @@ export default function EEGUnifiedChart({
           enabled: !isAnnotateMode,
           mode: 'nearest',
           intersect: false,
+          filter: (item) => item.datasetIndex < filteredSignals.length,
           callbacks: {
             label: (context) => {
               const raw = context.parsed.y ?? 0;
@@ -214,6 +241,7 @@ export default function EEGUnifiedChart({
       offsets,
       yMin,
       yMax,
+      filteredSignals.length,
     ]
   );
 

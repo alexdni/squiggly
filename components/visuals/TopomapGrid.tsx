@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react';
 import { BAND_NAMES, BANDS, type BandName, type BandPower, type Condition } from '@/lib/analysis-results';
 import type { Scale } from './topo';
-import Topomap, { ColorLegend } from './Topomap';
+import Topomap from './Topomap';
+import { CANVAS_SIZE, LEGEND_GRADIENT_CSS, fmtAbs, fmtRel, qeegDiscrete } from './topoRender';
 import {
   BAND_LABELS,
   CONDITIONS,
@@ -25,8 +26,6 @@ export interface TopomapGridProps {
   /** At most two band cards per row (for half-width placement, e.g. comparison columns). */
   compact?: boolean;
 }
-
-const formatPercent = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 export function PowerModeToggle({
   mode,
@@ -55,9 +54,26 @@ export function PowerModeToggle({
   );
 }
 
+/** DivergenceWebapp's master band-power colour legend. */
+function MasterLegend({ mode }: { mode: PowerMode }) {
+  return (
+    <div className="flex flex-col items-center">
+      <span className="text-sm font-semibold">Color Legend ({mode === 'absolute' ? 'µV²' : '% of total'})</span>
+      <div
+        aria-hidden="true"
+        style={{ width: 240, height: 14, marginTop: 6, borderRadius: 2, background: LEGEND_GRADIENT_CSS, border: '1px solid #bbb' }}
+      />
+      <span className="text-xs" style={{ color: '#888', marginTop: 4 }}>
+        (each band scaled to its own min/max, shared across conditions)
+      </span>
+    </div>
+  );
+}
+
 /**
- * Band power maps: one card per band with EO and EC side by side on a shared scale (2nd–98th
- * percentile pooled across conditions), as the former Python `generate_topomap_grid`.
+ * Band power maps drawn as DivergenceWebapp's band-power topomaps (discrete QEEG bands, min/max
+ * legend under each map): one card per band with EO and EC side by side on a shared scale (min/max
+ * pooled across conditions, or across both analyses in a comparison).
  */
 export default function TopomapGrid({
   bandPower,
@@ -93,44 +109,44 @@ export default function TopomapGrid({
     return <p className="text-sm text-gray-600">No band power data available.</p>;
   }
 
+  const fmt = mode === 'absolute' ? fmtAbs : fmtRel;
+  const unit = mode === 'absolute' ? ' µV²' : ''; // relative already carries % via fmtRel
+
   return (
     <div>
       {!hideToggle && (
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div className="flex flex-wrap items-center justify-center gap-4 mb-2">
           <PowerModeToggle mode={mode} onChange={setMode} />
-          <span className="text-xs text-gray-600">Each band shares one colour scale across conditions</span>
         </div>
       )}
+      <div className="mb-4">
+        <MasterLegend mode={mode} />
+      </div>
       <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${compact ? '' : 'xl:grid-cols-4'}`}>
         {BAND_NAMES.map((band) => {
           const [lo, hi] = BANDS[band];
           return (
             <figure key={band} className="border border-gray-200 rounded-lg p-3">
-              <figcaption className="text-center mb-2">
-                <span className="font-semibold text-gray-900">{BAND_LABELS[band]}</span>{' '}
-                <span className="text-xs text-gray-600">
+              <figcaption className="flex flex-col items-center mb-1">
+                <span className="text-xs font-semibold">{BAND_LABELS[band]}</span>
+                <span style={{ fontSize: 9, color: '#888', minHeight: 12 }}>
                   {lo}–{hi} Hz
                 </span>
               </figcaption>
-              <div className={`grid gap-2 ${conditions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <div className={`grid gap-3 ${conditions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {conditions.map((c) => (
-                  <div key={c}>
-                    <div className="text-xs font-medium text-gray-700 text-center mb-1">{c.toUpperCase()}</div>
-                    <Topomap
-                      values={values[band]?.[c] ?? {}}
-                      scale={scales[band] ?? null}
-                      label={`${BAND_LABELS[band]} ${mode} power, ${CONDITION_LABELS[c]}`}
-                      maxSize={conditions.length > 1 ? 180 : 220}
-                    />
-                  </div>
+                  <Topomap
+                    key={c}
+                    values={values[band]?.[c] ?? {}}
+                    scale={scales[band] ?? null}
+                    colormap={qeegDiscrete}
+                    label={c.toUpperCase()}
+                    legend={{ format: fmt, unit, gradient: LEGEND_GRADIENT_CSS }}
+                    ariaLabel={`${BAND_LABELS[band]} ${mode} power, ${CONDITION_LABELS[c]}`}
+                    maxSize={CANVAS_SIZE}
+                  />
                 ))}
               </div>
-              <ColorLegend
-                className="mt-2"
-                scale={scales[band]}
-                format={mode === 'relative' ? formatPercent : undefined}
-                label={mode === 'absolute' ? 'µV²' : 'of 1–45 Hz power'}
-              />
             </figure>
           );
         })}

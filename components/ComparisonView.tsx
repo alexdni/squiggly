@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { hasLegacyVisual, type AnalysisResults } from '@/lib/analysis-results';
-import { engineLabel } from './analysis-settings';
+import { engineFamily, engineLabel } from './analysis-settings';
 import LegacyOrLive from './visuals/LegacyOrLive';
 import TopomapGrid, { PowerModeToggle } from './visuals/TopomapGrid';
 import LzcTopomaps from './visuals/LzcTopomaps';
@@ -171,7 +171,8 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   // Engine is absent on Python-era analyses
   const engineA = comparisonSides?.a?.processing_metadata?.engine ?? null;
   const engineB = comparisonSides?.b?.processing_metadata?.engine ?? null;
-  const engineMismatch = Boolean(comparisonSides?.hasResults) && engineA !== engineB;
+  const engineMismatch =
+    Boolean(comparisonSides?.hasResults) && engineFamily(engineA) !== engineFamily(engineB);
 
   // Helper to determine if selected recordings are an EO/EC pair
   const isEOECComparison = (): boolean => {

@@ -1,12 +1,12 @@
-// Pure helpers for client-rendered scalp maps: electrode layout, interpolation, colormaps and
-// scaling, plus `drawTopomap` (the only function here that touches the DOM). Everything except
-// `drawTopomap`/`drawColorbar` runs in Node so it can be unit-tested.
+// Shared visual helpers: the connectivity head's electrode layout and channel-name normalization,
+// percentile/normalize scaling, colormaps, tick formatting and `drawColorbar` (the only function
+// here that touches the DOM). The scalp-map renderer itself lives in topoRender.ts.
 
 export type RGB = [number, number, number];
 /** Maps a normalized value t∈[0,1] to an [r,g,b] triple. */
 export type Colormap = (t: number) => RGB;
 
-// ── electrode layout ───────────────────────────────────────────────────────
+// ── electrode layout (connectivity head) ───────────────────────────────────
 // Azimuthal projection with the nose up: each site is (azimuth from the nose in degrees, positive
 // to the right; distance from Cz as a fraction of the outer 10-20 ring Fpz–T7–Oz–T8). The outer
 // ring sits at OUTER_RING_RADIUS of the head outline, as in MNE's default sphere.
@@ -123,94 +123,6 @@ export function electrodePosition(name: string): { x: number; y: number } | null
   return ELECTRODE_POSITIONS[ALIASES[n] ?? n] ?? null;
 }
 
-export interface Electrode {
-  name: string;
-  x: number;
-  y: number;
-  value: number;
-}
-
-/** Channels with a known position and a finite value. */
-export function toElectrodes(values: Record<string, number>): Electrode[] {
-  const out: Electrode[] = [];
-  for (const [name, value] of Object.entries(values)) {
-    const pos = electrodePosition(name);
-    if (pos && Number.isFinite(value)) out.push({ name, x: pos.x, y: pos.y, value });
-  }
-  return out;
-}
-
-// ── interpolation ──────────────────────────────────────────────────────────
-/** Inverse-distance-weighted value at (x, y) in head space. */
-export function idw(x: number, y: number, electrodes: Electrode[], power = 2): number {
-  let num = 0;
-  let den = 0;
-  for (const e of electrodes) {
-    const d2 = (x - e.x) ** 2 + (y - e.y) ** 2;
-    if (d2 < 1e-12) return e.value;
-    const w = power === 2 ? 1 / d2 : 1 / Math.pow(d2, power / 2);
-    num += w * e.value;
-    den += w;
-  }
-  return den === 0 ? NaN : num / den;
-}
-
-function boxBlur(src: Float32Array, n: number, radius: number): Float32Array {
-  if (radius < 1) return src;
-  const tmp = new Float32Array(src.length);
-  const out = new Float32Array(src.length);
-  const pass = (from: Float32Array, to: Float32Array, horizontal: boolean) => {
-    for (let a = 0; a < n; a++) {
-      for (let b = 0; b < n; b++) {
-        let sum = 0;
-        let count = 0;
-        for (let k = -radius; k <= radius; k++) {
-          const c = b + k;
-          if (c < 0 || c >= n) continue;
-          sum += horizontal ? from[a * n + c] : from[c * n + a];
-          count++;
-        }
-        if (horizontal) to[a * n + b] = sum / count;
-        else to[b * n + a] = sum / count;
-      }
-    }
-  };
-  pass(src, tmp, true);
-  pass(tmp, out, false);
-  return out;
-}
-
-/**
- * IDW field on an n×n grid spanning the head bounding square ([-1, 1] in x and y, row 0 = front).
- * The field is computed over the whole square (so smoothing has neighbours at the rim) and then
- * box-blurred `smoothPasses` times; points outside the head circle are NaN.
- */
-export function interpolateGrid(
-  electrodes: Electrode[],
-  n: number,
-  opts: { power?: number; smoothRadius?: number; smoothPasses?: number } = {}
-): Float32Array {
-  const { power = 2, smoothRadius = Math.round(n / 24), smoothPasses = 2 } = opts;
-  let grid: Float32Array = new Float32Array(n * n);
-  if (electrodes.length === 0) return grid.fill(NaN);
-  for (let row = 0; row < n; row++) {
-    const y = 1 - ((row + 0.5) / n) * 2;
-    for (let col = 0; col < n; col++) {
-      const x = ((col + 0.5) / n) * 2 - 1;
-      grid[row * n + col] = idw(x, y, electrodes, power);
-    }
-  }
-  for (let p = 0; p < smoothPasses; p++) grid = boxBlur(grid, n, smoothRadius);
-  for (let row = 0; row < n; row++) {
-    const y = 1 - ((row + 0.5) / n) * 2;
-    for (let col = 0; col < n; col++) {
-      const x = ((col + 0.5) / n) * 2 - 1;
-      if (x * x + y * y > 1) grid[row * n + col] = NaN;
-    }
-  }
-  return grid;
-}
-
 // ── scaling ────────────────────────────────────────────────────────────────
 /** Linear-interpolated percentile (numpy default). Ignores non-finite values. */
 export function percentile(values: number[], p: number): number {
@@ -227,19 +139,6 @@ export interface Scale {
   vmax: number;
 }
 
-/** 2nd–98th percentile scale (as the former Python topomaps). Widens a degenerate range. */
-export function percentileScale(values: number[], lo = 2, hi = 98): Scale | null {
-  let vmin = percentile(values, lo);
-  let vmax = percentile(values, hi);
-  if (!Number.isFinite(vmin) || !Number.isFinite(vmax)) return null;
-  if (vmax - vmin < 1e-12) {
-    const pad = Math.abs(vmin) * 0.05 || 1;
-    vmin -= pad;
-    vmax += pad;
-  }
-  return { vmin, vmax };
-}
-
 export function normalize(value: number, scale: Scale): number {
   const t = (value - scale.vmin) / (scale.vmax - scale.vmin);
   return t < 0 ? 0 : t > 1 ? 1 : t;
@@ -247,11 +146,6 @@ export function normalize(value: number, scale: Scale): number {
 
 // ── colormaps ──────────────────────────────────────────────────────────────
 const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : Number.isNaN(t) ? 0 : t);
-
-function hex(h: string): RGB {
-  const n = parseInt(h.replace('#', ''), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
 
 /** Colormap linearly interpolating evenly spaced stops. */
 export function fromStops(stops: RGB[]): Colormap {
@@ -269,24 +163,6 @@ export function fromStops(stops: RGB[]): Colormap {
     ];
   };
 }
-
-/** The Python worker's custom band-power map: blue → sky → yellow → orange → red. */
-export const blueRed = fromStops(
-  ['#0000FF', '#4169E1', '#87CEEB', '#FFFF00', '#FFA500', '#FF0000'].map(hex)
-);
-
-export const viridis = fromStops(
-  ['#440154', '#482878', '#3e4989', '#31688e', '#26828e', '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725'].map(
-    hex
-  )
-);
-
-/** matplotlib RdYlBu_r: blue (low) → pale yellow → red (high) */
-export const rdYlBuR = fromStops(
-  ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026'].map(
-    hex
-  )
-);
 
 /** matplotlib coolwarm: blue → light grey → red */
 export const coolwarm = fromStops([
@@ -308,9 +184,6 @@ export const jet: Colormap = (t) => {
   return [ch(3), ch(2), ch(1)];
 };
 
-export const COLORMAPS = { blueRed, viridis, rdYlBuR, coolwarm, jet } as const;
-export type ColormapName = keyof typeof COLORMAPS;
-
 export const rgbCss = ([r, g, b]: RGB) => `rgb(${r},${g},${b})`;
 
 /** CSS linear-gradient sampling the colormap (for HTML legends). */
@@ -320,11 +193,6 @@ export function cssGradient(cmap: Colormap, direction = 'to right', samples = 11
     return `${rgbCss(cmap(t))} ${(t * 100).toFixed(0)}%`;
   });
   return `linear-gradient(${direction}, ${stops.join(', ')})`;
-}
-
-/** Black or white text, whichever reads better on the given colour. */
-export function contrastText([r, g, b]: RGB): string {
-  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#111827' : '#ffffff';
 }
 
 // ── formatting ─────────────────────────────────────────────────────────────
@@ -342,169 +210,6 @@ export function formatTick(v: number): string {
 export function linearTicks(vmin: number, vmax: number, n = 5): number[] {
   if (n < 2) return [vmin];
   return Array.from({ length: n }, (_, i) => vmin + ((vmax - vmin) * i) / (n - 1));
-}
-
-// ── canvas rendering ───────────────────────────────────────────────────────
-export interface DrawTopomapOptions {
-  colormap?: Colormap;
-  /** Defaults to the 2nd–98th percentile of `values`. */
-  scale?: Scale | null;
-  /** Number of contour lines; 0 to disable. */
-  contours?: number;
-  showSensors?: boolean;
-  showLabels?: boolean;
-  /** Vertical colorbar on the right with this label. */
-  colorbar?: { label?: string; format?: (v: number) => string } | false;
-  /** Interpolation grid resolution (pixels per side); default tracks the canvas size. */
-  resolution?: number;
-  /** Text colour for labels/axes. */
-  ink?: string;
-}
-
-const COLORBAR_WIDTH = 78;
-
-/**
- * Draws a scalp map into `canvas` using its current pixel size (caller sets width/height, e.g.
- * scaled by devicePixelRatio). The head fills the largest square that fits, leaving room for the
- * colorbar when requested. Returns the scale used.
- */
-export function drawTopomap(
-  canvas: HTMLCanvasElement,
-  values: Record<string, number>,
-  opts: DrawTopomapOptions = {}
-): Scale | null {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-
-  const {
-    colormap = blueRed,
-    contours = 4,
-    showSensors = true,
-    showLabels = false,
-    colorbar = false,
-    ink = '#374151',
-  } = opts;
-  const unit = Math.min(W, H) / 200; // scale strokes and text with canvas size
-  const cbW = colorbar ? COLORBAR_WIDTH * unit : 0;
-  const side = Math.min(W - cbW, H);
-  // margin for nose and ears
-  const radius = side * 0.42;
-  const cx = (W - cbW) / 2;
-  const cy = H / 2 + side * 0.02;
-
-  const electrodes = toElectrodes(values);
-  const scale = opts.scale ?? percentileScale(electrodes.map((e) => e.value));
-  if (electrodes.length === 0 || !scale) {
-    ctx.fillStyle = ink;
-    ctx.font = `${12 * unit}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('No data', cx, cy);
-    return null;
-  }
-
-  // 1) interpolated field over the head bounding square
-  const n = opts.resolution ?? Math.max(48, Math.min(200, Math.round(radius * 2)));
-  const grid = interpolateGrid(electrodes, n);
-  const img = new ImageData(n, n);
-  const levels = contours > 0 ? contours + 1 : 0;
-  for (let i = 0; i < grid.length; i++) {
-    const v = grid[i];
-    if (Number.isNaN(v)) continue;
-    const t = normalize(v, scale);
-    let [r, g, b] = colormap(t);
-    if (levels) {
-      // contour: darken pixels where the quantized level changes toward a neighbour
-      const q = Math.floor(t * levels);
-      const col = i % n;
-      const right = col + 1 < n ? grid[i + 1] : NaN;
-      const below = i + n < grid.length ? grid[i + n] : NaN;
-      const qr = Number.isNaN(right) ? q : Math.floor(normalize(right, scale) * levels);
-      const qb = Number.isNaN(below) ? q : Math.floor(normalize(below, scale) * levels);
-      if (qr !== q || qb !== q) {
-        r = Math.round(r * 0.55);
-        g = Math.round(g * 0.55);
-        b = Math.round(b * 0.55);
-      }
-    }
-    const o = i * 4;
-    img.data[o] = r;
-    img.data[o + 1] = g;
-    img.data[o + 2] = b;
-    img.data[o + 3] = 255;
-  }
-  const field = document.createElement('canvas');
-  field.width = n;
-  field.height = n;
-  field.getContext('2d')?.putImageData(img, 0, 0);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(field, cx - radius, cy - radius, radius * 2, radius * 2);
-  ctx.restore();
-
-  // 2) head outline, nose, ears
-  ctx.strokeStyle = '#1f2937';
-  ctx.lineWidth = Math.max(1, 1.6 * unit);
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.stroke();
-  const noseW = radius * 0.1;
-  ctx.beginPath();
-  ctx.moveTo(cx - noseW, cy - radius * 0.995);
-  ctx.lineTo(cx, cy - radius * 1.12);
-  ctx.lineTo(cx + noseW, cy - radius * 0.995);
-  ctx.stroke();
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(cx + side * radius * 1.035, cy, radius * 0.05, radius * 0.17, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  // 3) sensors and labels
-  if (showSensors || showLabels) {
-    ctx.font = `${Math.max(8, 9 * unit)}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    for (const e of electrodes) {
-      if (e.x * e.x + e.y * e.y > 1) continue;
-      const px = cx + e.x * radius;
-      const py = cy - e.y * radius;
-      if (showSensors) {
-        ctx.beginPath();
-        ctx.arc(px, py, Math.max(1.5, 2 * unit), 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(17,24,39,0.75)';
-        ctx.fill();
-      }
-      if (showLabels) {
-        ctx.fillStyle = '#111827';
-        ctx.fillText(normalizeChannelName(e.name), px, py - 2.5 * unit);
-      }
-    }
-  }
-
-  // 4) colorbar
-  if (colorbar) {
-    const barX = W - cbW + 8 * unit;
-    const barW = 10 * unit;
-    const barTop = cy - radius;
-    const barH = radius * 2;
-    drawColorbar(ctx, { x: barX, y: barTop, w: barW, h: barH }, colormap, scale, {
-      label: colorbar.label,
-      format: colorbar.format,
-      ink,
-      fontPx: Math.max(8, 9 * unit),
-    });
-  }
-  return scale;
 }
 
 /** Vertical colorbar (high at the top) with 5 ticks and an optional rotated label. */

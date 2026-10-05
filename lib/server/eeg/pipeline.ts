@@ -18,7 +18,9 @@ import type {
   Condition,
   QcReportSummary,
   RejectedEpoch,
+  RejectionTimeline,
   SpectrogramData,
+  TimeSpan,
 } from '@/lib/analysis-results';
 import { DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
 import { writeCsv, writeEdf } from './export/writers';
@@ -120,6 +122,58 @@ export function keptSampleMask(result: PipelineResult, nSamples: number): Uint8A
     keep.fill(1, epochStarts[e], Math.min(nSamples, epochStarts[e] + epochLength));
   }
   return keep;
+}
+
+const round2 = (x: number) => Math.round(x * 100) / 100;
+
+/** Runs of 0 in a keep mask as [start, end] seconds (end = last rejected sample's time). */
+export function spansFromKeep(keep: Uint8Array, sampleRate: number): TimeSpan[] {
+  const spans: TimeSpan[] = [];
+  let runStart = -1;
+  for (let i = 0; i <= keep.length; i++) {
+    const rejected = i < keep.length && !keep[i];
+    if (rejected && runStart < 0) runStart = i;
+    else if (!rejected && runStart >= 0) {
+      spans.push([round2(runStart / sampleRate), round2((i - 1) / sampleRate)]);
+      runStart = -1;
+    }
+  }
+  return spans;
+}
+
+function epochUnionMask(
+  masks: PipelineResult['masks'],
+  epochMask: Uint8Array,
+  nSamples: number
+): Uint8Array {
+  const keep = new Uint8Array(nSamples);
+  for (let e = 0; e < epochMask.length; e++) {
+    if (!epochMask[e]) continue;
+    keep.fill(1, masks.epochStarts[e], Math.min(nSamples, masks.epochStarts[e] + masks.epochLength));
+  }
+  return keep;
+}
+
+/** Whole-recording and per-channel rejected spans, as the QC timeline draws them. */
+export function rejectionTimeline(result: PipelineResult): RejectionTimeline {
+  const { recording, masks, report } = result;
+  const fs = recording.sampleRate;
+  const n = recording.nSamples;
+  const labels = recording.channels.map((c) => c.label);
+  return {
+    duration_sec: round2(n / fs),
+    labels,
+    spans: spansFromKeep(epochUnionMask(masks, masks.epochMask, n), fs),
+    channel_spans: Object.fromEntries(
+      labels.map((label, c) => [
+        label,
+        spansFromKeep(epochUnionMask(masks, masks.channelEpochMask[c] ?? masks.epochMask, n), fs),
+      ])
+    ),
+    bad_channels: report.channels
+      .filter((c) => c.bad)
+      .map((c) => ({ label: c.label, reasons: c.reasons, interpolated: c.interpolated })),
+  };
 }
 
 const REASON_PRIORITY: Record<string, number> = { extreme: 3, reject: 2, legacy: 1 };
@@ -355,6 +409,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     n_channels: labels.length,
     ignored_channels: eeg.ignored,
     manual_artifact_epochs_count: cfg.artifact_mode === 'manual' ? manual.length : undefined,
+    timeline: rejectionTimeline(result),
     warnings: [
       ...report.warnings,
       ...conditions

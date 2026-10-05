@@ -2,17 +2,20 @@
 
 import { useMemo } from 'react';
 import type { AlphaPeak, Condition } from '@/lib/analysis-results';
-import { viridis } from './topo';
 import Topomap from './Topomap';
+import { qeegSequential } from './topoRender';
 import { ALPHA_PEAK_SCALE, CONDITIONS, CONDITION_LABELS, alphaPeakValues } from './data';
 
 export interface AlphaPeakTopomapsProps {
   alphaPeak: Partial<Record<Condition, AlphaPeak | null>> | null | undefined;
 }
 
-const hz = (v: number) => `${v.toFixed(1)} Hz`;
+const hz = (v: number) => `${v.toFixed(0)} Hz`;
 
-/** Individual alpha frequency per condition: fixed 8–12 Hz viridis map plus a per-channel table. */
+/**
+ * Individual alpha frequency per condition: fixed 8–12 Hz map (DivergenceWebapp's sequential QEEG
+ * ramp) plus a per-channel table.
+ */
 export default function AlphaPeakTopomaps({ alphaPeak }: AlphaPeakTopomapsProps) {
   const conditions = CONDITIONS.filter((c) => alphaPeak?.[c] && Object.keys(alphaPeak[c]!).length > 0);
   const values = useMemo(
@@ -41,18 +44,19 @@ export default function AlphaPeakTopomaps({ alphaPeak }: AlphaPeakTopomapsProps)
                 <span className="ml-2 text-sm font-normal text-gray-700">mean IAF {mean.toFixed(2)} Hz</span>
               )}
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              <Topomap
-                values={values[c]}
-                scale={ALPHA_PEAK_SCALE}
-                colormap={viridis}
-                contours={6}
-                showLabels
-                colorbar={{ label: 'Peak frequency (Hz)', format: hz }}
-                label={`Peak alpha frequency map, ${CONDITION_LABELS[c]}, scale 8 to 12 Hz`}
-                maxSize={380}
-              />
-              <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded">
+            <div className="flex flex-col md:flex-row justify-center items-start gap-6">
+              <div className="mx-auto md:mx-0 shrink-0" style={{ width: 180 }}>
+                <Topomap
+                  values={values[c]}
+                  scale={ALPHA_PEAK_SCALE}
+                  colormap={qeegSequential}
+                  label="Peak alpha"
+                  sublabel="8–12 Hz"
+                  legend={{ format: hz }}
+                  ariaLabel={`Peak alpha frequency map, ${CONDITION_LABELS[c]}, scale 8 to 12 Hz`}
+                />
+              </div>
+              <div className="w-full md:flex-1 overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>

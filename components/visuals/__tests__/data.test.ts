@@ -4,6 +4,8 @@ import {
   alphaPeakValues,
   bandValues,
   computeBandScales,
+  computeLzcScale,
+  minMaxScale,
   connectivityEdges,
   connectivityScale,
   networkMetricSeries,
@@ -11,7 +13,9 @@ import {
   spectrogramPixels,
   spectrogramScale,
 } from '../data';
-import { blueRed } from '../topo';
+import type { Colormap } from '../topo';
+
+const blueToRed: Colormap = (t) => [Math.round(255 * t), 0, Math.round(255 * (1 - t))];
 
 function bp(scale: number): BandPower {
   const out: Record<string, any> = {};
@@ -36,12 +40,25 @@ describe('band values and shared scales', () => {
 
   it('pools every analysis/condition into one scale per band and ignores unplaced channels', () => {
     const scales = computeBandScales([bp(1), bp(10), null], 'absolute');
-    // placed delta values: 1..5 and 10..50 (ECG excluded)
-    expect(scales.delta!.vmin).toBeGreaterThanOrEqual(1);
-    expect(scales.delta!.vmin).toBeLessThan(2);
-    expect(scales.delta!.vmax).toBeGreaterThan(40);
-    expect(scales.delta!.vmax).toBeLessThanOrEqual(50);
+    // placed delta values: 1..5 and 10..50 (ECG excluded); min/max as the Divergence topomaps
+    expect(scales.delta).toEqual({ vmin: 1, vmax: 50 });
     expect(scales.theta).toBeUndefined();
+  });
+});
+
+describe('min/max scales', () => {
+  it('spans the finite values and is null without data', () => {
+    expect(minMaxScale([3, NaN, -1, 2])).toEqual({ vmin: -1, vmax: 3 });
+    expect(minMaxScale([2, 2])).toEqual({ vmin: 2, vmax: 2 });
+    expect(minMaxScale([])).toBeNull();
+  });
+
+  it('pools LZC over conditions, counting legacy T3-style labels as placed', () => {
+    const s = computeLzcScale([
+      { Fz: { normalized_lzc: 0.4 }, T3: { normalized_lzc: 0.9 } } as any,
+      { Cz: { normalized_lzc: 0.2 }, ECG: { normalized_lzc: 0.01 } } as any,
+    ]);
+    expect(s).toEqual({ vmin: 0.2, vmax: 0.9 });
   });
 });
 
@@ -106,7 +123,7 @@ describe('spectrogram', () => {
   });
 
   it('lays time along x and puts low frequencies on the bottom row', () => {
-    const { width, height, pixels } = spectrogramPixels(data, { vmin: 0, vmax: 20 }, blueRed);
+    const { width, height, pixels } = spectrogramPixels(data, { vmin: 0, vmax: 20 }, blueToRed);
     expect([width, height]).toEqual([3, 2]);
     // bottom-left pixel = t0, f=1 Hz, value 0 → blue
     const bl = (1 * width + 0) * 4;

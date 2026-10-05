@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useEEGData } from './useEEGData';
+import { computeOriginalOverlay, type PipelineFilterSettings } from './originalOverlay';
 import { useEEGFilters } from './useEEGFilters';
 import { useEEGAnnotations } from './useEEGAnnotations';
 import EEGUnifiedChart from './EEGUnifiedChart';
@@ -18,6 +19,11 @@ interface EEGViewerProps {
   cleanedFileUrl?: string | null;
   /** results.cleaned_file_format, e.g. '.edf' */
   cleanedFileFormat?: string | null;
+  /**
+   * Filter band and mains frequency the analysis used, so the original-signal overlay is
+   * prepared like the pipeline's input (defaults: 1–45 Hz, 60 Hz).
+   */
+  pipelineFilters?: Partial<PipelineFilterSettings>;
 }
 
 type SignalSource = 'raw' | 'cleaned';
@@ -31,7 +37,9 @@ export default function EEGViewer({
   rejectedEpochs,
   cleanedFileUrl,
   cleanedFileFormat,
+  pipelineFilters,
 }: EEGViewerProps) {
+  const [showOriginal, setShowOriginal] = useState(true);
   const [source, setSource] = useState<SignalSource>('raw');
   const [cleanedRequested, setCleanedRequested] = useState(false);
   const raw = useEEGData(recordingId, filePath);
@@ -44,7 +52,14 @@ export default function EEGViewer({
   const active = source === 'cleaned' ? cleaned : raw;
   const { signalData, isLoading, error } = active;
   const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
-  const [selectedChannels, setSelectedChannels] = useState<number[]>([]);
+  const [channelSelection, setSelectedChannels] = useState<number[]>([]);
+  // Raw and corrected recordings can have different channel lists (the pipeline drops
+  // references and extras), so a selection made on one may not fit the other until the
+  // auto-select effect runs: only ever use indices valid for the data on screen.
+  const selectedChannels = useMemo(() => {
+    const n = signalData?.channelNames.length ?? 0;
+    return channelSelection.filter((i) => i >= 0 && i < n);
+  }, [channelSelection, signalData]);
   const [timeStart, setTimeStart] = useState(0);
   const [showRejectedEpochs, setShowRejectedEpochs] = useState(true);
 
@@ -81,6 +96,37 @@ export default function EEGViewer({
     timeStart,
     effectiveFilters
   );
+
+  // Corrected mode: the original recording's matching window, prepared like the pipeline input,
+  // drawn behind the corrected traces.
+  const overlaySignals = useMemo(() => {
+    if (source !== 'cleaned' || !showOriginal || !raw.signalData || !cleaned.signalData) return undefined;
+    return computeOriginalOverlay({
+      raw: raw.signalData,
+      cleanedNames: cleaned.signalData.channelNames,
+      selected: selectedChannels,
+      timeStart,
+      windowSeconds: filterSettings.windowDurationSeconds,
+      filters: {
+        highpassHz: pipelineFilters?.highpassHz ?? 1,
+        lowpassHz: pipelineFilters?.lowpassHz ?? 45,
+        notchHz: pipelineFilters?.notchHz ?? 60,
+      },
+      targetTimes: timeLabels,
+    });
+  }, [
+    source,
+    showOriginal,
+    raw.signalData,
+    cleaned.signalData,
+    selectedChannels,
+    timeStart,
+    filterSettings.windowDurationSeconds,
+    pipelineFilters?.highpassHz,
+    pipelineFilters?.lowpassHz,
+    pipelineFilters?.notchHz,
+    timeLabels,
+  ]);
 
   const handleSourceChange = useCallback((next: SignalSource) => {
     if (next === 'cleaned') setCleanedRequested(true);
@@ -185,17 +231,42 @@ export default function EEGViewer({
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h2 className="text-2xl font-bold text-neuro-dark">
-          {source === 'cleaned' ? 'Cleaned EEG Signals' : 'Raw EEG Signals'}
+          {source === 'cleaned' ? 'Noise-Corrected EEG Signals' : 'Raw EEG Signals'}
         </h2>
         {cleanedFileUrl && (
           <SourceToggle source={source} onChange={handleSourceChange} />
         )}
       </div>
       {source === 'cleaned' && (
-        <p className="mb-3 text-xs text-gray-600">
-          Output of the analysis pipeline: filtered, re-referenced and artifact-corrected (ASR/ICA)
-          on the server. Display filters are off; shaded regions are epochs the analysis rejected.
-        </p>
+        <div className="mb-3 space-y-2">
+          <p className="text-xs text-gray-600">
+            Output of the analysis pipeline: filtered, re-referenced and artifact-corrected (ASR/ICA)
+            on the server. Display filters are off; shaded regions are epochs the analysis rejected.
+          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <label className="flex items-center gap-1.5 cursor-pointer text-gray-700">
+              <input
+                type="checkbox"
+                checked={showOriginal}
+                onChange={(e) => setShowOriginal(e.target.checked)}
+                className="rounded"
+              />
+              Show original (noisy) signal
+            </label>
+            {showOriginal && (
+              <span className="flex items-center gap-3 text-gray-600" aria-hidden="true">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-5 h-0.5 bg-gray-900" /> Corrected
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-5 h-0.5" style={{ background: 'rgba(220, 38, 38, 0.6)' }} />
+                  Original (same filters &amp; reference)
+                </span>
+              </span>
+            )}
+            {showOriginal && raw.isLoading && <span className="text-gray-500">Loading original…</span>}
+          </div>
+        </div>
       )}
 
       {/* Channel selector */}
@@ -256,6 +327,7 @@ export default function EEGViewer({
         <>
           <EEGUnifiedChart
             filteredSignals={filteredSignals}
+            overlaySignals={overlaySignals}
             timeLabels={timeLabels}
             channelNames={signalData.channelNames}
             selectedChannels={selectedChannels}
@@ -340,8 +412,8 @@ function SourceToggle({
   onChange: (source: SignalSource) => void;
 }) {
   const options: { value: SignalSource; label: string }[] = [
-    { value: 'raw', label: 'Raw' },
-    { value: 'cleaned', label: 'Cleaned' },
+    { value: 'raw', label: 'Original' },
+    { value: 'cleaned', label: 'Correct noise' },
   ];
   return (
     <div role="radiogroup" aria-label="Signal source" className="inline-flex rounded-md border border-gray-300 overflow-hidden">

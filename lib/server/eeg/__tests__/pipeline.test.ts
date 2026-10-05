@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { writeEdf } from '../export/writers';
 import { readEdfHeader } from '../io/edf';
-import { AnalysisJobError, buildPipelineConfig, resolvePreprocessing, runAnalysis } from '../pipeline';
+import { AnalysisJobError, buildPipelineConfig, resolvePreprocessing, runAnalysis, spansFromKeep } from '../pipeline';
 import { runTheraq } from '../theraqJob';
 
 const LABELS = ['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8', 'T7', 'C3', 'Cz', 'C4', 'T8', 'P7', 'P3', 'Pz', 'P4', 'P8', 'O1', 'O2'];
@@ -97,6 +97,14 @@ describe('runAnalysis', () => {
     expect(qc.artifact_rejection_rate).toBe(Math.round(qc.artifact_rejection_rate * 100) / 100);
     expect(results.cleaned_file_format).toBe('.edf');
 
+    // QC timeline: whole-recording + per-channel rejected spans, burst at 30 s rejected
+    const tl = qc.timeline!;
+    expect(tl.duration_sec).toBeCloseTo(seconds, 1);
+    expect(tl.labels).toHaveLength(19);
+    expect(Object.keys(tl.channel_spans)).toEqual(tl.labels);
+    expect(tl.spans.some(([s0, s1]) => s0 <= 30.5 && s1 >= 30.5)).toBe(true);
+    for (const [s0, s1] of tl.spans) expect(s1).toBeGreaterThanOrEqual(s0);
+
     // The burst at 30–31 s must not survive into a kept epoch.
     const burstRejected = results.rejected_epochs.some((r) => r.start <= 30.5 && r.end >= 30.5);
     expect(burstRejected).toBe(true);
@@ -180,4 +188,15 @@ describe('runTheraq', () => {
     expect(Object.keys(out.phases ?? {})).toEqual(expect.arrayContaining(['EO1', 'EC', 'EO2', 'TASK']));
     expect(out.metrics?.length).toBeGreaterThan(0);
   }, 180_000);
+});
+
+describe('spansFromKeep', () => {
+  it('turns runs of rejected samples into [start, end] seconds', () => {
+    const keep = Uint8Array.from([1, 0, 0, 1, 1, 0, 0, 0]);
+    expect(spansFromKeep(keep, 2)).toEqual([
+      [0.5, 1],
+      [2.5, 3.5],
+    ]);
+    expect(spansFromKeep(new Uint8Array(4).fill(1), 2)).toEqual([]);
+  });
 });
