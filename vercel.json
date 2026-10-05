@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run build",
   "devCommand": "next dev",
-  "installCommand": "export NODE_AUTH_TOKEN=\"${NODE_AUTH_TOKEN:-$GITHUB_PACKAGES_TOKEN}\"; if [ -z \"$NODE_AUTH_TOKEN\" ]; then echo \"NODE_AUTH_TOKEN (or GITHUB_PACKAGES_TOKEN) is not set for this environment; the private analysis engine cannot be installed\" >&2; exit 1; fi; npm ci",
+  "installCommand": "sh scripts/vercel-install.sh",
   "framework": "nextjs",
   "functions": {
     "app/api/**/*.ts": {
