@@ -26,17 +26,25 @@ function synthetic(seconds: number, opts: { burstAt?: number } = {}): Float64Arr
   const n = seconds * FS;
   const rand = rng(7);
   const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(2 * Math.PI * rand());
-  // shared sources mixed into channels so ICA has structure to find
-  const alpha = new Float64Array(n);
+  // Shared sources mixed into channels so ICA has structure to find. Alpha is narrowband noise
+  // from two posterior generators (left/right), like real EEG; a single perfectly coherent sine
+  // is not brain-like and ICA classifiers rightly treat it as an artifact.
+  const resonator = (hz: number, r: number) => {
+    const out = new Float64Array(n);
+    const c = 2 * r * Math.cos((2 * Math.PI * hz) / FS);
+    for (let i = 2; i < n; i++) out[i] = c * out[i - 1] - r * r * out[i - 2] + gauss();
+    let ss = 0;
+    for (let i = 0; i < n; i++) ss += out[i] * out[i];
+    const rms = Math.sqrt(ss / n);
+    for (let i = 0; i < n; i++) out[i] = (out[i] / rms) * (i / FS >= seconds / 2 ? 18 : 6);
+    return out;
+  };
+  const alphaL = resonator(10, 0.985);
+  const alphaR = resonator(10.3, 0.985);
   const theta = new Float64Array(n);
   const blink = new Float64Array(n);
   let pink = 0;
-  for (let i = 0; i < n; i++) {
-    const t = i / FS;
-    const ec = t >= seconds / 2;
-    alpha[i] = (ec ? 25 : 8) * Math.sin(2 * Math.PI * 10 * t + 0.3 * Math.sin(0.5 * t));
-    theta[i] = 6 * Math.sin(2 * Math.PI * 6 * t);
-  }
+  for (let i = 0; i < n; i++) theta[i] = 6 * Math.sin((2 * Math.PI * 6 * i) / FS);
   for (let b = 3; b < seconds / 2 - 1; b += 4) {
     const c = Math.round(b * FS);
     for (let k = -40; k <= 40; k++) blink[c + k] += 150 * Math.exp(-(k * k) / (2 * 12 * 12));
@@ -44,10 +52,12 @@ function synthetic(seconds: number, opts: { burstAt?: number } = {}): Float64Arr
   return LABELS.map((label, ch) => {
     const x = new Float64Array(n);
     const posterior = /^(O|P)/.test(label) ? 1 : 0.3;
+    const side = /[13579]$/.test(label) ? 0.8 : /[2468]$/.test(label) ? 0.2 : 0.5; // left vs right
     const frontal = label.startsWith('Fp') ? 1 : label.startsWith('F') ? 0.3 : 0.02;
     for (let i = 0; i < n; i++) {
       pink = 0.98 * pink + gauss();
-      x[i] = posterior * alpha[i] + 0.5 * theta[i] + frontal * blink[i] + 2 * pink + 3 * gauss();
+      const alpha = side * alphaL[i] + (1 - side) * alphaR[i];
+      x[i] = posterior * alpha + 0.5 * theta[i] + frontal * blink[i] + 2 * pink + 3 * gauss();
     }
     if (opts.burstAt !== undefined) {
       const s = Math.round(opts.burstAt * FS);
