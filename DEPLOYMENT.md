@@ -38,7 +38,7 @@ Environment variables (Production and Preview):
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser/session client |
 | `SUPABASE_SERVICE_ROLE_KEY` | Background analysis jobs write results with the service role |
-| `NODE_AUTH_TOKEN` | Build-time install of the analysis engine (mark as sensitive) |
+| `NODE_AUTH_TOKEN` | Build-time install of the analysis engine (mark as sensitive; enable for Preview and Production). `GITHUB_PACKAGES_TOKEN`, the name the other DivergentNeuro apps use, is accepted as a fallback |
 | `OPENAI_API_KEY` | Optional, AI interpretation |
 
 `vercel.json` already sets:
