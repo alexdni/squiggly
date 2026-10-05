@@ -2,6 +2,7 @@
 // Validates CSV structure and extracts metadata
 
 import { ALL_EEG_CHANNELS, AUX_CHANNELS, EXCLUDED_CHANNEL_PATTERNS } from './constants';
+import { parseCsvTimestamp } from './csv-timestamp';
 
 interface ValidationResult {
   valid: boolean;
@@ -68,16 +69,19 @@ export async function validateCSVFile(
     const headerLine = lines[0];
     const headers = headerLine.split(/[,\t]/).map(h => h.trim());
 
-    // First column should be timestamp
-    if (!headers[0] || headers[0].toLowerCase() !== 'timestamp') {
+    // Timestamp can be first or last column
+    const tsFirst = headers[0]?.toLowerCase() === 'timestamp';
+    const tsLast = headers[headers.length - 1]?.toLowerCase() === 'timestamp';
+    if (!tsFirst && !tsLast) {
       return {
         valid: false,
-        error: 'CSV file must have "timestamp" as the first column',
+        error: 'CSV file must have "timestamp" as the first or last column',
       };
     }
 
     // Extract channel names (all columns except timestamp)
-    const allChannels = headers.slice(1).filter(h => h.length > 0);
+    const allColumns = tsFirst ? headers.slice(1) : headers.slice(0, -1);
+    const allChannels = allColumns.filter(h => h.length > 0);
 
     if (allChannels.length === 0) {
       return {
@@ -135,7 +139,7 @@ export async function validateCSVFile(
       if (!line) continue;
 
       const values = line.split(/[,\t]/);
-      const timestamp = parseFloat(values[0]);
+      const timestamp = parseCsvTimestamp(tsFirst ? values[0] : values[values.length - 1]);
 
       if (!isNaN(timestamp)) {
         timestamps.push(timestamp);
@@ -232,7 +236,7 @@ export async function validateCSVFile(
       const lastLine = lines[lines.length - 1].trim();
       if (lastLine) {
         const lastValues = lastLine.split(/[,\t]/);
-        const lastTs = parseFloat(lastValues[0]);
+        const lastTs = parseCsvTimestamp(tsFirst ? lastValues[0] : lastValues[lastValues.length - 1]);
         if (!isNaN(lastTs)) {
           lastTimestamp = lastTs;
         }

@@ -128,7 +128,7 @@ export default function FileUploadZone({
           <div className="text-xs text-gray-400 space-y-1">
             <p>Supported formats: EDF, BDF (BioSemi), or CSV</p>
             <p>Requirements: Standard 10-20 EEG channels</p>
-            <p>CSV format: timestamp column followed by channel columns</p>
+            <p>CSV format: timestamp column (first or last) with channel columns</p>
             <p>Maximum file size: 200 MB</p>
           </div>
         </div>
