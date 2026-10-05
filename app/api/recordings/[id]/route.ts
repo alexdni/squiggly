@@ -4,6 +4,7 @@ import { getDatabaseClient } from '@/lib/db';
 import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
 import { THERAQ_PHASES } from '@/lib/theraq';
+import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
 
 interface RecordingData {
   id: string;
@@ -49,7 +50,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: updated, error } = await db
+    // recordings has no UPDATE policy for end users; write with the service role now that the
+    // caller's recording:create permission on this project has been checked.
+    const { data: updated, error } = await getServiceDatabaseClient()
       .from('recordings')
       .update({ phase })
       .eq('id', params.id)
