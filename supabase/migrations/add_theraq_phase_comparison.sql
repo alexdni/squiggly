@@ -59,8 +59,7 @@ CREATE POLICY "Users can view project analyses for their projects"
     )
   );
 
+-- Writes come only from the server: the API route (after its project-permission check) and the
+-- analysis job use the service role, which bypasses RLS. Do NOT add a FOR ALL USING (true)
+-- policy here: without a role restriction it would also apply to the public anon key.
 DROP POLICY IF EXISTS "System can manage project analyses" ON project_analyses;
-CREATE POLICY "System can manage project analyses"
-  ON project_analyses FOR ALL
-  USING (true)
-  WITH CHECK (true);

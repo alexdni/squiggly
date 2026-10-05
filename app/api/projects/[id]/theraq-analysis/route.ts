@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
 import { checkProjectPermission } from '@/lib/rbac';
 import { runInBackground } from '@/lib/server/background';
+import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
 import { runTheraqJob } from '@/lib/server/eeg/runTheraqJob';
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
 import { THERAQ_PHASES, type TheraqPhase } from '@/lib/theraq';
@@ -136,7 +137,10 @@ export async function POST(
     }
 
     // Create the analysis row
-    const { data: created, error: insertError } = await db
+    // Writes use the service role (RLS lets members read project_analyses but not write it);
+    // the caller's analysis:create permission was checked above.
+    const serviceDb = getServiceDatabaseClient();
+    const { data: created, error: insertError } = await serviceDb
       .from('project_analyses')
       .insert({
         project_id: params.id,
@@ -159,7 +163,7 @@ export async function POST(
     const analysisId = (created as any).id as string;
 
     // Mark processing; the analysis itself runs in the background
-    await db
+    await serviceDb
       .from('project_analyses')
       .update({ status: 'processing', started_at: new Date().toISOString() })
       .eq('id', analysisId)
