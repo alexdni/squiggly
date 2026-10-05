@@ -20,7 +20,9 @@ export interface FilterSettings {
 export const DEFAULT_FILTER_SETTINGS: FilterSettings = {
   sensitivityMicrovolts: 70,
   windowDurationSeconds: 10,
-  lowpassHz: 70,
+  // Same low-pass as the analysis pipeline (1–45 Hz), so Original and Correct noise compare
+  // like for like by default.
+  lowpassHz: 45,
   highpassHz: 0.5,
   notchHz: 60,
 };

@@ -97,6 +97,15 @@ export default function EEGViewer({
     effectiveFilters
   );
 
+  const pipelineBand = useMemo(
+    () => ({
+      highpassHz: pipelineFilters?.highpassHz ?? 1,
+      lowpassHz: pipelineFilters?.lowpassHz ?? 45,
+      notchHz: pipelineFilters?.notchHz ?? 60,
+    }),
+    [pipelineFilters?.highpassHz, pipelineFilters?.lowpassHz, pipelineFilters?.notchHz]
+  );
+
   // Corrected mode: the original recording's matching window, prepared like the pipeline input,
   // drawn behind the corrected traces.
   const overlaySignals = useMemo(() => {
@@ -107,11 +116,7 @@ export default function EEGViewer({
       selected: selectedChannels,
       timeStart,
       windowSeconds: filterSettings.windowDurationSeconds,
-      filters: {
-        highpassHz: pipelineFilters?.highpassHz ?? 1,
-        lowpassHz: pipelineFilters?.lowpassHz ?? 45,
-        notchHz: pipelineFilters?.notchHz ?? 60,
-      },
+      filters: pipelineBand,
       targetTimes: timeLabels,
     });
   }, [
@@ -122,11 +127,23 @@ export default function EEGViewer({
     selectedChannels,
     timeStart,
     filterSettings.windowDurationSeconds,
-    pipelineFilters?.highpassHz,
-    pipelineFilters?.lowpassHz,
-    pipelineFilters?.notchHz,
+    pipelineBand,
     timeLabels,
   ]);
+
+  // In Correct noise mode the filter boxes show the band the pipeline applied (read-only), and
+  // only non-filter settings (sensitivity, window) pass through to the display settings.
+  const toolbarSettings = useMemo(
+    () => (source === 'cleaned' ? { ...filterSettings, ...pipelineBand } : filterSettings),
+    [source, filterSettings, pipelineBand]
+  );
+  const handleCleanedSettingsChange = useCallback((next: FilterSettings) => {
+    setFilterSettings((prev) => ({
+      ...prev,
+      sensitivityMicrovolts: next.sensitivityMicrovolts,
+      windowDurationSeconds: next.windowDurationSeconds,
+    }));
+  }, []);
 
   const handleSourceChange = useCallback((next: SignalSource) => {
     if (next === 'cleaned') setCleanedRequested(true);
@@ -294,8 +311,8 @@ export default function EEGViewer({
       {/* Toolbar */}
       <div className="mb-3">
         <EEGToolbar
-          filterSettings={filterSettings}
-          onFilterChange={handleFilterChange}
+          filterSettings={toolbarSettings}
+          onFilterChange={source === 'cleaned' ? handleCleanedSettingsChange : handleFilterChange}
           filtersDisabled={source === 'cleaned'}
           isAnnotateMode={isAnnotateMode}
           onAnnotateModeToggle={handleAnnotateModeToggle}
