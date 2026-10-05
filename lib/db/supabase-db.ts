@@ -394,7 +394,10 @@ class LazySelectBuilder<T> implements SelectBuilder<T> {
     return this.addFilter('offset', count);
   }
 
-  private async buildQuery() {
+  // Returns the builder wrapped in an object: Supabase query builders are thenables, so
+  // returning one bare from an async function would make `await` execute the query and hand
+  // back { data, error } instead of the builder (then `.single()` is not a function).
+  private async buildQuery(): Promise<{ query: any }> {
     const client = await this.getClientFn();
     let query = client.from(this.tableName).select(this.columns);
 
@@ -407,11 +410,11 @@ class LazySelectBuilder<T> implements SelectBuilder<T> {
       }
     }
 
-    return query;
+    return { query };
   }
 
   async single(): Promise<QueryResult<T>> {
-    const query = await this.buildQuery();
+    const { query } = await this.buildQuery();
     const { data, error } = await query.single();
     return {
       data: data as T,
@@ -420,7 +423,7 @@ class LazySelectBuilder<T> implements SelectBuilder<T> {
   }
 
   async execute(): Promise<QueryResult<T[]>> {
-    const query = await this.buildQuery();
+    const { query } = await this.buildQuery();
     const { data, error, count } = await query;
     return {
       data: data as T[],
@@ -447,17 +450,20 @@ class LazyInsertBuilder<T> implements InsertBuilder<T> {
     return this;
   }
 
-  private async buildQuery() {
+  // Returns the builder wrapped in an object: Supabase query builders are thenables, so
+  // returning one bare from an async function would make `await` execute the query and hand
+  // back { data, error } instead of the builder (then `.single()` is not a function).
+  private async buildQuery(): Promise<{ query: any }> {
     const client = await this.getClientFn();
     let query = client.from(this.tableName).insert(this.data);
     if (this.selectColumns !== undefined) {
       query = query.select(this.selectColumns);
     }
-    return query;
+    return { query };
   }
 
   async single(): Promise<InsertResult<T>> {
-    const query = await this.buildQuery();
+    const { query } = await this.buildQuery();
     const { data, error } = await query.single();
     return {
       data: data as T,
@@ -466,7 +472,7 @@ class LazyInsertBuilder<T> implements InsertBuilder<T> {
   }
 
   async execute(): Promise<InsertResult<T>> {
-    const query = await this.buildQuery();
+    const { query } = await this.buildQuery();
     const { data, error } = await query;
     return {
       data: data as T,
@@ -503,7 +509,10 @@ class LazyUpdateBuilder<T> implements UpdateBuilder<T> {
     return this;
   }
 
-  private async buildQuery() {
+  // Returns the builder wrapped in an object: Supabase query builders are thenables, so
+  // returning one bare from an async function would make `await` execute the query and hand
+  // back { data, error } instead of the builder (then `.single()` is not a function).
+  private async buildQuery(): Promise<{ query: any }> {
     const client = await this.getClientFn();
     let query = client.from(this.tableName).update(this.data);
 
@@ -515,11 +524,11 @@ class LazyUpdateBuilder<T> implements UpdateBuilder<T> {
       query = query.select(this.selectColumns);
     }
 
-    return query;
+    return { query };
   }
 
   async single(): Promise<UpdateResult<T>> {
-    const query = await this.buildQuery();
+    const { query } = await this.buildQuery();
     const { data, error } = await query.single();
     return {
       data: data as T,
@@ -528,7 +537,7 @@ class LazyUpdateBuilder<T> implements UpdateBuilder<T> {
   }
 
   async execute(): Promise<UpdateResult<T>> {
-    const query = await this.buildQuery();
+    const { query } = await this.buildQuery();
     const { data, error } = await query;
     return {
       data: data as T,
