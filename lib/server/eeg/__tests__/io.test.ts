@@ -69,7 +69,8 @@ describe('EDF/BDF', () => {
     const bytes = writeEdf({ labels: ['EEG Fp1-LE', 'ECG', 'EEG Cz-LE'], data: raw, sampleRate: hi }, { bdf: true });
     const eeg = loadRecording(bytes, 'bdf');
     expect(eeg.labels).toEqual(['Fp1', 'Cz']);
-    expect(eeg.ignored).toEqual(['ECG']);
+    expect(eeg.ignored).toEqual([]); // the ECG lead is kept for HRV, not ignored
+    expect(eeg.ecg?.label).toBe('ECG');
     expect(eeg.originalSampleRate).toBe(1024);
     expect(eeg.sampleRate).toBe(256);
     expect(eeg.data[0].length).toBe(256 * 3);
@@ -92,7 +93,8 @@ describe('CSV', () => {
     }
     const rec = parseCsvRecording(rows.join('\n'));
     expect(rec.labels).toEqual(['Fp1', 'T7']);
-    expect(rec.ignored).toEqual(['ECG', 'aX']);
+    expect(rec.ignored).toEqual(['aX']); // the ECG column is kept for HRV
+    expect(rec.ecg?.label).toBe('ECG');
     expect(rec.sampleRate).toBeCloseTo(250, 6);
     const fp1 = rec.data[0];
     expect(Number.isNaN(fp1[10])).toBe(false);

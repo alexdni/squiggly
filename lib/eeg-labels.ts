@@ -72,3 +72,17 @@ export function selectEegChannels(rawLabels: string[]): {
   });
   return { selected, ignored };
 }
+
+/**
+ * True for an ECG/EKG lead label: "ECG", "EKG", "ecg", "ECG1", "ECG I", "ECG-LA", "EEG ECG"...
+ * Excludes impedance companions such as "z-ECG".
+ */
+export function isEcgLabel(raw: string): boolean {
+  const name = raw.trim().replace(/^EEG\s+/i, '');
+  return /^(ECG|EKG)(?:$|[\s_\-.:]|\d|I{1,3}\b)/i.test(name);
+}
+
+/** Index of the first ECG lead in a label list, or -1. */
+export function findEcgChannel(rawLabels: string[]): number {
+  return rawLabels.findIndex(isEcgLabel);
+}

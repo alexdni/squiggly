@@ -18,6 +18,7 @@ import type {
   Condition,
   QcReportSummary,
   RejectedEpoch,
+  HrvResults,
   RejectionTimeline,
   SpectrogramData,
   TimeSpan,
@@ -25,6 +26,7 @@ import type {
 import { DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
 import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
+import { computeHrv } from './hrv';
 import { computeSpectrograms, extractFeatures, type EpochSet } from './features';
 import {
   averageReference,
@@ -380,6 +382,18 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     }
   }
 
+  // Heart-rate variability when the file has an ECG lead; never fails the EEG analysis.
+  let hrv: HrvResults | undefined;
+  const hrvWarnings: string[] = [];
+  if (eeg.ecg) {
+    progress('hrv');
+    try {
+      hrv = computeHrv(eeg.ecg, { lineHz: cfg.line_freq });
+    } catch (err) {
+      hrvWarnings.push(`HRV could not be computed from ${eeg.ecg.label}: ${(err as Error).message}`);
+    }
+  }
+
   progress('exporting');
   const cleanedSignals = { labels, data, sampleRate: cleaned.sampleRate };
   const cleanedBytes =
@@ -428,6 +442,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     timeline: rejectionTimeline(result),
     warnings: [
       ...report.warnings,
+      ...hrvWarnings,
       ...conditions
         .filter((c) => !segs[c]?.set)
         .map((c) => `All ${c.toUpperCase()} epochs were rejected; ${c.toUpperCase()} features are unavailable.`),
@@ -445,6 +460,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     ...features,
     rejected_epochs: conditions.flatMap((c) => segs[c]?.rejected ?? []),
     spectrograms,
+    ...(hrv ? { hrv } : {}),
     visuals: {},
     processing_metadata: {
       engine: input.engine,

@@ -30,6 +30,7 @@ import RejectionTimeline from './visuals/RejectionTimeline';
 
 // chart.js renders client-side only
 const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
+const HrvSection = dynamic(() => import('./visuals/HrvSection'), { ssr: false });
 
 // Dynamically import EEG Viewer to avoid SSR issues with Chart.js
 const RawEEGViewer = dynamic(() => import('./eeg-viewer/EEGViewer'), {
@@ -1232,6 +1233,14 @@ export default function AnalysisDetailsClient({
                 >
                   <SpectrogramGrid spectrograms={results?.spectrograms} />
                 </LegacyOrLive>
+              </div>
+            )}
+
+            {/* Heart rate variability (recordings with an ECG lead) */}
+            {results?.hrv && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-2">Heart Rate Variability (ECG)</h2>
+                <HrvSection hrv={results.hrv} />
               </div>
             )}
 

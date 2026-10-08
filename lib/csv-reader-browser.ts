@@ -166,17 +166,6 @@ export async function parseCSVFile(fileContent: string): Promise<CSVData> {
   // The raw signal data (with DC offset) is preserved.
   const signals: number[][] = channelNames.map(ch => channelData.get(ch)!);
 
-  // Debug: Log raw signal statistics
-  console.log('CSV Raw Signal Stats:');
-  signals.forEach((sig, idx) => {
-    if (sig.length > 0) {
-      const min = Math.min(...sig);
-      const max = Math.max(...sig);
-      const mean = sig.reduce((a, b) => a + b, 0) / sig.length;
-      console.log(`  ${channelNames[idx]}: DC offset=${mean.toFixed(0)}, range=${(max-min).toFixed(0)}, samples=${sig.length}`);
-    }
-  });
-
   const header: CSVHeader = {
     channels: channelNames,
     timestamps: timeInSeconds,

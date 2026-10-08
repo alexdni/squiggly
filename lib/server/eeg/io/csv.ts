@@ -3,13 +3,15 @@
 // Python csv_reader: unit detection from timestamp deltas, NaN gaps linearly interpolated, and a
 // linear detrend per channel (device data carries large DC drift).
 
-import { canonicalLabel } from './channels';
+import { canonicalLabel, isEcgLabel } from './channels';
 
 export interface CsvRecording {
   sampleRate: number;
   labels: string[];
   data: Float64Array[];
   ignored: string[];
+  /** first ECG/EKG column, if any (same preprocessing as the EEG columns) */
+  ecg?: { label: string; data: Float64Array };
 }
 
 /** Numeric timestamp, or ISO 8601 → epoch ms. NaN when empty/unparseable. */
@@ -94,8 +96,9 @@ export function parseCsvRecording(text: string): CsvRecording {
   const cols: { col: number; label: string }[] = [];
   const ignored: string[] = [];
   const seen = new Set<string>();
+  const ecgCol = headers.findIndex((h, col) => col !== tsCol && isEcgLabel(h));
   headers.forEach((h, col) => {
-    if (col === tsCol) return;
+    if (col === tsCol || col === ecgCol) return;
     const label = canonicalLabel(h);
     if (!label || seen.has(label)) {
       if (h) ignored.push(h);
@@ -109,6 +112,7 @@ export function parseCsvRecording(text: string): CsvRecording {
   const nRows = lines.length - 1;
   const ts = new Float64Array(nRows);
   const data = cols.map(() => new Float64Array(nRows));
+  const ecgRaw = ecgCol >= 0 ? new Float64Array(nRows) : null;
   let n = 0;
   for (let r = 1; r < lines.length; r++) {
     const line = lines[r];
@@ -120,6 +124,10 @@ export function parseCsvRecording(text: string): CsvRecording {
     for (let c = 0; c < cols.length; c++) {
       const cell = v[cols[c].col];
       data[c][n] = cell === undefined || cell.trim() === '' ? NaN : Number(cell);
+    }
+    if (ecgRaw) {
+      const cell = v[ecgCol];
+      ecgRaw[n] = cell === undefined || cell.trim() === '' ? NaN : Number(cell);
     }
     n++;
   }
@@ -139,12 +147,14 @@ export function parseCsvRecording(text: string): CsvRecording {
   }
   const sampleRate = 1 / median(diffs);
 
-  const trimmed = data.map((d) => {
+  const prepare = (d: Float64Array) => {
     const x = d.subarray(0, n).slice();
     interpolateNaN(x);
     linearDetrend(x);
     return x;
-  });
+  };
+  const trimmed = data.map(prepare);
+  const ecg = ecgRaw ? { label: headers[ecgCol], data: prepare(ecgRaw) } : undefined;
 
-  return { sampleRate, labels: cols.map((c) => c.label), data: trimmed, ignored };
+  return { sampleRate, labels: cols.map((c) => c.label), data: trimmed, ignored, ecg };
 }

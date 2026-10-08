@@ -155,6 +155,53 @@ export interface ProcessingMetadata {
   [key: string]: unknown;
 }
 
+/** Compact time series: t in seconds from recording start, v in the metric's unit. */
+export interface TimeSeries {
+  t: number[];
+  v: number[];
+}
+
+/** Heart-rate variability from an ECG channel (biofeedback-core HRV graph, whole recording). */
+export interface HrvResults {
+  /** source channel label as recorded, e.g. 'ECG' */
+  channel: string;
+  sample_rate: number;
+  duration_sec: number;
+  beats: number;
+  /** share of the recording covered by detected NN intervals, 0–100 */
+  coverage_pct: number;
+  /** false when too few beats were detected to trust the metrics (summary/series then empty) */
+  reliable: boolean;
+  /** whole-recording values; null when the recording is too short for the metric */
+  summary: {
+    mean_hr_bpm: number | null;
+    sdnn_ms: number | null;
+    rmssd_ms: number | null;
+    pnn50_pct: number | null;
+    vlf_ms2: number | null;
+    lf_ms2: number | null;
+    hf_ms2: number | null;
+    lf_nu: number | null;
+    hf_nu: number | null;
+    lf_hf: number | null;
+  };
+  series: {
+    /** RR tachogram (NN interval per beat, ms) */
+    nn_ms?: TimeSeries;
+    heart_rate_bpm?: TimeSeries;
+    /** 1-minute sliding windows */
+    rmssd_ms?: TimeSeries;
+    sdnn_ms?: TimeSeries;
+    pnn50_pct?: TimeSeries;
+    lf_ms2?: TimeSeries;
+    hf_ms2?: TimeSeries;
+    lf_nu?: TimeSeries;
+    hf_nu?: TimeSeries;
+    lf_hf?: TimeSeries;
+  };
+  notes: string[];
+}
+
 export interface AnalysisResults {
   qc_report: QcReportSummary;
   band_power: Record<Condition, BandPower | null>;
@@ -167,6 +214,8 @@ export interface AnalysisResults {
   rejected_epochs: RejectedEpoch[];
   /** keyed by channel label, per condition */
   spectrograms?: Record<Condition, Record<string, SpectrogramData> | null>;
+  /** Present when the recording has an ECG channel */
+  hrv?: HrvResults;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */
   visuals?: Record<string, string>;
   processing_metadata: ProcessingMetadata;

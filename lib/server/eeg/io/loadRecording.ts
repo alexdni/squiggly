@@ -3,7 +3,7 @@
 // Data keeps the file's reference; the pipeline re-references to the average of the channels that
 // survive QC, so one dead or noisy electrode cannot leak into every other channel.
 
-import { selectEegChannels } from './channels';
+import { findEcgChannel, selectEegChannels } from './channels';
 import { parseCsvRecording } from './csv';
 import { decimate, decimationFactor } from './decimate';
 import { decodeEdfSignals, EdfFileHeader, isAnnotationSignal, readEdfHeader } from './edf';
@@ -18,6 +18,8 @@ export interface LoadedEeg {
   originalSampleRate: number;
   /** raw labels that were not used (non-EEG, unknown, duplicate, or a minority sample rate) */
   ignored: string[];
+  /** ECG lead, if the file has one; decimated like the EEG, at its own rate */
+  ecg?: { label: string; data: Float64Array; sampleRate: number };
   edfHeader?: EdfFileHeader;
 }
 
@@ -40,7 +42,11 @@ export function averageReference(data: Float64Array[], use?: number[]): void {
   }
 }
 
-function loadEdf(bytes: Uint8Array): Omit<LoadedEeg, 'format' | 'originalSampleRate'> {
+type ParsedEeg = Omit<LoadedEeg, 'format' | 'originalSampleRate' | 'ecg'> & {
+  ecg?: { label: string; data: Float64Array; sampleRate: number };
+};
+
+function loadEdf(bytes: Uint8Array): ParsedEeg {
   const header = readEdfHeader(bytes);
   const candidates = header.signals
     .map((s, i) => ({ i, label: s.label, spr: s.samplesPerRecord }))
@@ -65,7 +71,20 @@ function loadEdf(bytes: Uint8Array): Omit<LoadedEeg, 'format' | 'originalSampleR
     header,
     keep.map((s) => candidates[s.sourceIndex].i)
   );
-  return { labels: keep.map((s) => s.label), data, sampleRate, ignored, edfHeader: header };
+  const ecgIdx = findEcgChannel(header.signals.map((s) => s.label));
+  let ecg: ParsedEeg['ecg'];
+  if (ecgIdx >= 0) {
+    const decoded = decodeEdfSignals(bytes, header, [ecgIdx]);
+    ecg = { label: header.signals[ecgIdx].label, data: decoded.data[0], sampleRate: decoded.sampleRate };
+  }
+  return {
+    labels: keep.map((s) => s.label),
+    data,
+    sampleRate,
+    ignored: ignored.filter((l) => l !== ecg?.label),
+    edfHeader: header,
+    ecg,
+  };
 }
 
 export function loadRecording(bytes: Uint8Array, format: SourceFormat): LoadedEeg {
@@ -73,18 +92,31 @@ export function loadRecording(bytes: Uint8Array, format: SourceFormat): LoadedEe
     format === 'csv'
       ? (() => {
           const csv = parseCsvRecording(new TextDecoder('utf-8').decode(bytes));
-          return { labels: csv.labels, data: csv.data, sampleRate: csv.sampleRate, ignored: csv.ignored };
+          const parsed: ParsedEeg = {
+            labels: csv.labels,
+            data: csv.data,
+            sampleRate: csv.sampleRate,
+            ignored: csv.ignored,
+            ecg: csv.ecg ? { ...csv.ecg, sampleRate: csv.sampleRate } : undefined,
+          };
+          return parsed;
         })()
       : loadEdf(bytes);
 
   const originalSampleRate = parsed.sampleRate;
   const q = decimationFactor(originalSampleRate);
   const data = q > 1 ? parsed.data.map((d) => decimate(d, q)) : parsed.data;
+  let ecg = parsed.ecg;
+  if (ecg) {
+    const qe = decimationFactor(ecg.sampleRate);
+    ecg = qe > 1 ? { ...ecg, data: decimate(ecg.data, qe), sampleRate: ecg.sampleRate / qe } : ecg;
+  }
 
   return {
     format,
     ...parsed,
     data,
+    ecg,
     sampleRate: originalSampleRate / q,
     originalSampleRate,
   };
