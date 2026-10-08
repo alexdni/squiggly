@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { findEcgChannel, isEcgLabel } from '@/lib/eeg-labels';
+import { ecgCandidates, findEcgChannel, isAnnotationsLabel, isEcgLabel } from '@/lib/eeg-labels';
 import { writeCsv, writeEdf } from '../export/writers';
 import { computeHrv } from '../hrv';
+import { isFlatline } from '../io/flatline';
 import { loadRecording } from '../io/loadRecording';
 
 const FS = 250;
@@ -50,6 +51,25 @@ describe('ECG labels', () => {
   );
   it.each(['z-ECG', 'Cz', 'EXG1', 'EEG Fp1-LE', 'ECGlike-noise'])('%s is not', (l) => expect(isEcgLabel(l)).toBe(false));
   it('finds the first ECG lead', () => expect(findEcgChannel(['Fp1', 'z-ECG', 'ECG', 'EKG'])).toBe(2));
+  it.each(['Annotations', 'EDF Annotations', 'BDF Annotations', 'annotations '])('%s may carry the ECG', (l) =>
+    expect(isAnnotationsLabel(l)).toBe(true)
+  );
+  it('prefers ECG/EKG leads over Annotations channels', () =>
+    expect(ecgCandidates(['Annotations', 'Fp1', 'EKG', 'Status'])).toEqual([2, 0]));
+});
+
+describe('isFlatline', () => {
+  const n = 10_000;
+  it('flags a constant, a constant with a few glitches, and a few-step quantization wobble', () => {
+    expect(isFlatline(new Float64Array(n).fill(-32768))).toBe(true);
+    expect(isFlatline(Float64Array.from({ length: n }, (_, i) => (i % 2000 === 0 ? 500 : 3)))).toBe(true);
+    expect(isFlatline(Float64Array.from({ length: n }, (_, i) => 0.0305 * ((i * 7) % 5)))).toBe(true);
+  });
+  it('passes a real waveform at any scale', () => {
+    for (const k of [1e-6, 1, 1e4]) {
+      expect(isFlatline(Float64Array.from({ length: n }, (_, i) => k * Math.sin(i / 20)))).toBe(false);
+    }
+  });
 });
 
 describe('computeHrv', () => {
@@ -79,6 +99,15 @@ describe('computeHrv', () => {
     expect(Math.abs(up.summary.mean_hr_bpm! - down.summary.mean_hr_bpm!)).toBeLessThan(1);
   }, 60_000);
 
+  it('finds heartbeats whatever the amplitude units (unitless Annotations channels)', () => {
+    const { data } = syntheticEcg(150);
+    for (const k of [1e-6, 1e-3, 1e3]) {
+      const hrv = computeHrv({ label: 'Annotations', data: data.map((v) => v * k), sampleRate: FS });
+      expect(hrv.reliable).toBe(true);
+      expect(Math.abs(hrv.summary.mean_hr_bpm! - 75)).toBeLessThan(3);
+    }
+  }, 60_000);
+
   it('withholds metrics when no heartbeat can be found (electrode off)', () => {
     let seed = 3;
     const noise = Float64Array.from({ length: 120 * FS }, () => 20_000 * (((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) - 0.5));
@@ -94,7 +123,7 @@ describe('ECG in uploaded files', () => {
   it('EDF/BDF: decodes the ECG lead at its own rate, apart from the EEG', () => {
     const fs = 500;
     const eeg = Float64Array.from({ length: fs * 4 }, (_, i) => 20 * Math.sin((2 * Math.PI * 10 * i) / fs));
-    const ecg = Float64Array.from({ length: fs * 4 }, (_, i) => (i % fs === 0 ? 1000 : 0));
+    const ecg = Float64Array.from({ length: fs * 4 }, (_, i) => (i % fs === 0 ? 1000 : 0) + 200 * Math.sin((2 * Math.PI * 1.2 * i) / fs));
     const bytes = writeEdf({ labels: ['EEG Fp1-LE', 'EEG Cz-LE', 'ECG'], data: [eeg, eeg, ecg], sampleRate: fs }, { bdf: true });
     const rec = loadRecording(bytes, 'bdf');
     expect(rec.labels).toEqual(['Fp1', 'Cz']);
@@ -112,5 +141,64 @@ describe('ECG in uploaded files', () => {
     expect(rec.labels).toEqual(['Cz']);
     expect(rec.ecg?.label).toBe('ecg');
     expect(rec.ecg?.data.length).toBe(fs * 2);
+  });
+
+  const eeg = (n: number) => Float64Array.from({ length: n }, (_, i) => 20 * Math.sin((2 * Math.PI * 10 * i) / FS));
+
+  it('EDF: uses an "Annotations" channel carrying the ECG', () => {
+    const ecg = syntheticEcg(150).data;
+    const bytes = writeEdf({ labels: ['Fp1', 'Cz', 'Annotations'], data: [eeg(ecg.length), eeg(ecg.length), ecg], sampleRate: FS }, { bdf: false });
+    const rec = loadRecording(bytes, 'edf');
+    expect(rec.labels).toEqual(['Fp1', 'Cz']);
+    expect(rec.ecg?.label).toBe('Annotations');
+    expect(rec.ecgSkipped).toEqual([]);
+    const hrv = computeHrv(rec.ecg!);
+    expect(hrv.reliable).toBe(true);
+    expect(Math.abs(hrv.summary.mean_hr_bpm! - 75)).toBeLessThan(3);
+  }, 60_000);
+
+  it('EDF: a flat line is not processed as ECG; the next candidate is used', () => {
+    const n = 60 * FS;
+    const flat = new Float64Array(n);
+    const ecg = syntheticEcg(60).data;
+    const onlyFlat = loadRecording(
+      writeEdf({ labels: ['Fp1', 'Cz', 'EDF Annotations'], data: [eeg(n), eeg(n), flat], sampleRate: FS }, { bdf: false }),
+      'edf'
+    );
+    expect(onlyFlat.ecg).toBeUndefined();
+    expect(onlyFlat.ecgSkipped).toEqual(['EDF Annotations: flat line, not processed as ECG']);
+
+    const flatEcg = loadRecording(
+      writeEdf({ labels: ['Fp1', 'ECG', 'Annotations'], data: [eeg(n), flat, ecg], sampleRate: FS }, { bdf: true }),
+      'bdf'
+    );
+    expect(flatEcg.ecg?.label).toBe('Annotations');
+    expect(flatEcg.ecgSkipped).toEqual(['ECG: flat line, not processed as ECG']);
+  });
+
+  it('EDF+: an "EDF Annotations" channel holding event text is not a signal', () => {
+    const n = 10 * FS;
+    const bytes = writeEdf({ labels: ['Fp1', 'Cz', 'EDF Annotations'], data: [eeg(n), eeg(n), eeg(n)], sampleRate: FS }, { bdf: false });
+    const headerBytes = 256 * 4;
+    const recordSamples = Number(new TextDecoder().decode(bytes.subarray(256 + 3 * 216, 256 + 3 * 216 + 8)));
+    const recordBytes = 3 * recordSamples * 2;
+    for (let r = 0; headerBytes + r * recordBytes < bytes.length; r++) {
+      const at = headerBytes + r * recordBytes + 2 * recordSamples * 2;
+      bytes.fill(0, at, at + recordSamples * 2);
+      bytes.set(new TextEncoder().encode(`+${r}\x14\x14\x00+${r}.5\x14Eyes closed\x14\x00`), at);
+    }
+    const rec = loadRecording(bytes, 'edf');
+    expect(rec.ecg).toBeUndefined();
+    expect(rec.ecgSkipped).toEqual([]);
+  });
+
+  it('CSV: falls back to an Annotations column when the ECG column is flat', () => {
+    const ecg = syntheticEcg(60).data;
+    const flat = new Float64Array(ecg.length).fill(1);
+    const text = new TextDecoder().decode(writeCsv({ labels: ['Cz', 'ECG', 'Annotations'], data: [eeg(ecg.length), flat, ecg], sampleRate: FS }));
+    const rec = loadRecording(new TextEncoder().encode(text), 'csv');
+    expect(rec.labels).toEqual(['Cz']);
+    expect(rec.ecg?.label).toBe('Annotations');
+    expect(rec.ecgSkipped).toEqual(['ECG: flat line, not processed as ECG']);
   });
 });

@@ -3,10 +3,11 @@
 // Data keeps the file's reference; the pipeline re-references to the average of the channels that
 // survive QC, so one dead or noisy electrode cannot leak into every other channel.
 
-import { findEcgChannel, selectEegChannels } from './channels';
+import { ecgCandidates, selectEegChannels } from './channels';
 import { parseCsvRecording } from './csv';
 import { decimate, decimationFactor } from './decimate';
-import { decodeEdfSignals, EdfFileHeader, isAnnotationSignal, readEdfHeader } from './edf';
+import { decodeEdfSignals, EdfFileHeader, isAnnotationSignal, isAnnotationText, readEdfHeader } from './edf';
+import { isFlatline } from './flatline';
 
 export type SourceFormat = 'edf' | 'bdf' | 'csv';
 
@@ -20,8 +21,13 @@ export interface LoadedEeg {
   ignored: string[];
   /** ECG lead, if the file has one; decimated like the EEG, at its own rate */
   ecg?: { label: string; data: Float64Array; sampleRate: number };
+  /** ECG candidates that were passed over (flat line, too slow), for the QC warnings */
+  ecgSkipped?: string[];
   edfHeader?: EdfFileHeader;
 }
+
+/** Below this rate a lead cannot resolve heartbeats well enough for HRV. */
+export const MIN_ECG_RATE_HZ = 50;
 
 export function formatFromPath(path: string): SourceFormat {
   const ext = path.split('.').pop()?.toLowerCase();
@@ -42,9 +48,31 @@ export function averageReference(data: Float64Array[], use?: number[]): void {
   }
 }
 
-type ParsedEeg = Omit<LoadedEeg, 'format' | 'originalSampleRate' | 'ecg'> & {
-  ecg?: { label: string; data: Float64Array; sampleRate: number };
-};
+type ParsedEeg = Omit<LoadedEeg, 'format' | 'originalSampleRate'>;
+
+/** First ECG candidate that is a real, moving signal; the others are reported as skipped. */
+function pickEcg(
+  candidates: { label: string; decode: () => { data: Float64Array; sampleRate: number } | string }[]
+): Pick<ParsedEeg, 'ecg' | 'ecgSkipped'> {
+  const ecgSkipped: string[] = [];
+  for (const c of candidates) {
+    const decoded = c.decode();
+    if (typeof decoded === 'string') {
+      if (decoded) ecgSkipped.push(`${c.label}: ${decoded}`);
+      continue;
+    }
+    if (decoded.sampleRate < MIN_ECG_RATE_HZ) {
+      ecgSkipped.push(`${c.label}: sampled at ${decoded.sampleRate} Hz, too slow for heartbeats`);
+      continue;
+    }
+    if (isFlatline(decoded.data)) {
+      ecgSkipped.push(`${c.label}: flat line, not processed as ECG`);
+      continue;
+    }
+    return { ecg: { label: c.label, ...decoded }, ecgSkipped };
+  }
+  return { ecgSkipped };
+}
 
 function loadEdf(bytes: Uint8Array): ParsedEeg {
   const header = readEdfHeader(bytes);
@@ -71,12 +99,17 @@ function loadEdf(bytes: Uint8Array): ParsedEeg {
     header,
     keep.map((s) => candidates[s.sourceIndex].i)
   );
-  const ecgIdx = findEcgChannel(header.signals.map((s) => s.label));
-  let ecg: ParsedEeg['ecg'];
-  if (ecgIdx >= 0) {
-    const decoded = decodeEdfSignals(bytes, header, [ecgIdx]);
-    ecg = { label: header.signals[ecgIdx].label, data: decoded.data[0], sampleRate: decoded.sampleRate };
-  }
+  const { ecg, ecgSkipped } = pickEcg(
+    ecgCandidates(header.signals.map((s) => s.label)).map((i) => ({
+      label: header.signals[i].label,
+      decode: () => {
+        // a standard EDF+ annotation channel holds event text: not a signal, nothing to report
+        if (isAnnotationText(bytes, header, i)) return '';
+        const decoded = decodeEdfSignals(bytes, header, [i]);
+        return { data: decoded.data[0], sampleRate: decoded.sampleRate };
+      },
+    }))
+  );
   return {
     labels: keep.map((s) => s.label),
     data,
@@ -84,6 +117,7 @@ function loadEdf(bytes: Uint8Array): ParsedEeg {
     ignored: ignored.filter((l) => l !== ecg?.label),
     edfHeader: header,
     ecg,
+    ecgSkipped,
   };
 }
 
@@ -97,7 +131,12 @@ export function loadRecording(bytes: Uint8Array, format: SourceFormat): LoadedEe
             data: csv.data,
             sampleRate: csv.sampleRate,
             ignored: csv.ignored,
-            ecg: csv.ecg ? { ...csv.ecg, sampleRate: csv.sampleRate } : undefined,
+            ...pickEcg(
+              csv.ecgColumns.map((c) => ({
+                label: c.label,
+                decode: () => ({ data: c.data, sampleRate: csv.sampleRate }),
+              }))
+            ),
           };
           return parsed;
         })()

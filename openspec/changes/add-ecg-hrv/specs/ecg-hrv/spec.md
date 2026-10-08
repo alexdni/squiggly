@@ -17,3 +17,13 @@ The system SHALL compute heart-rate variability from an ECG lead present in an u
 - **GIVEN** an ECG recording shorter than 4.5 minutes
 - **WHEN** HRV is computed
 - **THEN** VLF is empty and the page notes the minimum duration
+
+#### Scenario: ECG on an "Annotations" channel
+- **GIVEN** a recording with no `ECG`/`EKG` lead and a channel named `Annotations` (or `EDF Annotations` / `BDF Annotations`) that carries a moving signal
+- **WHEN** the analysis runs
+- **THEN** that channel is used as the ECG lead, whatever its physical unit
+
+#### Scenario: Flat or non-signal ECG candidate
+- **GIVEN** an ECG candidate channel that is a flat line, or an EDF+ annotation channel holding event text
+- **WHEN** the recording is loaded
+- **THEN** it is not processed as ECG; the next candidate is tried, and a flat channel is named in the QC warnings

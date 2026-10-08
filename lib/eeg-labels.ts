@@ -86,3 +86,18 @@ export function isEcgLabel(raw: string): boolean {
 export function findEcgChannel(rawLabels: string[]): number {
   return rawLabels.findIndex(isEcgLabel);
 }
+
+/**
+ * "Annotations" / "EDF Annotations" / "BDF Annotations". Some devices put the ECG lead on a
+ * channel with this name; in a standard EDF+ file it holds event text instead, which the reader
+ * must rule out by looking at the bytes.
+ */
+export function isAnnotationsLabel(raw: string): boolean {
+  return /^(?:(?:EDF|BDF)\s+)?Annotations?$/i.test(raw.trim());
+}
+
+/** Channels that may carry the ECG, best first: ECG/EKG leads, then "Annotations" channels. */
+export function ecgCandidates(rawLabels: string[]): number[] {
+  const idx = rawLabels.map((_, i) => i);
+  return [...idx.filter((i) => isEcgLabel(rawLabels[i])), ...idx.filter((i) => isAnnotationsLabel(rawLabels[i]))];
+}

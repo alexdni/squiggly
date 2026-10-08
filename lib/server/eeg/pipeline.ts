@@ -384,7 +384,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   // Heart-rate variability when the file has an ECG lead; never fails the EEG analysis.
   let hrv: HrvResults | undefined;
-  const hrvWarnings: string[] = [];
+  const hrvWarnings: string[] = (eeg.ecgSkipped ?? []).map((note) => `ECG channel skipped (${note}).`);
   if (eeg.ecg) {
     progress('hrv');
     try {

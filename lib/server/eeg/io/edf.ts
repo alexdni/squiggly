@@ -107,6 +107,22 @@ export function isAnnotationSignal(label: string): boolean {
 }
 
 /**
+ * True when the signal holds EDF+ annotation text (time-stamped annotation lists) rather than
+ * samples: the first record starts with a signed onset ("+0" or "-1.5") followed by 0x14 (or 0x15 and a duration).
+ */
+export function isAnnotationText(bytes: Uint8Array, header: EdfFileHeader, index: number): boolean {
+  const bps = header.isBdf ? 3 : 2;
+  let offset = header.headerBytes;
+  for (let i = 0; i < index; i++) offset += header.signals[i].samplesPerRecord * bps;
+  const len = header.signals[index].samplesPerRecord * bps;
+  const first = bytes.subarray(offset, Math.min(bytes.length, offset + len));
+  if (first.length < 3 || (first[0] !== 0x2b && first[0] !== 0x2d)) return false;
+  let i = 1;
+  while (i < first.length && ((first[i] >= 0x30 && first[i] <= 0x39) || first[i] === 0x2e)) i++;
+  return i > 1 && i < first.length && (first[i] === 0x14 || first[i] === 0x15);
+}
+
+/**
  * Decode the given signal indices into µV. All requested signals must share one sample rate;
  * callers pick a rate group first (see `dominantRateGroup`).
  */

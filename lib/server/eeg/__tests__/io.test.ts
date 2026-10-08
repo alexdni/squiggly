@@ -94,7 +94,7 @@ describe('CSV', () => {
     const rec = parseCsvRecording(rows.join('\n'));
     expect(rec.labels).toEqual(['Fp1', 'T7']);
     expect(rec.ignored).toEqual(['aX']); // the ECG column is kept for HRV
-    expect(rec.ecg?.label).toBe('ECG');
+    expect(rec.ecgColumns.map((c) => c.label)).toEqual(['ECG']);
     expect(rec.sampleRate).toBeCloseTo(250, 6);
     const fp1 = rec.data[0];
     expect(Number.isNaN(fp1[10])).toBe(false);

@@ -3,15 +3,15 @@
 // Python csv_reader: unit detection from timestamp deltas, NaN gaps linearly interpolated, and a
 // linear detrend per channel (device data carries large DC drift).
 
-import { canonicalLabel, isEcgLabel } from './channels';
+import { canonicalLabel, ecgCandidates } from './channels';
 
 export interface CsvRecording {
   sampleRate: number;
   labels: string[];
   data: Float64Array[];
   ignored: string[];
-  /** first ECG/EKG column, if any (same preprocessing as the EEG columns) */
-  ecg?: { label: string; data: Float64Array };
+  /** columns that may carry the ECG, best first (ECG/EKG, then "Annotations"); gaps interpolated */
+  ecgColumns: { label: string; data: Float64Array }[];
 }
 
 /** Numeric timestamp, or ISO 8601 → epoch ms. NaN when empty/unparseable. */
@@ -96,9 +96,9 @@ export function parseCsvRecording(text: string): CsvRecording {
   const cols: { col: number; label: string }[] = [];
   const ignored: string[] = [];
   const seen = new Set<string>();
-  const ecgCol = headers.findIndex((h, col) => col !== tsCol && isEcgLabel(h));
+  const ecgCols = ecgCandidates(headers).filter((col) => col !== tsCol);
   headers.forEach((h, col) => {
-    if (col === tsCol || col === ecgCol) return;
+    if (col === tsCol || ecgCols.includes(col)) return;
     const label = canonicalLabel(h);
     if (!label || seen.has(label)) {
       if (h) ignored.push(h);
@@ -112,7 +112,7 @@ export function parseCsvRecording(text: string): CsvRecording {
   const nRows = lines.length - 1;
   const ts = new Float64Array(nRows);
   const data = cols.map(() => new Float64Array(nRows));
-  const ecgRaw = ecgCol >= 0 ? new Float64Array(nRows) : null;
+  const ecgRaw = ecgCols.map(() => new Float64Array(nRows));
   let n = 0;
   for (let r = 1; r < lines.length; r++) {
     const line = lines[r];
@@ -125,9 +125,9 @@ export function parseCsvRecording(text: string): CsvRecording {
       const cell = v[cols[c].col];
       data[c][n] = cell === undefined || cell.trim() === '' ? NaN : Number(cell);
     }
-    if (ecgRaw) {
-      const cell = v[ecgCol];
-      ecgRaw[n] = cell === undefined || cell.trim() === '' ? NaN : Number(cell);
+    for (let c = 0; c < ecgCols.length; c++) {
+      const cell = v[ecgCols[c]];
+      ecgRaw[c][n] = cell === undefined || cell.trim() === '' ? NaN : Number(cell);
     }
     n++;
   }
@@ -154,7 +154,11 @@ export function parseCsvRecording(text: string): CsvRecording {
     return x;
   };
   const trimmed = data.map(prepare);
-  const ecg = ecgRaw ? { label: headers[ecgCol], data: prepare(ecgRaw) } : undefined;
+  const ecgColumns = ecgRaw.map((d, c) => {
+    const x = d.subarray(0, n).slice();
+    interpolateNaN(x);
+    return { label: headers[ecgCols[c]], data: x };
+  });
 
-  return { sampleRate, labels: cols.map((c) => c.label), data: trimmed, ignored, ecg };
+  return { sampleRate, labels: cols.map((c) => c.label), data: trimmed, ignored, ecgColumns };
 }

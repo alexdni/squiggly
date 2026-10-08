@@ -71,7 +71,27 @@ function ratioSeries(a: TimeSeries | undefined, b: TimeSeries | undefined): Time
 export function preconditionEcg(ecg: Float64Array, sampleRate: number, lineHz: number): Float64Array {
   const notch = eegFilterSections(sampleRate, { notchHz: lineHz });
   const noMains = notch.length ? sosFiltFilt(notch, ecg, Math.round(sampleRate)) : ecg;
-  return filterEeg(noMains, sampleRate, { highpassHz: 0.5 });
+  return normalizeAmplitude(filterEeg(noMains, sampleRate, { highpassHz: 0.5 }));
+}
+
+/** Typical ECG amplitude (µV) the beat detector is tuned for. */
+const TARGET_RANGE_UV = 1000;
+
+/**
+ * Rescale so the 0.5–99.5 percentile range is ~1 mV. Only beat timing matters for HRV, and leads
+ * on "Annotations" channels often lack a physical unit, which leaves them orders of magnitude
+ * off; the beat detector's thresholds are absolute.
+ */
+export function normalizeAmplitude(x: Float64Array): Float64Array {
+  const stride = Math.max(1, Math.floor(x.length / 100_000));
+  const sample: number[] = [];
+  for (let i = 0; i < x.length; i += stride) sample.push(x[i]);
+  const sorted = Float64Array.from(sample).sort();
+  const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+  const range = at(0.995) - at(0.005);
+  if (!(range > 0) || !Number.isFinite(range)) return x;
+  const k = TARGET_RANGE_UV / range;
+  return x.map((v) => v * k);
 }
 
 export function computeHrv(
