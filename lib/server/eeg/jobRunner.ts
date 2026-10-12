@@ -88,7 +88,7 @@ async function runInline(req: JobRequest, onProgress?: (stage: string) => void):
   console.warn(`[eeg-worker] ${workerBundlePath()} not found; running analysis inline`);
   const { runJob } = await import('./jobs');
   try {
-    return runJob(req, (s) => onProgress?.(s)).output;
+    return (await runJob(req, (s) => onProgress?.(s))).output;
   } catch (err) {
     const e = err as Error & { partialReport?: unknown };
     throw new JobFailedError(e.message, e.partialReport);

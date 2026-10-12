@@ -9,9 +9,9 @@ import { runJob, type JobRequest } from './jobs';
 if (!parentPort) throw new Error('eeg worker must run inside worker_threads');
 const port = parentPort;
 
-port.on('message', (msg: { id: number } & JobRequest) => {
+port.on('message', async (msg: { id: number } & JobRequest) => {
   try {
-    const { output, transfer } = runJob(msg, (stage) => port.postMessage({ id: msg.id, progress: stage }));
+    const { output, transfer } = await runJob(msg, (stage) => port.postMessage({ id: msg.id, progress: stage }));
     port.postMessage({ id: msg.id, ok: true, output }, transfer);
   } catch (err) {
     const e = err as Error & { partialReport?: unknown };

@@ -28,6 +28,8 @@ import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
 import { computeSpectrograms, extractFeatures, type EpochSet } from './features';
+import { computeSourceMaps, SLORETA_EPOCH_SEC, SloretaUnavailableError } from './sloreta/compute';
+import { CHANNELS_10_20 } from '@/lib/eeg-labels';
 import {
   averageReference,
   loadRecording,
@@ -45,11 +47,15 @@ export interface AnalysisJobInput {
   preprocessing: Partial<PreprocessingConfig> & { artifact_mode?: string };
   manualArtifacts?: { start: number; end: number }[];
   engine: string;
+  /** registered sLORETA kernel (see jobs.ts), or why none could be loaded */
+  sloreta?: { kernelId: string } | { unavailable: string };
 }
 
 export interface AnalysisJobOutput {
   results: Omit<AnalysisResults, 'cleaned_file_url' | 'ai_interpretation'>;
   cleaned: { bytes: Uint8Array; format: SourceFormat };
+  /** sLORETA values, [condition][band][voxel]; described by results.sloreta */
+  sloretaValues?: Float32Array;
 }
 
 export class AnalysisJobError extends Error {
@@ -394,6 +400,39 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     }
   }
 
+  // sLORETA source maps over the kept, cleaned epochs, for recordings with the full 10-20 montage.
+  // Like HRV, never fails the EEG analysis.
+  let sloreta: ReturnType<typeof computeSourceMaps> | undefined;
+  const sloretaWarnings: string[] = [];
+  if (input.sloreta && CHANNELS_10_20.every((ch) => eeg.labels.includes(ch))) {
+    if ('unavailable' in input.sloreta) {
+      sloretaWarnings.push(`Source localization unavailable: ${input.sloreta.unavailable}`);
+    } else {
+      progress('sloreta');
+      try {
+        const epochs = Object.fromEntries(
+          conditions.map((c) => [
+            c,
+            buildEpochs(c, input.segments[c]!, data, labels, cleaned.sampleRate, SLORETA_EPOCH_SEC, keep, result.annotations, manual)
+              .set?.epochs ?? [],
+          ])
+        );
+        sloreta = computeSourceMaps({
+          kernelId: input.sloreta.kernelId,
+          labels,
+          sampleRate: cleaned.sampleRate,
+          epochs,
+          interpolated: report.channels.filter((c) => c.interpolated).map((c) => c.label),
+        });
+      } catch (err) {
+        const msg = (err as Error).message;
+        sloretaWarnings.push(
+          err instanceof SloretaUnavailableError ? `Source localization skipped: ${msg}` : `Source localization failed: ${msg}`
+        );
+      }
+    }
+  }
+
   progress('exporting');
   const cleanedSignals = { labels, data, sampleRate: cleaned.sampleRate };
   const cleanedBytes =
@@ -443,6 +482,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     warnings: [
       ...report.warnings,
       ...hrvWarnings,
+      ...sloretaWarnings,
       ...conditions
         .filter((c) => !segs[c]?.set)
         .map((c) => `All ${c.toUpperCase()} epochs were rejected; ${c.toUpperCase()} features are unavailable.`),
@@ -461,6 +501,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     rejected_epochs: conditions.flatMap((c) => segs[c]?.rejected ?? []),
     spectrograms,
     ...(hrv ? { hrv } : {}),
+    ...(sloreta ? { sloreta: sloreta.meta } : {}),
     visuals: {},
     processing_metadata: {
       engine: input.engine,
@@ -471,5 +512,9 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     cleaned_file_format: `.${input.format}`,
   };
 
-  return { results, cleaned: { bytes: cleanedBytes, format: input.format } };
+  return {
+    results,
+    cleaned: { bytes: cleanedBytes, format: input.format },
+    ...(sloreta ? { sloretaValues: sloreta.values } : {}),
+  };
 }

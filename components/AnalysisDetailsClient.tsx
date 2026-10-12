@@ -31,6 +31,7 @@ import RejectionTimeline from './visuals/RejectionTimeline';
 // chart.js renders client-side only
 const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
 const HrvSection = dynamic(() => import('./visuals/HrvSection'), { ssr: false });
+const SloretaSection = dynamic(() => import('./sloreta/SloretaSection'), { ssr: false });
 
 // Dynamically import EEG Viewer to avoid SSR issues with Chart.js
 const RawEEGViewer = dynamic(() => import('./eeg-viewer/EEGViewer'), {
@@ -1241,6 +1242,17 @@ export default function AnalysisDetailsClient({
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-2">Heart Rate Variability (ECG)</h2>
                 <HrvSection hrv={results.hrv} />
+              </div>
+            )}
+
+            {/* sLORETA source localization (full 19-channel 10-20 recordings) */}
+            {results?.sloreta?.values_path && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-2">Source Localization (sLORETA)</h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  Estimated cortical sources of each frequency band, from the cleaned EEG
+                </p>
+                <SloretaSection analysisId={analysis.id} sloreta={results.sloreta} />
               </div>
             )}
 

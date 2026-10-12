@@ -78,9 +78,12 @@ function engineMarkers() {
       if (name && name.length >= 10) names.add(name);
     }
   }
-  // Names that also occur in the bundled third-party code (lodash, fili) or in plain JS
-  // (startsWith, lastIndexOf, ...) say nothing about the engine; drop them.
-  const thirdParty = thirdPartySource(pkg);
+  // Names that also occur in the bundled third-party code (lodash, fili), in this app's other
+  // browser libraries (three.js shares e.g. `isPowerOfTwo`) or in plain JS (startsWith,
+  // lastIndexOf, ...) say nothing about the engine; drop them.
+  const appPkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  const appDeps = Object.fromEntries(Object.entries(appPkg.dependencies || {}).filter(([d]) => d !== ENGINE));
+  const thirdParty = thirdPartySource(pkg) + thirdPartySource({ dependencies: appDeps });
   const builtins = new Set(
     [String, Array, Object, Number, Math, Promise, Map, Set, Function].flatMap((c) => [
       ...Object.getOwnPropertyNames(c),

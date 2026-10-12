@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { writeEdf } from '../export/writers';
 import { readEdfHeader } from '../io/edf';
 import { AnalysisJobError, buildPipelineConfig, removeMains, resolvePreprocessing, runAnalysis, spansFromKeep } from '../pipeline';
+import { ensureKernel } from '../sloreta/compute';
 import { runTheraq } from '../theraqJob';
 
 const LABELS = ['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8', 'T7', 'C3', 'Cz', 'C4', 'T8', 'P7', 'P3', 'Pz', 'P4', 'P8', 'O1', 'O2'];
@@ -125,6 +126,67 @@ describe('runAnalysis', () => {
     expect(cleaned.format).toBe('edf');
     expect(header.signals.map((s) => s.label)).toEqual(LABELS);
     expect(header.nRecords).toBe(seconds);
+  }, 120_000);
+
+  it('localizes only the kept epochs with sLORETA when a kernel is registered', async () => {
+    const rand = rng(11);
+    const nVox = 40;
+    const W = new Float32Array(nVox * 3 * LABELS.length).map(() => rand() - 0.5);
+    const bin = new Uint8Array(W.buffer);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bin));
+    const kernelId = await ensureKernel({
+      bin,
+      manifest: {
+        kernelId: 'toy-pipeline',
+        headModelId: 'toy',
+        conductivities: {},
+        montage: { channelNames: LABELS, referenceType: 'average', system: '10-20' },
+        designSampleRate: FS,
+        voxelCount: nVox,
+        orientationsPerVoxel: 3,
+        alpha: 1,
+        assumedSnr: 3,
+        effectiveRankAtBuild: 18,
+        averageReferenceApplied: true,
+        sensitivityThreshold: 0,
+        zeroedOrientationComponents: 0,
+        atlasVersion: 'toy',
+        buildCommit: 'test',
+        checksum: Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join(''),
+      },
+      voxels: {
+        coordsMni: Array.from({ length: nVox }, (_, i) => [i, 0, 0]),
+        labels: Array.from({ length: nVox }, () => 'toy'),
+        lowSensitivity: Array.from({ length: nVox }, () => false),
+      },
+    });
+
+    const stages: string[] = [];
+    const { results, sloretaValues } = runAnalysis(
+      { bytes: bytes.slice(), format: 'edf', segments, preprocessing: { profile: 'full' }, engine: 'test', sloreta: { kernelId } },
+      (s) => stages.push(s)
+    );
+    expect(stages).toContain('sloreta');
+    const s = results.sloreta!;
+    expect(s.conditions).toEqual(['eo', 'ec']);
+    // Feature epochs are also 2 s, so sLORETA sees exactly the epochs the features kept.
+    expect(s.epochs_used).toEqual({ eo: results.qc_report.final_epochs_eo, ec: results.qc_report.final_epochs_ec });
+    expect(sloretaValues).toHaveLength(2 * s.bands.length * nVox);
+    expect(s.stats.ec!.alpha2!.max).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('notes, but does not fail, when the kernel is unavailable', () => {
+    const { results, sloretaValues } = runAnalysis({
+      bytes: bytes.slice(),
+      format: 'edf',
+      segments,
+      preprocessing: { profile: 'full' },
+      engine: 'test',
+      sloreta: { unavailable: 'no kernel' },
+    });
+    expect(results.sloreta).toBeUndefined();
+    expect(sloretaValues).toBeUndefined();
+    expect(results.qc_report.warnings).toContain('Source localization unavailable: no kernel');
   }, 120_000);
 
   it('manual mode only rejects annotated epochs', () => {

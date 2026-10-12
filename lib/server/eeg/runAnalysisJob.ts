@@ -7,6 +7,7 @@ import { getStorageClient } from '@/lib/storage';
 import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
 import { engineId, JobFailedError, runEegJob } from './jobRunner';
 import { formatFromPath } from './io/loadRecording';
+import { sloretaKernelForJob } from './sloreta/kernel';
 import type { AnalysisJobInput } from './pipeline';
 
 export interface AnalysisJobParams {
@@ -41,9 +42,10 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
     const file = await storage.download('recordings', params.filePath);
     const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength).slice();
 
-    const { results, cleaned } = await runEegJob(
+    const { results, cleaned, sloretaValues } = await runEegJob(
       {
         kind: 'analysis',
+        sloretaKernel: await sloretaKernelForJob(),
         input: {
           bytes,
           format,
@@ -67,6 +69,22 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
       results.qc_report.warnings = [...(results.qc_report.warnings ?? []), 'Cleaned file could not be stored.'];
     } else {
       cleanedUrl = (await storage.createSignedUrl('visuals', cleanedPath, CLEANED_URL_TTL_SEC)).signedUrl;
+    }
+
+    if (results.sloreta && sloretaValues) {
+      const sloretaPath = `${params.analysisId}/sloreta.f32`;
+      const bytes = new Uint8Array(sloretaValues.buffer, sloretaValues.byteOffset, sloretaValues.byteLength);
+      const res = await storage.upload('visuals', sloretaPath, bytes, {
+        contentType: 'application/octet-stream',
+        upsert: true,
+      });
+      if (res.error) {
+        console.error(`[analysis ${params.analysisId}] sLORETA upload failed`, res.error);
+        delete results.sloreta;
+        results.qc_report.warnings = [...(results.qc_report.warnings ?? []), 'Source localization maps could not be stored.'];
+      } else {
+        results.sloreta.values_path = sloretaPath;
+      }
     }
 
     // Keep an AI interpretation written for an earlier run of this analysis.

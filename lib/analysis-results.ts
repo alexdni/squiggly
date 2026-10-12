@@ -202,6 +202,42 @@ export interface HrvResults {
   notes: string[];
 }
 
+/** One voxel's place in the kernel grid. */
+export interface SloretaPeak {
+  voxel: number;
+  /** MNI millimetres [x right, y anterior, z superior] */
+  mni: [number, number, number];
+  value: number;
+  /** coarse hemisphere × lobe label from the kernel (placeholder atlas) */
+  region: string;
+}
+
+/**
+ * sLORETA standardized current density (dimensionless) per voxel, averaged over the kept,
+ * cleaned 2 s epochs of each condition. The values themselves live in a Float32 file in storage,
+ * laid out [condition][band][voxel] in the order of `conditions` and `bands`.
+ */
+export interface SloretaResults {
+  kernel_id: string;
+  head_model_id: string;
+  atlas_version: string;
+  voxel_count: number;
+  design_sample_rate: number;
+  /** set when the cleaned EEG was resampled to the kernel rate for this step */
+  resampled_from_hz?: number;
+  epoch_sec: number;
+  bands: { name: BandName; f_lo: number; f_hi: number }[];
+  conditions: Condition[];
+  epochs_used: Partial<Record<Condition, number>>;
+  channels_interpolated: string[];
+  /** kernel rank after average reference, less one per interpolated channel */
+  effective_rank: number;
+  /** per condition, per band: scale and the strongest voxel outside the low-sensitivity set */
+  stats: Partial<Record<Condition, Partial<Record<BandName, { max: number; mean: number; peak: SloretaPeak | null }>>>>;
+  /** storage path in the visuals bucket; set once the values file is stored */
+  values_path?: string;
+}
+
 export interface AnalysisResults {
   qc_report: QcReportSummary;
   band_power: Record<Condition, BandPower | null>;
@@ -216,6 +252,8 @@ export interface AnalysisResults {
   spectrograms?: Record<Condition, Record<string, SpectrogramData> | null>;
   /** Present when the recording has an ECG channel */
   hrv?: HrvResults;
+  /** Present when the recording has the full 19-channel montage and the kernel was available */
+  sloreta?: SloretaResults;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */
   visuals?: Record<string, string>;
   processing_metadata: ProcessingMetadata;
