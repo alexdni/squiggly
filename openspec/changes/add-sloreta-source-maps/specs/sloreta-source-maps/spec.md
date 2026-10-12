@@ -23,6 +23,24 @@ The system SHALL compute sLORETA standardized current density per voxel for each
 - **WHEN** the analysis runs
 - **THEN** the analysis succeeds without sLORETA and a QC warning says so
 
+### Requirement: sLORETA Time Lapse
+The system SHALL animate sLORETA maps over the whole cleaned recording in 2 s windows with a 1 s hop, marking windows that overlap rejected data as rejected and never localizing them.
+
+#### Scenario: Playing the time lapse
+- **GIVEN** a completed analysis with a time lapse
+- **WHEN** the user plays it for a band
+- **THEN** slices or the 3D cloud animate on one colour scale fixed across the recording, with a transport showing EO/EC segments, rejected windows, and whole-brain and network mean traces
+
+#### Scenario: Rejected window
+- **GIVEN** a window overlapping data the artifact pipeline rejected
+- **WHEN** playback reaches it
+- **THEN** it is marked as rejected and the display holds the neighbouring clean windows instead of a flat brain
+
+#### Scenario: Large recording
+- **GIVEN** a 14-minute recording
+- **WHEN** a band is opened
+- **THEN** frames arrive in chunks under the 4.5 MB response limit and playback can start with the first chunk
+
 ### Requirement: Kernel Stays Server-Side
 The sLORETA kernel matrix SHALL be loaded and applied only on the server; only voxel coordinates, low-sensitivity flags and computed values SHALL be sent to the browser.
 

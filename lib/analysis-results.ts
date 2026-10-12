@@ -236,6 +236,21 @@ export interface SloretaResults {
   stats: Partial<Record<Condition, Partial<Record<BandName, { max: number; mean: number; peak: SloretaPeak | null }>>>>;
   /** storage path in the visuals bucket; set once the values file is stored */
   values_path?: string;
+  /** Time lapse over the whole cleaned recording; frames come from /api/analyses/[id]/sloreta/frames */
+  timeline?: SloretaTimeline;
+}
+
+export interface SloretaTimeline {
+  window_sec: number;
+  hop_sec: number;
+  /** window w covers [w·hop_sec, w·hop_sec + window_sec] seconds of the recording */
+  n_windows: number;
+  /** windows overlapping rejected data, shown as rejected rather than skipped */
+  rejected: number[];
+  /** EO/EC segments in seconds, for shading the transport */
+  segments: Partial<Record<Condition, { start: number; end: number }>>;
+  /** storage path (visuals bucket) of the per-window cross-spectra; set once stored */
+  spectra_path?: string;
 }
 
 export interface AnalysisResults {

@@ -20,6 +20,7 @@ import {
   type VoxelMetadata,
 } from '@divergentneuro/biofeedback-core';
 import { BAND_NAMES, BANDS, type Condition, type SloretaPeak, type SloretaResults } from '@/lib/analysis-results';
+import { packUpper, triSize } from './frames';
 import { resampleEpoch } from './resample';
 
 export const SLORETA_EPOCH_SEC = 2;
@@ -51,6 +52,48 @@ export async function ensureKernel(files: SloretaKernelFiles): Promise<string> {
   return id;
 }
 
+const analysisBands = () => BAND_NAMES.map((name) => ({ name, f_lo: BANDS[name][0], f_hi: BANDS[name][1] }));
+
+/** Kernel channel → index in the recording's labels; throws when any is missing. */
+function montageIndex(required: string[], labels: string[]): number[] {
+  const index = required.map((name) => labels.indexOf(name));
+  const missing = required.filter((_, i) => index[i] < 0);
+  if (missing.length) {
+    throw new SloretaUnavailableError(
+      `Source localization needs all ${required.length} 10-20 channels after QC; missing ${missing.join(', ')}.`
+    );
+  }
+  return index;
+}
+
+/**
+ * Band cross-spectra (real part, nCh×nCh) of one window: channels picked in kernel order,
+ * resampled to the kernel rate when needed, average-referenced. Null when any sample is
+ * non-finite.
+ */
+function windowSpectra(
+  window: ArrayLike<number>[],
+  index: number[],
+  sampleRate: number,
+  fs: number,
+  outLen: number,
+  bands: { name: string; fLo: number; fHi: number }[]
+): Float64Array[] | null {
+  const nCh = index.length;
+  const data = new Float64Array(nCh * outLen);
+  for (let c = 0; c < nCh; c++) {
+    const src = Float64Array.from(window[index[c]]);
+    const x = sampleRate === fs && src.length === outLen ? src : resampleEpoch(src, sampleRate, fs, outLen);
+    for (let t = 0; t < outLen; t++) {
+      const v = x[t];
+      if (!Number.isFinite(v)) return null;
+      data[c * outLen + t] = v;
+    }
+  }
+  const referenced = applyAverageReference(data, nCh, outLen);
+  return bands.map((b) => crossSpectrumBand(referenced, nCh, outLen, fs, b, WELCH));
+}
+
 export interface SourceMapsInput {
   kernelId: string;
   /** cleaned, average-referenced channels that survived QC */
@@ -77,18 +120,13 @@ export function computeSourceMaps(input: SourceMapsInput): SourceMapsOutput {
 
   // Kernel order, exact names. Labels are already canonical 10-10 (T7/T8/P7/P8), as is the
   // kernel montage; nothing is substituted, reordered by guess, or synthesized.
-  const index = required.map((name) => input.labels.indexOf(name));
-  const missing = required.filter((_, i) => index[i] < 0);
-  if (missing.length) {
-    throw new SloretaUnavailableError(
-      `Source localization needs all ${nCh} 10-20 channels after QC; missing ${missing.join(', ')}.`
-    );
-  }
+  const index = montageIndex(required, input.labels);
 
   const conditions = (['eo', 'ec'] as Condition[]).filter((c) => (input.epochs[c]?.length ?? 0) > 0);
   if (!conditions.length) throw new SloretaUnavailableError('No kept epochs to localize.');
 
-  const bands = BAND_NAMES.map((name) => ({ name, f_lo: BANDS[name][0], f_hi: BANDS[name][1] }));
+  const bands = analysisBands();
+  const bandSpecs = bands.map((b) => ({ name: b.name, fLo: b.f_lo, fHi: b.f_hi }));
   const outLen = Math.round(SLORETA_EPOCH_SEC * fs);
   const values = new Float32Array(conditions.length * bands.length * nVox);
   const stats: SloretaResults['stats'] = {};
@@ -98,24 +136,9 @@ export function computeSourceMaps(input: SourceMapsInput): SourceMapsOutput {
     const sums = bands.map(() => new Float64Array(nCh * nCh));
     let used = 0;
     for (const epoch of input.epochs[cond]!) {
-      const data = new Float64Array(nCh * outLen);
-      let finite = true;
-      for (let c = 0; c < nCh && finite; c++) {
-        const src = epoch[index[c]];
-        const x = input.sampleRate === fs && src.length === outLen ? src : resampleEpoch(src, input.sampleRate, fs, outLen);
-        for (let t = 0; t < outLen; t++) {
-          const v = x[t];
-          if (!Number.isFinite(v)) {
-            finite = false;
-            break;
-          }
-          data[c * outLen + t] = v;
-        }
-      }
-      if (!finite) continue;
-      const referenced = applyAverageReference(data, nCh, outLen);
-      bands.forEach((b, bi) => {
-        const M = crossSpectrumBand(referenced, nCh, outLen, fs, { name: b.name, fLo: b.f_lo, fHi: b.f_hi }, WELCH);
+      const spectra = windowSpectra(epoch, index, input.sampleRate, fs, outLen, bandSpecs);
+      if (!spectra) continue;
+      spectra.forEach((M, bi) => {
         const s = sums[bi];
         for (let k = 0; k < s.length; k++) s[k] += M[k];
       });
@@ -187,4 +210,69 @@ function summarize(map: Float32Array, voxels: VoxelMetadata) {
           region: voxels.labels[peak],
         };
   return { max, mean: map.length ? sum / map.length : 0, peak: p };
+}
+
+export const SLORETA_HOP_SEC = 1;
+
+export interface WindowSpectraInput {
+  kernelId: string;
+  labels: string[];
+  sampleRate: number;
+  /** cleaned, average-referenced channels, full recording */
+  data: Float64Array[];
+  /** 1 where a kept pipeline epoch covers the sample */
+  keep: Uint8Array;
+  /** user-marked artifacts, seconds */
+  manual: { start: number; end: number }[];
+}
+
+export interface WindowSpectraOutput {
+  /** [window][band][triSize(nCh)] upper-triangle cross-spectra; zeros for rejected windows */
+  spectra: Float32Array;
+  nWindows: number;
+  /** windows overlapping rejected data or with non-finite samples */
+  rejected: number[];
+}
+
+/**
+ * Cross-spectra of every 2 s window (1 s hop) across the whole cleaned recording, for the
+ * time lapse. A window is used only when the pipeline kept every one of its samples and no manual
+ * artifact overlaps it; the rest are listed as rejected and shown as such, never as a flat brain.
+ */
+export function computeWindowSpectra(input: WindowSpectraInput): WindowSpectraOutput {
+  const { manifest } = getKernel(input.kernelId);
+  const required = manifest.montage.channelNames;
+  const nCh = required.length;
+  const fs = manifest.designSampleRate;
+  const index = montageIndex(required, input.labels);
+  const bandSpecs = analysisBands().map((b) => ({ name: b.name, fLo: b.f_lo, fHi: b.f_hi }));
+  const t = triSize(nCh);
+
+  const n = input.data[0]?.length ?? 0;
+  const len = Math.round(SLORETA_EPOCH_SEC * input.sampleRate);
+  const hop = Math.round(SLORETA_HOP_SEC * input.sampleRate);
+  const outLen = Math.round(SLORETA_EPOCH_SEC * fs);
+  const nWindows = n >= len ? Math.floor((n - len) / hop) + 1 : 0;
+  const spectra = new Float32Array(nWindows * bandSpecs.length * t);
+  const rejected: number[] = [];
+
+  // prefix sum of rejected samples, so each window's check is O(1)
+  const bad = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) bad[i + 1] = bad[i] + (input.keep[i] ? 0 : 1);
+
+  for (let w = 0; w < nWindows; w++) {
+    const s = w * hop;
+    const e = s + len;
+    const manual = input.manual.some((m) => m.start * input.sampleRate < e && m.end * input.sampleRate > s);
+    const result =
+      bad[e] - bad[s] === 0 && !manual
+        ? windowSpectra(input.data.map((d) => d.subarray(s, e)), index, input.sampleRate, fs, outLen, bandSpecs)
+        : null;
+    if (!result) {
+      rejected.push(w);
+      continue;
+    }
+    result.forEach((M, bi) => packUpper(M, nCh, spectra, (w * bandSpecs.length + bi) * t));
+  }
+  return { spectra, nWindows, rejected };
 }

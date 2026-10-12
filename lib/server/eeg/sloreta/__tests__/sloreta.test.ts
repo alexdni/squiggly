@@ -4,7 +4,14 @@ import { computeSourceEstimate, type KernelManifest, type VoxelMetadata } from '
 import { describe, expect, it } from 'vitest';
 import { BAND_NAMES, BANDS } from '@/lib/analysis-results';
 import { CHANNELS_10_20 } from '@/lib/eeg-labels';
-import { computeSourceMaps, ensureKernel, SloretaUnavailableError, type SloretaKernelFiles } from '../compute';
+import {
+  computeSourceMaps,
+  computeWindowSpectra,
+  ensureKernel,
+  SloretaUnavailableError,
+  type SloretaKernelFiles,
+} from '../compute';
+import { encodeFrames, triSize, voxelGram } from '../frames';
 import { resampleEpoch } from '../resample';
 
 const LABELS = [...CHANNELS_10_20];
@@ -159,6 +166,49 @@ describe('computeSourceMaps', () => {
     kernel.bin = kernel.bin.slice();
     kernel.bin[0] ^= 0xff;
     await expect(ensureKernel(kernel)).rejects.toThrow(/checksum/);
+  });
+});
+
+describe('time lapse', () => {
+  it('frames from stored window spectra match core per window, and reject windows over bad data', async () => {
+    const kernel = await toyKernel('toy-frames');
+    const kernelId = await ensureKernel(kernel);
+    const seconds = 8;
+    const rand = rng(5);
+    const data = LABELS.map((l) =>
+      Float64Array.from({ length: seconds * FS }, (_, t) => (l.startsWith('O') ? 20 : 3) * Math.sin((2 * Math.PI * 10 * t) / FS) + rand() - 0.5)
+    );
+    const keep = new Uint8Array(seconds * FS).fill(1);
+    keep.fill(0, Math.round(4.5 * FS), Math.round(4.7 * FS)); // touches windows starting at 3 s and 4 s
+    const { spectra, nWindows, rejected } = computeWindowSpectra({ kernelId, labels: LABELS, sampleRate: FS, data, keep, manual: [] });
+    expect(nWindows).toBe(7);
+    expect(rejected).toEqual([3, 4]);
+
+    const nVox = kernel.manifest.voxelCount;
+    const G = voxelGram(new Float32Array(kernel.bin.buffer.slice(0)), LABELS.length, nVox);
+    const nBands = BAND_NAMES.length;
+    const band = BAND_NAMES.indexOf('alpha2');
+    const enc = encodeFrames({ G, nVox, spectra, nBands, band, rejected: new Set(rejected), start: 0, count: nWindows });
+    const scales = new Float32Array(enc.buffer, 0, nWindows);
+    expect(scales[3]).toBe(-1);
+    expect(enc.length).toBe(4 * nWindows + nWindows * nVox);
+
+    for (const w of [0, 5]) {
+      const core = computeSourceEstimate({
+        kernelId,
+        channels: Object.fromEntries(LABELS.map((l, c) => [l, Array.from(data[c].subarray(w * FS, w * FS + 2 * FS))])),
+        montage: kernel.manifest.montage,
+        sampleRate: FS,
+        timestamp: 0,
+        bands: [{ name: 'alpha2', fLo: BANDS.alpha2[0], fHi: BANDS.alpha2[1] }],
+        softwareVersion: 'test',
+      }).voxel[0].values;
+      const max = Math.max(...core);
+      expect(scales[w]).toBeCloseTo(max, 3);
+      const bytes = enc.subarray(4 * nWindows + w * nVox, 4 * nWindows + (w + 1) * nVox);
+      for (let v = 0; v < nVox; v++) expect(Math.abs((bytes[v] / 255) * scales[w] - core[v])).toBeLessThan(max / 255 + 1e-9);
+    }
+    expect(spectra.length).toBe(nWindows * nBands * triSize(LABELS.length));
   });
 });
 

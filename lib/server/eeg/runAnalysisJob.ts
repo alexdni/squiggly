@@ -42,7 +42,7 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
     const file = await storage.download('recordings', params.filePath);
     const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength).slice();
 
-    const { results, cleaned, sloretaValues } = await runEegJob(
+    const { results, cleaned, sloretaValues, sloretaSpectra } = await runEegJob(
       {
         kind: 'analysis',
         sloretaKernel: await sloretaKernelForJob(),
@@ -84,6 +84,20 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
         results.qc_report.warnings = [...(results.qc_report.warnings ?? []), 'Source localization maps could not be stored.'];
       } else {
         results.sloreta.values_path = sloretaPath;
+      }
+    }
+    if (results.sloreta?.timeline && sloretaSpectra) {
+      const spectraPath = `${params.analysisId}/sloreta-spectra.f32`;
+      const bytes = new Uint8Array(sloretaSpectra.buffer, sloretaSpectra.byteOffset, sloretaSpectra.byteLength);
+      const res = await storage.upload('visuals', spectraPath, bytes, {
+        contentType: 'application/octet-stream',
+        upsert: true,
+      });
+      if (res.error) {
+        console.error(`[analysis ${params.analysisId}] sLORETA time-lapse upload failed`, res.error);
+        delete results.sloreta.timeline;
+      } else {
+        results.sloreta.timeline.spectra_path = spectraPath;
       }
     }
 

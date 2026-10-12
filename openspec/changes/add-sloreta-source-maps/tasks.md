@@ -6,4 +6,5 @@
 - [x] 1.5 Analysis-page section: slices, 3D cloud, band/condition/network selectors, banner
 - [x] 1.6 Tests: resampler, montage gate, epoch-averaged equals mean of per-epoch estimates, localization
 - [x] 1.7 Upload the kernel to the `models` bucket; verify on real recordings (pipeline) and in the browser (preview of real output)
-- [ ] 1.8 Re-run a 19-channel analysis on the deployed app and check the section end to end
+- [x] 1.8 Time lapse over the whole recording: per-window cross-spectra in the job, chunked frames API, transport with smoothing
+- [ ] 1.9 Re-run a 19-channel analysis on the deployed app and check the section end to end

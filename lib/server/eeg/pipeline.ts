@@ -28,7 +28,13 @@ import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
 import { computeSpectrograms, extractFeatures, type EpochSet } from './features';
-import { computeSourceMaps, SLORETA_EPOCH_SEC, SloretaUnavailableError } from './sloreta/compute';
+import {
+  computeSourceMaps,
+  computeWindowSpectra,
+  SLORETA_EPOCH_SEC,
+  SLORETA_HOP_SEC,
+  SloretaUnavailableError,
+} from './sloreta/compute';
 import { CHANNELS_10_20 } from '@/lib/eeg-labels';
 import {
   averageReference,
@@ -56,6 +62,8 @@ export interface AnalysisJobOutput {
   cleaned: { bytes: Uint8Array; format: SourceFormat };
   /** sLORETA values, [condition][band][voxel]; described by results.sloreta */
   sloretaValues?: Float32Array;
+  /** per-window cross-spectra for the time lapse; described by results.sloreta.timeline */
+  sloretaSpectra?: Float32Array;
 }
 
 export class AnalysisJobError extends Error {
@@ -403,6 +411,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   // sLORETA source maps over the kept, cleaned epochs, for recordings with the full 10-20 montage.
   // Like HRV, never fails the EEG analysis.
   let sloreta: ReturnType<typeof computeSourceMaps> | undefined;
+  let sloretaSpectra: Float32Array | undefined;
   const sloretaWarnings: string[] = [];
   if (input.sloreta && CHANNELS_10_20.every((ch) => eeg.labels.includes(ch))) {
     if ('unavailable' in input.sloreta) {
@@ -424,6 +433,24 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
           epochs,
           interpolated: report.channels.filter((c) => c.interpolated).map((c) => c.label),
         });
+        const windows = computeWindowSpectra({
+          kernelId: input.sloreta.kernelId,
+          labels,
+          sampleRate: cleaned.sampleRate,
+          data,
+          keep,
+          manual,
+        });
+        if (windows.nWindows > 0) {
+          sloretaSpectra = windows.spectra;
+          sloreta.meta.timeline = {
+            window_sec: SLORETA_EPOCH_SEC,
+            hop_sec: SLORETA_HOP_SEC,
+            n_windows: windows.nWindows,
+            rejected: windows.rejected,
+            segments: input.segments,
+          };
+        }
       } catch (err) {
         const msg = (err as Error).message;
         sloretaWarnings.push(
@@ -516,5 +543,6 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     results,
     cleaned: { bytes: cleanedBytes, format: input.format },
     ...(sloreta ? { sloretaValues: sloreta.values } : {}),
+    ...(sloretaSpectra ? { sloretaSpectra } : {}),
   };
 }

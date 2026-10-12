@@ -4,17 +4,22 @@ import 'server-only';
 // or in SLORETA_KERNEL_DIR for local development. Upload it with
 // `node scripts/upload-sloreta-kernel.mjs <dir>`. The worker verifies the SHA-256 before use.
 
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { KernelManifest, VoxelMetadata } from '@divergentneuro/biofeedback-core';
 import { getStorageClient } from '@/lib/storage';
 import type { SloretaKernelFiles } from './compute';
+import { voxelGram } from './frames';
 
 export const SLORETA_KERNEL_ID = process.env.SLORETA_KERNEL_ID || 'fsaverage-5mm-19ch-v1';
 export const SLORETA_BUCKET = 'models';
 export const sloretaKernelPath = (file: string) => `sloreta/${file}`;
 
-const g = globalThis as typeof globalThis & { __sloretaKernel?: Promise<SloretaKernelFiles> };
+const g = globalThis as typeof globalThis & {
+  __sloretaKernel?: Promise<SloretaKernelFiles>;
+  __sloretaGram?: Promise<SloretaGram>;
+};
 
 async function readKernelFile(name: string): Promise<Uint8Array> {
   const dir = process.env.SLORETA_KERNEL_DIR;
@@ -55,4 +60,38 @@ export async function sloretaKernelForJob(): Promise<SloretaKernelFiles | { unav
     console.error('[sloreta] kernel could not be loaded', err);
     return { unavailable: `the head-model kernel could not be loaded (${(err as Error).message})` };
   }
+}
+
+export interface SloretaGram {
+  kernelId: string;
+  nCh: number;
+  nVox: number;
+  /** per-voxel W_iᵀW_i, see frames.ts */
+  G: Float32Array;
+}
+
+/**
+ * Per-voxel Gram matrices for time-lapse frames, built once per server process from the
+ * checksum-verified kernel (the same SHA-256 check core's parseKernelAsset makes).
+ */
+export function loadSloretaGram(): Promise<SloretaGram> {
+  g.__sloretaGram ??= loadSloretaKernel()
+    .then(({ bin, manifest }) => {
+      const sha = createHash('sha256').update(bin).digest('hex');
+      if (sha !== manifest.checksum.toLowerCase()) {
+        throw new Error(`kernel ${manifest.kernelId}: checksum mismatch`);
+      }
+      const nCh = manifest.montage.channelNames.length;
+      const nVox = manifest.voxelCount;
+      if (bin.byteLength !== nVox * 3 * nCh * 4) throw new Error(`kernel ${manifest.kernelId}: byte length mismatch`);
+      const view = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+      const W = new Float32Array(nVox * 3 * nCh);
+      for (let i = 0; i < W.length; i++) W[i] = view.getFloat32(i * 4, true);
+      return { kernelId: manifest.kernelId, nCh, nVox, G: voxelGram(W, nCh, nVox) };
+    })
+    .catch((err) => {
+      g.__sloretaGram = undefined;
+      throw err;
+    });
+  return g.__sloretaGram;
 }

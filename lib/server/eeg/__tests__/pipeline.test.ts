@@ -162,7 +162,7 @@ describe('runAnalysis', () => {
     });
 
     const stages: string[] = [];
-    const { results, sloretaValues } = runAnalysis(
+    const { results, sloretaValues, sloretaSpectra } = runAnalysis(
       { bytes: bytes.slice(), format: 'edf', segments, preprocessing: { profile: 'full' }, engine: 'test', sloreta: { kernelId } },
       (s) => stages.push(s)
     );
@@ -173,6 +173,12 @@ describe('runAnalysis', () => {
     expect(s.epochs_used).toEqual({ eo: results.qc_report.final_epochs_eo, ec: results.qc_report.final_epochs_ec });
     expect(sloretaValues).toHaveLength(2 * s.bands.length * nVox);
     expect(s.stats.ec!.alpha2!.max).toBeGreaterThan(0);
+    // Time lapse over the whole recording: 2 s windows, 1 s hop, the 30–31 s burst rejected.
+    const tl = s.timeline!;
+    expect(tl.n_windows).toBe(seconds - 1);
+    expect(tl.rejected).toEqual(expect.arrayContaining([29, 30]));
+    expect(tl.rejected.length).toBeLessThan(tl.n_windows / 2);
+    expect(sloretaSpectra).toHaveLength(tl.n_windows * s.bands.length * 190);
   }, 120_000);
 
   it('notes, but does not fail, when the kernel is unavailable', () => {

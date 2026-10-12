@@ -40,7 +40,7 @@ export async function runJob(req: JobRequest, progress: ProgressFn): Promise<{ o
     case 'analysis': {
       const sloreta = await resolveSloreta(req.sloretaKernel);
       const output = runAnalysis({ ...req.input, sloreta }, progress);
-      const transfer = [output.cleaned.bytes.buffer, output.sloretaValues?.buffer].filter(Boolean);
+      const transfer = [output.cleaned.bytes.buffer, output.sloretaValues?.buffer, output.sloretaSpectra?.buffer].filter(Boolean);
       return { output, transfer: transfer as ArrayBuffer[] };
     }
     case 'theraq':
