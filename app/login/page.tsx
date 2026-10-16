@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import SquigglyLogo from '@/components/SquigglyLogo';
 
 // Force dynamic rendering (don't pre-render at build time)
 export const dynamic = 'force-dynamic';
@@ -178,8 +179,8 @@ export default function LoginPage() {
     <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gradient-to-b from-neuro-light to-white">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-neuro-primary mb-2">
-            Squiggly
+          <h1 className="flex justify-center mb-4">
+            <SquigglyLogo height={52} />
           </h1>
           <p className="text-xl text-neuro-dark">EEG Assessment Platform</p>
           <p className="mt-4 text-gray-800">

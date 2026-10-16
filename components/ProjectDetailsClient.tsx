@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import ComparisonView from './ComparisonView';
 import TheraQReportClient from './TheraQReportClient';
 import type { TheraqPhase } from '@/lib/theraq';
+import SquigglyLogo from '@/components/SquigglyLogo';
 
 interface Project {
   id: string;
@@ -154,9 +155,10 @@ export default function ProjectDetailsClient({
             <div className="flex items-center gap-4">
               <button
                 onClick={() => router.push('/dashboard')}
-                className="text-2xl font-bold text-neuro-primary hover:text-neuro-accent transition-colors"
+                className="flex items-center hover:opacity-80 transition-opacity"
+                aria-label="Squiggly dashboard"
               >
-                Squiggly
+                <SquigglyLogo />
               </button>
               <span className="text-gray-400">/</span>
               <button

@@ -9,16 +9,16 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Neuro theme color palette
+        // Squiggly brand palette (Divergence: --primary, --secondary, --dark)
         'neuro': {
-          'primary': '#4F46E5',      // Indigo
-          'secondary': '#06B6D4',    // Cyan
-          'accent': '#8B5CF6',       // Purple
+          'primary': '#773DFF',      // Brand violet
+          'secondary': '#FC8AC8',    // Brand pink
+          'accent': '#5B1FE0',       // Deeper violet (hover on primary)
           'success': '#10B981',      // Green
           'warning': '#F59E0B',      // Amber
           'danger': '#EF4444',       // Red
-          'dark': '#1E293B',         // Slate-800
-          'light': '#F8FAFC',        // Slate-50
+          'dark': '#1E004B',         // Brand deep purple
+          'light': '#F8F6FF',        // Violet-tinted near-white
         },
         // EEG band colors
         'band': {

@@ -27,6 +27,7 @@ import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
+import SquigglyLogo from '@/components/SquigglyLogo';
 
 // chart.js renders client-side only
 const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
@@ -356,9 +357,10 @@ export default function AnalysisDetailsClient({
             <div className="flex items-center gap-4">
               <button
                 onClick={() => router.push('/dashboard')}
-                className="text-2xl font-bold text-neuro-primary hover:text-neuro-accent transition-colors"
+                className="flex items-center hover:opacity-80 transition-opacity"
+                aria-label="Squiggly dashboard"
               >
-                Squiggly
+                <SquigglyLogo />
               </button>
               <span className="text-gray-400">/</span>
               <button

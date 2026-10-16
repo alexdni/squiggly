@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import SquigglyLogo from '@/components/SquigglyLogo';
 
 interface Project {
   id: string;
@@ -116,9 +117,10 @@ export default function ProjectsClient({ user }: ProjectsClientProps) {
             <div className="flex items-center">
               <button
                 onClick={() => router.push('/dashboard')}
-                className="text-2xl font-bold text-neuro-primary hover:text-neuro-accent transition-colors"
+                className="flex items-center hover:opacity-80 transition-opacity"
+                aria-label="Squiggly dashboard"
               >
-                Squiggly
+                <SquigglyLogo />
               </button>
             </div>
             <div className="flex items-center gap-4">

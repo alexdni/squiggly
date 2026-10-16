@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import SquigglyLogo from '@/components/SquigglyLogo';
 
 interface DashboardClientProps {
   user: { id: string; email: string };
@@ -49,8 +50,8 @@ export default function DashboardClient({ user }: DashboardClientProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-neuro-primary">
-                Squiggly
+              <h1>
+                <SquigglyLogo />
               </h1>
             </div>
             <div className="flex items-center gap-4">

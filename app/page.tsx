@@ -1,11 +1,12 @@
 import Link from 'next/link';
+import SquigglyLogo from '@/components/SquigglyLogo';
 
 export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gradient-to-b from-neuro-light to-white">
       <div className="z-10 max-w-5xl w-full items-center justify-center text-center space-y-8">
-        <h1 className="text-5xl font-bold text-neuro-primary mb-4">
-          Squiggly
+        <h1 className="flex justify-center mb-4">
+          <SquigglyLogo height={72} />
         </h1>
         <p className="text-2xl text-neuro-dark font-medium">
           EEG Assessment Platform
