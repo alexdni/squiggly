@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ARTIFACT_PROFILES } from '@/lib/constants';
@@ -27,6 +27,8 @@ import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
+import PsdHeadMap from './visuals/PsdHeadMap';
+import { exportPdfReport, exportVisualizationsZip, type ReportMeta } from './export/analysisExport';
 import SquigglyLogo from '@/components/SquigglyLogo';
 
 // chart.js renders client-side only
@@ -84,22 +86,6 @@ interface AnalysisDetailsClientProps {
   user: { id: string; email: string };
 }
 
-interface AIInterpretationContent {
-  summary: string;
-  amplitude_patterns: string;
-  frequency_ratios: string;
-  peak_alpha_frequency: string;
-  asymmetry_analysis: string;
-  complexity_connectivity: string;
-  observations: string;
-}
-
-interface AIInterpretation {
-  generated_at: string;
-  model: string;
-  content: AIInterpretationContent;
-}
-
 const PROCESSING_STEPS = [
   { label: 'Loading recording', threshold: 0 },
   { label: 'Channel checks & filtering', threshold: 3 },
@@ -116,8 +102,6 @@ export default function AnalysisDetailsClient({
   const [analysis, setAnalysis] = useState(initialAnalysis);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pollingElapsed, setPollingElapsed] = useState(0);
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [settings, setSettings] = useState<ArtifactSettings>(() =>
@@ -126,6 +110,9 @@ export default function AnalysisDetailsClient({
   const [startError, setStartError] = useState<string | null>(null);
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState<{ kind: 'pdf' | 'zip'; done: number; total: number } | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const updateSetting = <K extends keyof ArtifactSettings>(key: K, value: ArtifactSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -273,33 +260,36 @@ export default function AnalysisDetailsClient({
     }
   };
 
-  const handleGenerateAIInterpretation = async () => {
-    setIsGeneratingAI(true);
-    setAiError(null);
+  const handleExport = async (kind: 'pdf' | 'zip') => {
+    const root = resultsRef.current;
+    if (!root) return;
+    const rec = analysis.recording;
+    const segment = (start: number | null, end: number | null) =>
+      start !== null && end !== null ? `${formatDuration(start)} - ${formatDuration(end)}` : 'Not labeled';
+    const meta: ReportMeta = {
+      filename: rec.filename,
+      completedAt: analysis.completed_at,
+      details: [
+        ['Duration', formatDuration(rec.duration_seconds)],
+        ['Channels', String(rec.n_channels)],
+        ['Sampling Rate', `${rec.sampling_rate} Hz`],
+        ['Montage', rec.montage],
+        ['Reference', rec.reference],
+        ['EO Segment', segment(rec.eo_start, rec.eo_end)],
+        ['EC Segment', segment(rec.ec_start, rec.ec_end)],
+        ['File Size', formatFileSize(rec.file_size)],
+      ],
+    };
+    setExportError(null);
+    setExporting({ kind, done: 0, total: 0 });
     try {
-      const response = await fetch(`/api/analyses/${analysis.id}/ai-interpretation`, {
-        method: 'POST',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate AI interpretation');
-      }
-
-      // Update local state with the new interpretation
-      setAnalysis({
-        ...analysis,
-        results: {
-          ...analysis.results,
-          ai_interpretation: data.interpretation,
-        },
-      });
+      const onProgress = (done: number, total: number) => setExporting({ kind, done, total });
+      await (kind === 'pdf' ? exportPdfReport(root, meta, onProgress) : exportVisualizationsZip(root, meta, onProgress));
     } catch (error: any) {
-      console.error('Error generating AI interpretation:', error);
-      setAiError(error.message || 'Failed to generate AI interpretation');
+      console.error(`Error exporting ${kind}:`, error);
+      setExportError(error?.message || 'Export failed. Please try again.');
     } finally {
-      setIsGeneratingAI(false);
+      setExporting(null);
     }
   };
 
@@ -307,16 +297,13 @@ export default function AnalysisDetailsClient({
     setIsReanalyzing(true);
     setReanalyzeError(null);
     try {
-      // Preserve the AI interpretation before clearing results
-      const preservedAiInterpretation = analysis.results?.ai_interpretation || null;
-
       // Reset the analysis status to pending via API
       const response = await fetch(`/api/analyses/${analysis.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'pending',
-          results: preservedAiInterpretation ? { ai_interpretation: preservedAiInterpretation } : null,
+          results: null,
           error_log: null,
           started_at: null,
           completed_at: null,
@@ -327,12 +314,11 @@ export default function AnalysisDetailsClient({
         throw new Error('Failed to reset analysis status');
       }
 
-      // Update local state, preserving AI interpretation
       // Don't auto-start processing — let the user pick ICA vs Manual first
       setAnalysis({
         ...analysis,
         status: 'pending',
-        results: preservedAiInterpretation ? { ai_interpretation: preservedAiInterpretation } : null,
+        results: null,
         error_log: null,
         started_at: null,
         completed_at: null,
@@ -345,7 +331,6 @@ export default function AnalysisDetailsClient({
     }
   };
 
-  const aiInterpretation: AIInterpretation | null = analysis.results?.ai_interpretation || null;
   const results = analysis.results as Partial<AnalysisResults> | null;
 
   return (
@@ -813,7 +798,7 @@ export default function AnalysisDetailsClient({
         )}
 
         {analysis.status === 'completed' && analysis.results && (
-          <>
+          <div ref={resultsRef}>
             {/* QC Report */}
             {results?.qc_report && (() => {
               const r = results!;
@@ -823,7 +808,7 @@ export default function AnalysisDetailsClient({
               const listOrNone = (items: string[] | undefined) =>
                 items && items.length > 0 ? items.join(', ') : 'None';
               return (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Quality Control Report">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Quality Control Report
                 </h2>
@@ -956,7 +941,7 @@ export default function AnalysisDetailsClient({
 
                 {/* Download cleaned file */}
                 {r.cleaned_file_url && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="mt-4 pt-4 border-t border-gray-200" data-export-ignore>
                     {(() => {
                       const fmt = r.cleaned_file_format || '.edf';
                       const fmtLabel = fmt === '.bdf' ? 'BDF' : fmt === '.csv' ? 'CSV' : 'EDF';
@@ -986,7 +971,7 @@ export default function AnalysisDetailsClient({
 
             {/* Raw Band Power Values */}
             {analysis.results.band_power && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Band Power by Channel">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Band Power by Channel
                 </h2>
@@ -1064,7 +1049,7 @@ export default function AnalysisDetailsClient({
 
             {/* Topographic Brain Maps Grid */}
             {(hasAnyLegacyVisual(results, ['topomap_grid']) || results?.band_power) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Band Power Topographic Maps" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Band Power Topographic Maps
                 </h2>
@@ -1077,9 +1062,22 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
+            {/* Power spectral density per channel on the head */}
+            {(results?.psd?.eo || results?.psd?.ec) && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Power Spectral Density Map" data-visual>
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Power Spectral Density Map
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Power spectrum (1–45 Hz) of each channel at its scalp position, averaged over the kept epochs
+                </p>
+                <PsdHeadMap psd={results.psd} alphaPeak={results.alpha_peak} />
+              </div>
+            )}
+
             {/* Complexity & Connectivity Analysis */}
             {(hasAnyLegacyVisual(results, ['lzc_topomap_EO', 'lzc_topomap_EC']) || results?.lzc?.eo || results?.lzc?.ec) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Signal Complexity (Lempel-Ziv Complexity)" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Signal Complexity (Lempel-Ziv Complexity)
                 </h2>
@@ -1101,7 +1099,7 @@ export default function AnalysisDetailsClient({
 
             {/* Brain Connectivity Graph (wPLI) */}
             {(hasAnyLegacyVisual(results, ['connectivity_grid']) || results?.connectivity?.eo || results?.connectivity?.ec) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Brain Connectivity (wPLI)" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Brain Connectivity (wPLI)
                 </h2>
@@ -1117,7 +1115,7 @@ export default function AnalysisDetailsClient({
 
             {/* Network Metrics Summary */}
             {(hasAnyLegacyVisual(results, ['network_metrics']) || results?.connectivity?.eo || results?.connectivity?.ec) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Network Metrics Comparison" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Network Metrics Comparison
                 </h2>
@@ -1134,7 +1132,7 @@ export default function AnalysisDetailsClient({
 
             {/* Network Metrics Table (if connectivity data available) */}
             {analysis.results.connectivity && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Network Metrics by Band">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Network Metrics by Band
                 </h2>
@@ -1197,7 +1195,7 @@ export default function AnalysisDetailsClient({
             {/* Individual Alpha Frequency (IAF) */}
             {(hasAnyLegacyVisual(results, ['alpha_peak_topomap_EO', 'alpha_peak_topomap_EC']) ||
               results?.alpha_peak?.eo || results?.alpha_peak?.ec) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Individual Alpha Frequency (IAF)" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Individual Alpha Frequency (IAF)
                 </h2>
@@ -1220,7 +1218,7 @@ export default function AnalysisDetailsClient({
             {/* Spectrograms */}
             {(hasAnyLegacyVisual(results, ['spectrogram_EO', 'spectrogram_EC']) ||
               results?.spectrograms?.eo || results?.spectrograms?.ec) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Spectrograms" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Spectrograms
                 </h2>
@@ -1241,7 +1239,7 @@ export default function AnalysisDetailsClient({
 
             {/* Heart rate variability (recordings with an ECG lead) */}
             {results?.hrv && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Heart Rate Variability (ECG)" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-2">Heart Rate Variability (ECG)</h2>
                 <HrvSection hrv={results.hrv} />
               </div>
@@ -1249,7 +1247,7 @@ export default function AnalysisDetailsClient({
 
             {/* sLORETA source localization (full 19-channel 10-20 recordings) */}
             {results?.sloreta?.values_path && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Source Localization (sLORETA)" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-2">Source Localization (sLORETA)</h2>
                 <p className="text-sm text-gray-600 mb-4">
                   Estimated cortical sources of each frequency band, from the cleaned EEG
@@ -1260,7 +1258,7 @@ export default function AnalysisDetailsClient({
 
             {/* Band Ratios */}
             {analysis.results.band_ratios && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Band Ratios">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Band Ratios
                 </h2>
@@ -1319,7 +1317,7 @@ export default function AnalysisDetailsClient({
 
             {/* Asymmetry */}
             {analysis.results.asymmetry && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Hemispheric Asymmetry">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Hemispheric Asymmetry
                 </h2>
@@ -1359,7 +1357,7 @@ export default function AnalysisDetailsClient({
 
             {/* Risk Patterns */}
             {analysis.results.risk_patterns && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Risk Pattern Detection">
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
                   Risk Pattern Detection
                 </h2>
@@ -1418,151 +1416,6 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
-            {/* AI-Powered Interpretation */}
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 mb-6 border border-purple-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="bg-purple-100 p-2 rounded-lg">
-                    <svg className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                  </div>
-                  <h2 className="text-2xl font-bold text-neuro-dark">
-                    AI-Powered Interpretation
-                  </h2>
-                </div>
-                {!aiInterpretation && !isGeneratingAI && (
-                  <button
-                    onClick={handleGenerateAIInterpretation}
-                    disabled={isGeneratingAI}
-                    className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Generate AI Analysis
-                  </button>
-                )}
-                {aiInterpretation && !isGeneratingAI && (
-                  <button
-                    onClick={handleGenerateAIInterpretation}
-                    disabled={isGeneratingAI}
-                    className="bg-white text-purple-600 border-2 border-purple-600 px-4 py-2 rounded-lg hover:bg-purple-50 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Regenerate
-                  </button>
-                )}
-              </div>
-
-              {/* Loading State */}
-              {isGeneratingAI && (
-                <div className="bg-white rounded-lg p-6 border border-purple-200">
-                  <div className="flex items-center justify-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mr-4"></div>
-                    <div>
-                      <p className="text-lg font-medium text-gray-900">Generating AI Interpretation...</p>
-                      <p className="text-sm text-gray-600">This may take up to 60 seconds. Please wait.</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Error State */}
-              {aiError && !isGeneratingAI && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-center">
-                    <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-red-800">{aiError}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Interpretation Content */}
-              {aiInterpretation && !isGeneratingAI && (
-                <div className="space-y-4">
-                  {/* Disclaimer Banner */}
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <div className="flex items-start">
-                      <svg className="h-5 w-5 text-amber-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      <p className="text-sm text-amber-800">
-                        <strong>Educational Use Only:</strong> This AI-generated interpretation is for educational purposes only and does not constitute medical diagnosis or advice. Consult a qualified healthcare professional for clinical interpretation of EEG findings.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Generated timestamp */}
-                  <div className="text-sm text-gray-500">
-                    Generated on {new Date(aiInterpretation.generated_at).toLocaleString()} using {aiInterpretation.model}
-                  </div>
-
-                  {/* Interpretation Sections */}
-                  <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-200">
-                    {aiInterpretation.content.summary && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Summary</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.summary}</p>
-                      </div>
-                    )}
-                    {aiInterpretation.content.amplitude_patterns && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Amplitude Patterns</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.amplitude_patterns}</p>
-                      </div>
-                    )}
-                    {aiInterpretation.content.frequency_ratios && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Frequency Ratios</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.frequency_ratios}</p>
-                      </div>
-                    )}
-                    {aiInterpretation.content.peak_alpha_frequency && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Peak Alpha Frequency</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.peak_alpha_frequency}</p>
-                      </div>
-                    )}
-                    {aiInterpretation.content.asymmetry_analysis && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Asymmetry Analysis</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.asymmetry_analysis}</p>
-                      </div>
-                    )}
-                    {aiInterpretation.content.complexity_connectivity && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Complexity & Connectivity</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.complexity_connectivity}</p>
-                      </div>
-                    )}
-                    {aiInterpretation.content.observations && (
-                      <div className="p-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Clinical Observations</h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{aiInterpretation.content.observations}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Empty State */}
-              {!aiInterpretation && !isGeneratingAI && !aiError && (
-                <div className="bg-white rounded-lg p-6 border border-purple-200 text-center">
-                  <p className="text-gray-600 mb-2">
-                    Get an AI-powered expert interpretation of your EEG analysis results.
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    The AI will analyze band power patterns, frequency ratios, asymmetry metrics, and complexity measures to provide educational insights.
-                  </p>
-                </div>
-              )}
-            </div>
-
             {/* Export Options */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-2xl font-bold text-neuro-dark mb-4">
@@ -1581,18 +1434,31 @@ export default function AnalysisDetailsClient({
                     Download Cleaned EEG ({analysis.results.cleaned_file_format || '.edf'})
                   </a>
                 )}
-                <button className="bg-neuro-primary text-white px-6 py-3 rounded-lg hover:bg-neuro-accent transition-colors font-medium">
-                  Export PDF Report
+                <button
+                  onClick={() => handleExport('pdf')}
+                  disabled={exporting !== null}
+                  className="bg-neuro-primary text-white px-6 py-3 rounded-lg hover:bg-neuro-accent transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {exporting?.kind === 'pdf' ? `Building PDF… ${exporting.done}/${exporting.total}` : 'Export PDF Report'}
                 </button>
-                <button className="bg-white text-neuro-primary border-2 border-neuro-primary px-6 py-3 rounded-lg hover:bg-neuro-light transition-colors font-medium">
-                  Export JSON Data
-                </button>
-                <button className="bg-white text-neuro-primary border-2 border-neuro-primary px-6 py-3 rounded-lg hover:bg-neuro-light transition-colors font-medium">
-                  Export Visualizations
+                <button
+                  onClick={() => handleExport('zip')}
+                  disabled={exporting !== null}
+                  className="bg-white text-neuro-primary border-2 border-neuro-primary px-6 py-3 rounded-lg hover:bg-neuro-light transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {exporting?.kind === 'zip' ? `Capturing images… ${exporting.done}/${exporting.total}` : 'Export Visualizations'}
                 </button>
               </div>
+              <p className="text-xs text-gray-500 mt-3">
+                Exports capture the results as currently shown, including the selected scales and views.
+              </p>
+              {exportError && (
+                <p className="text-sm text-red-700 mt-2" role="alert">
+                  {exportError}
+                </p>
+              )}
             </div>
-          </>
+          </div>
         )}
       </div>
     </main>

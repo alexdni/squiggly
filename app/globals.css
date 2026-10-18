@@ -31,3 +31,9 @@ body {
     text-wrap: balance;
   }
 }
+
+/* While the analysis page is being exported, scroll boxes show all their rows */
+[data-exporting] [data-export-expand] {
+  max-height: none;
+  overflow-y: visible;
+}

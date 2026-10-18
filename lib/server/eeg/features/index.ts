@@ -12,6 +12,7 @@ import type { EpochSet } from './types';
 
 export type { EpochSet } from './types';
 export { computeSpectrograms } from './spectrogram';
+export { computePsd } from './psd';
 
 export type ExtractedFeatures = Pick<
   AnalysisResults,

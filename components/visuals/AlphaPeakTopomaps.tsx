@@ -56,7 +56,7 @@ export default function AlphaPeakTopomaps({ alphaPeak }: AlphaPeakTopomapsProps)
                   ariaLabel={`Peak alpha frequency map, ${CONDITION_LABELS[c]}, scale 8 to 12 Hz`}
                 />
               </div>
-              <div className="w-full md:flex-1 overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded">
+              <div className="w-full md:flex-1 overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded" data-export-expand>
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>

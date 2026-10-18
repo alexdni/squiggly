@@ -97,6 +97,12 @@ export interface SpectrogramData {
   power_db: number[][];
 }
 
+/** Mean power spectral density over the kept epochs: channels[label][k] in µV²/Hz at freqs[k] Hz. */
+export interface PsdData {
+  freqs: number[];
+  channels: Record<string, number[]>;
+}
+
 export type ArtifactMode = 'pipeline' | 'manual';
 export type ArtifactProfile = 'full' | 'conservative' | 'aggressive' | 'rejectionOnly' | 'legacy';
 
@@ -265,6 +271,8 @@ export interface AnalysisResults {
   rejected_epochs: RejectedEpoch[];
   /** keyed by channel label, per condition */
   spectrograms?: Record<Condition, Record<string, SpectrogramData> | null>;
+  /** Per-channel PSD per condition; absent on analyses run before it was added */
+  psd?: Record<Condition, PsdData | null>;
   /** Present when the recording has an ECG channel */
   hrv?: HrvResults;
   /** Present when the recording has the full 19-channel montage and the kernel was available */

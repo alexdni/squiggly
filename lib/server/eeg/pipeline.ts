@@ -27,7 +27,7 @@ import { DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
 import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
-import { computeSpectrograms, extractFeatures, type EpochSet } from './features';
+import { computePsd, computeSpectrograms, extractFeatures, type EpochSet } from './features';
 import {
   computeSourceMaps,
   computeWindowSpectra,
@@ -380,6 +380,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   progress('features');
   const features = extractFeatures(eo, ec);
+  const psd = { eo: eo ? computePsd(eo) : null, ec: ec ? computePsd(ec) : null };
 
   progress('spectrograms');
   const spectrograms: Record<Condition, Record<string, SpectrogramData> | null> = { eo: null, ec: null };
@@ -527,6 +528,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     ...features,
     rejected_epochs: conditions.flatMap((c) => segs[c]?.rejected ?? []),
     spectrograms,
+    psd,
     ...(hrv ? { hrv } : {}),
     ...(sloreta ? { sloreta: sloreta.meta } : {}),
     visuals: {},
