@@ -11,7 +11,11 @@ export interface ReportSection {
 }
 
 export interface ReportMeta {
+  /** Defaults to "EEG Analysis Report". */
+  title?: string;
   filename: string;
+  /** Download name without extension; defaults to the recording's base name plus "-report". */
+  downloadName?: string;
   completedAt: string | null;
   details: [string, string][];
 }
@@ -120,11 +124,12 @@ async function buildPdfReport(root: ParentNode, meta: ReportMeta, onProgress?: P
   // Cover block
   let y = MARGIN + 4;
   pdf.setFont('helvetica', 'bold').setFontSize(20).setTextColor(17, 24, 39);
-  pdf.text('EEG Analysis Report', MARGIN, y);
+  pdf.text(meta.title ?? 'EEG Analysis Report', MARGIN, y);
   y += 8;
   pdf.setFont('helvetica', 'normal').setFontSize(11).setTextColor(55, 65, 81);
-  pdf.text(meta.filename, MARGIN, y);
-  y += 6;
+  const filenameLines: string[] = pdf.splitTextToSize(meta.filename, CONTENT_W);
+  pdf.text(filenameLines, MARGIN, y);
+  y += 5 * filenameLines.length + 1;
   pdf.setFontSize(9).setTextColor(107, 114, 128);
   const dates = [
     meta.completedAt ? `Analysis completed ${new Date(meta.completedAt).toLocaleString()}` : null,
@@ -184,5 +189,5 @@ async function buildPdfReport(root: ParentNode, meta: ReportMeta, onProgress?: P
     pdf.text(`${p} / ${pages}`, PAGE_W - MARGIN, PAGE_H - MARGIN + 2, { align: 'right' });
   }
 
-  pdf.save(`${baseName(meta.filename)}-report.pdf`);
+  pdf.save(`${meta.downloadName ?? `${baseName(meta.filename)}-report`}.pdf`);
 }

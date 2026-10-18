@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { hasLegacyVisual, type AnalysisResults } from '@/lib/analysis-results';
 import { engineFamily, engineLabel } from './analysis-settings';
@@ -10,6 +10,7 @@ import LzcTopomaps from './visuals/LzcTopomaps';
 import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import ConnectivityHead, { DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
 import { CONDITIONS, computeBandScales, computeLzcScale, connectivityScale, type PowerMode } from './visuals/data';
+import { baseName, exportPdfReport, type ReportMeta } from './export/analysisExport';
 
 // chart.js renders client-side only
 const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
@@ -134,6 +135,11 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const [comparisonSides, setComparisonSides] = useState<ComparisonSides | null>(null);
   const [powerMode, setPowerMode] = useState<PowerMode>('absolute');
   const [wpliThreshold, setWpliThreshold] = useState(DEFAULT_WPLI_THRESHOLD);
+
+  // PDF export of the comparison results as shown
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Shared colour scales so A and B maps of the same band are directly comparable
   const sharedBandScales = useMemo(
@@ -265,6 +271,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       setIsComparing(true);
       setError(null);
       setAiInterpretation(null); // Clear previous AI interpretation
+      setExportError(null);
 
       const response = await fetch(
         `/api/projects/${projectId}/compare?a_id=${recAId}&b_id=${recBId}`
@@ -351,6 +358,35 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       setAiError(err.message || 'Failed to generate AI interpretation');
     } finally {
       setIsGeneratingAI(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    const root = resultsRef.current;
+    const recA = analyzedRecordings.find((r) => r.id === comparisonResult?.recording_a_id);
+    const recB = analyzedRecordings.find((r) => r.id === comparisonResult?.recording_b_id);
+    if (!root || !recA || !recB) return;
+    const meta: ReportMeta = {
+      title: 'EEG Comparison Report',
+      filename: `A: ${getRecordingLabel(recA)}   vs   B: ${getRecordingLabel(recB)}`,
+      completedAt: null,
+      downloadName: `${baseName(recA.filename)}-vs-${baseName(recB.filename)}-comparison`,
+      details: [
+        ['Recording A uploaded', new Date(recA.created_at).toLocaleDateString()],
+        ['Recording B uploaded', new Date(recB.created_at).toLocaleDateString()],
+        ['Changes', 'B - A'],
+        ['Engines', engineMismatch ? `${engineLabel(engineA)} / ${engineLabel(engineB)}` : engineLabel(engineA)],
+      ],
+    };
+    setExportError(null);
+    setExportProgress({ done: 0, total: 0 });
+    try {
+      await exportPdfReport(root, meta, (done, total) => setExportProgress({ done, total }));
+    } catch (err: any) {
+      console.error('Error exporting comparison PDF:', err);
+      setExportError(err?.message || 'Export failed. Please try again.');
+    } finally {
+      setExportProgress(null);
     }
   };
 
@@ -469,9 +505,30 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
       {/* Comparison Results */}
       {comparisonResult && (
-        <div className="space-y-6">
+        <div className="space-y-6" ref={resultsRef}>
+          {/* Export */}
+          <div className="bg-white rounded-lg shadow-md p-6" data-export-ignore>
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                onClick={handleExportPdf}
+                disabled={exportProgress !== null}
+                className="bg-neuro-primary text-white px-6 py-3 rounded-lg hover:bg-neuro-accent transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exportProgress ? `Building PDF… ${exportProgress.done}/${exportProgress.total}` : 'Export PDF Report'}
+              </button>
+              <p className="text-xs text-gray-500">
+                Captures the comparison as currently shown, including the selected scales and threshold.
+              </p>
+            </div>
+            {exportError && (
+              <p className="text-sm text-red-700 mt-2" role="alert">
+                {exportError}
+              </p>
+            )}
+          </div>
+
           {/* Summary Metrics */}
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg shadow-md p-6" data-report-section="Summary Metrics">
             <h2 className="text-2xl font-bold text-neuro-dark mb-4">
               Summary Metrics
             </h2>
@@ -554,7 +611,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
           </div>
 
           {/* Power Deltas by Channel */}
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg shadow-md p-6" data-report-section="Power Changes by Channel">
             <h2 className="text-2xl font-bold text-neuro-dark mb-4">
               Power Changes by Channel (B - A)
             </h2>
@@ -631,26 +688,28 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
           {/* Visual Comparisons Section */}
           {comparisonSides && hasAnyVisual && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                Visual Comparisons
-              </h2>
-              <p className="text-sm text-gray-800 mb-4">
-                Side-by-side visualizations comparing the selected recordings. Live maps of the same band share one colour scale across both recordings.
-              </p>
+              <div data-report-section="Visual Comparisons">
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Visual Comparisons
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Side-by-side visualizations comparing the selected recordings. Live maps of the same band share one colour scale across both recordings.
+                </p>
 
-              {engineMismatch && (
-                <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4" role="alert">
-                  <p className="text-sm text-amber-900">
-                    <strong>Different processing engines:</strong> Recording A was processed by{' '}
-                    {engineLabel(engineA)} and Recording B by {engineLabel(engineB)}. Numerical results are not
-                    directly comparable; re-analyze the older recording for a like-for-like comparison.
-                  </p>
-                </div>
-              )}
+                {engineMismatch && (
+                  <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4" role="alert">
+                    <p className="text-sm text-amber-900">
+                      <strong>Different processing engines:</strong> Recording A was processed by{' '}
+                      {engineLabel(engineA)} and Recording B by {engineLabel(engineB)}. Numerical results are not
+                      directly comparable; re-analyze the older recording for a like-for-like comparison.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* Topographic Maps Comparison */}
               {sectionVisible('band_power', ['topomap_grid']) && (
-                <div className="mb-8">
+                <div className="mb-8" data-report-section="Band Power Topographic Maps" data-visual>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Band Power Topographic Maps
                   </h3>
@@ -673,7 +732,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
               {/* LZC Complexity Comparison */}
               {sectionVisible('lzc', ['lzc_topomap_EO', 'lzc_topomap_EC']) && (
-                <div className="mb-8">
+                <div className="mb-8" data-report-section="Signal Complexity (Lempel-Ziv)" data-visual>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Signal Complexity (Lempel-Ziv)
                   </h3>
@@ -699,7 +758,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
               {/* Brain Connectivity Comparison */}
               {sectionVisible('connectivity', ['connectivity_grid']) && (
-                <div className="mb-8">
+                <div className="mb-8" data-report-section="Brain Connectivity (wPLI)" data-visual>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Brain Connectivity (wPLI)
                   </h3>
@@ -728,7 +787,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
               {/* Network Metrics Comparison */}
               {sectionVisible('connectivity', ['network_metrics']) && (
-                <div className="mb-8">
+                <div className="mb-8" data-report-section="Network Metrics" data-visual>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Network Metrics
                   </h3>
@@ -749,7 +808,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
               {/* Individual Alpha Frequency Comparison */}
               {sectionVisible('alpha_peak', ['alpha_peak_topomap_EO', 'alpha_peak_topomap_EC']) && (
-                <div className="mb-8">
+                <div className="mb-8" data-report-section="Individual Alpha Frequency (IAF)" data-visual>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
                     Individual Alpha Frequency (IAF)
                   </h3>
@@ -778,7 +837,10 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
           {/* AI Analysis Section - Only for EO/EC comparisons */}
           {isEOECComparison() && (
-          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 border border-purple-200">
+          <div
+            className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 border border-purple-200"
+            data-report-section={aiInterpretation ? 'AI Analysis - EO/EC Comparison' : undefined}
+          >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-purple-100 rounded-lg">
@@ -800,7 +862,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   AI Analysis - EO/EC Comparison
                 </h2>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2" data-export-ignore>
                 {aiInterpretation && (
                   <button
                     onClick={handleGenerateAIInterpretation}
