@@ -101,14 +101,6 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
       }
     }
 
-    // Keep an AI interpretation written for an earlier run of this analysis.
-    const { data: existing } = await db
-      .from('analyses')
-      .select('results')
-      .eq('id', params.analysisId)
-      .single();
-    const prior = (existing as { results?: { ai_interpretation?: unknown } } | null)?.results;
-
     const { error } = await db
       .from('analyses')
       .update({
@@ -116,7 +108,6 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
         results: {
           ...results,
           cleaned_file_url: cleanedUrl,
-          ...(prior?.ai_interpretation ? { ai_interpretation: prior.ai_interpretation } : {}),
         },
         error_log: null,
         completed_at: new Date().toISOString(),

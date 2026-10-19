@@ -283,7 +283,6 @@ export interface AnalysisResults {
   cleaned_file_url?: string;
   /** '.edf' | '.bdf' | '.csv' */
   cleaned_file_format?: string;
-  ai_interpretation?: unknown;
 }
 
 /** True when the analysis was produced by the Python worker and carries PNG visuals. */

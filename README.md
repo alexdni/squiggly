@@ -67,17 +67,12 @@ Rendered in the browser from the analysis results:
 - Alpha peak frequency topomaps
 - LZC complexity topomaps
 
-### AI Interpretation (Optional)
-- GPT-4 powered analysis summaries
-- Structured interpretation covering all domains
-- Cached results for instant retrieval
-
 ### Comparison Mode
 - Compare any two recordings within a project
 - Power change analysis (absolute and percent)
 - Coherence and asymmetry deltas
 - Side-by-side visualization comparison
-- AI interpretation for comparative results
+- PDF report export
 
 ### Analysis Workflow
 - Upload a recording and review it in the EEG viewer
@@ -192,9 +187,6 @@ that the analysis engine is missing.
    ```env
    ADMIN_EMAIL=your-email@example.com
    ADMIN_PASSWORD=your-secure-password
-
-   # Optional: Enable AI interpretation
-   OPENAI_API_KEY=sk-your-openai-api-key
    ```
 
 3. **Build and start** (the token is passed as a BuildKit secret and never stored in the image)
@@ -213,7 +205,6 @@ that the analysis engine is missing.
 |----------|----------|---------|-------------|
 | `ADMIN_EMAIL` | Yes | - | Admin login email |
 | `ADMIN_PASSWORD` | Yes | - | Admin login password |
-| `OPENAI_API_KEY` | No | - | OpenAI API key for AI interpretation |
 | `PORT` | No | `3000` | Web server port |
 | `MAX_UPLOAD_SIZE` | No | `52428800` | Max upload size (50MB) |
 
@@ -313,7 +304,6 @@ for details.
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key   # analyses write results with it
    NODE_AUTH_TOKEN=ghp_your_token                     # build-time: installs the analysis engine
-   OPENAI_API_KEY=sk-your-key  # Optional
    ```
 3. Deploy
 
@@ -378,22 +368,19 @@ Interactive dashboard showing:
 - Asymmetry indices
 - Risk assessment flags
 
-### 6. AI Interpretation (Optional)
-Click "Generate AI Interpretation" for GPT-4 powered analysis summary.
-
-### 7. Re-Analyze
+### 6. Re-Analyze
 Click "Re-Analyze" to reset to pending, adjust annotations or switch de-artifacting method, and re-run.
 
-### 8. Compare Recordings
+### 7. Compare Recordings
 Select two recordings to compare:
 - Power change analysis
 - Delta visualizations
-- AI interpretation of changes
+- PDF report of the comparison
 
-### 9. Export
-Download the cleaned recording from the QC panel, or the JSON results via the API.
+### 8. Export
+Export a PDF report or a ZIP of every visualization from the analysis page, and download the cleaned recording from the QC panel.
 
-### 10. TheraQ Phase Comparison
+### 9. TheraQ Phase Comparison
 Assign EO1 / EC / EO2 / TASK roles to four recordings in a project (auto-detected from file names) and run the four-phase TheraQ report from the project's TheraQ tab.
 
 ---
@@ -404,8 +391,6 @@ Assign EO1 / EC / EO2 / TASK roles to four recordings in a project (auto-detecte
 - `GET /api/analyses/[id]` - Get analysis details
 - `PATCH /api/analyses/[id]` - Update the analysis config, or reset it to pending for a re-run
 - `POST /api/analyses/[id]/process` - Start the server-side analysis (responds 202; poll `GET /api/analyses/[id]`)
-- `GET /api/analyses/[id]/ai-interpretation` - Get cached AI interpretation
-- `POST /api/analyses/[id]/ai-interpretation` - Generate AI interpretation
 
 ### Projects
 - `GET /api/projects` - List user's projects

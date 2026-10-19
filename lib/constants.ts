@@ -150,6 +150,9 @@ export const REGIONAL_CHANNELS = {
   temporal: ['T7', 'T8'],
 };
 
+/** Nothing above this frequency is used anywhere in an analysis: it is the low-pass ceiling. */
+export const ANALYSIS_MAX_HZ = 45;
+
 // Preprocessing Defaults
 // Read by lib/server/eeg/pipeline.ts (resolvePreprocessing). `artifact_mode: 'pipeline'` runs the biofeedback-core
 // artifact profile; 'manual' only excludes user-marked artifact annotations.
@@ -170,7 +173,7 @@ export const DEFAULT_PREPROCESSING_CONFIG = {
   asr_k: null as number | null,
   line_freq: 60 as 50 | 60,
   high_pass_hz: 1,
-  low_pass_hz: 45,
+  low_pass_hz: ANALYSIS_MAX_HZ,
   /** feature epoch length, seconds */
   epoch_duration: 2,
 };

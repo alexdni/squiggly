@@ -53,27 +53,6 @@ interface ComparisonResult {
   };
 }
 
-interface EOECInterpretationContent {
-  summary: string;
-  alpha_reactivity: string;
-  arousal_shift: string;
-  theta_beta_dynamics: string;
-  complexity_shift: string;
-  network_connectivity: string;
-  alpha_topography: string;
-  individual_alpha_frequency: string;
-  possible_clinical_correlations: string;
-  observations: string;
-}
-
-interface EOECInterpretation {
-  generated_at: string;
-  model: string;
-  eo_recording_id: string;
-  ec_recording_id: string;
-  content: EOECInterpretationContent;
-}
-
 type SideResults = Partial<AnalysisResults> | null;
 
 interface ComparisonSides {
@@ -126,11 +105,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const [isComparing, setIsComparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // AI Interpretation state (only for EO/EC comparisons)
-  const [aiInterpretation, setAiInterpretation] = useState<EOECInterpretation | null>(null);
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-
   // Visual comparisons state
   const [comparisonSides, setComparisonSides] = useState<ComparisonSides | null>(null);
   const [powerMode, setPowerMode] = useState<PowerMode>('absolute');
@@ -179,21 +153,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const engineB = comparisonSides?.b?.processing_metadata?.engine ?? null;
   const engineMismatch =
     Boolean(comparisonSides?.hasResults) && engineFamily(engineA) !== engineFamily(engineB);
-
-  // Helper to determine if selected recordings are an EO/EC pair
-  const isEOECComparison = (): boolean => {
-    const recA = analyzedRecordings.find(r => r.id === selectedAId);
-    const recB = analyzedRecordings.find(r => r.id === selectedBId);
-    if (!recA || !recB) return false;
-
-    const aHasEO = recA.eo_start !== null && recA.eo_end !== null;
-    const aHasEC = recA.ec_start !== null && recA.ec_end !== null;
-    const bHasEO = recB.eo_start !== null && recB.eo_end !== null;
-    const bHasEC = recB.ec_start !== null && recB.ec_end !== null;
-
-    // Check if one is EO-only and one is EC-only (or one has both)
-    return (aHasEO && bHasEC) || (aHasEC && bHasEO) || (aHasEO && aHasEC) || (bHasEO && bHasEC);
-  };
 
   // Get recording label with condition type
   const getRecordingLabel = (rec: Recording): string => {
@@ -270,7 +229,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     try {
       setIsComparing(true);
       setError(null);
-      setAiInterpretation(null); // Clear previous AI interpretation
       setExportError(null);
 
       const response = await fetch(
@@ -293,9 +251,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       } else {
         setComparisonSides(null);
       }
-
-      // Try to fetch cached AI interpretation (only for EO/EC comparisons)
-      fetchCachedAIInterpretation(recAId, recBId);
     } catch (err: any) {
       console.error('Error fetching comparison:', err);
       setError(err.message || 'Failed to load comparison');
@@ -306,59 +261,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
 
   const handleCompare = () => {
     fetchComparison();
-  };
-
-  const fetchCachedAIInterpretation = async (aId: string, bId: string) => {
-    // AI interpretation is only available for EO/EC comparisons
-    if (!isEOECComparison()) return;
-
-    try {
-      const response = await fetch(
-        `/api/projects/${projectId}/compare/ai-interpretation?a_id=${aId}&b_id=${bId}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setAiInterpretation(data.interpretation);
-      }
-    } catch (err) {
-      // Silently fail - no cached interpretation available
-    }
-  };
-
-  const handleGenerateAIInterpretation = async () => {
-    if (!selectedAId || !selectedBId) return;
-
-    setIsGeneratingAI(true);
-    setAiError(null);
-
-    try {
-      const response = await fetch(
-        `/api/projects/${projectId}/compare/ai-interpretation`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            a_id: selectedAId,
-            b_id: selectedBId,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to generate AI interpretation');
-      }
-
-      const data = await response.json();
-      setAiInterpretation(data.interpretation);
-    } catch (err: any) {
-      console.error('Error generating AI interpretation:', err);
-      setAiError(err.message || 'Failed to generate AI interpretation');
-    } finally {
-      setIsGeneratingAI(false);
-    }
   };
 
   const handleExportPdf = async () => {
@@ -833,185 +735,6 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                 </div>
               )}
             </div>
-          )}
-
-          {/* AI Analysis Section - Only for EO/EC comparisons */}
-          {isEOECComparison() && (
-          <div
-            className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 border border-purple-200"
-            data-report-section={aiInterpretation ? 'AI Analysis - EO/EC Comparison' : undefined}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <svg
-                    className="w-6 h-6 text-purple-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                    />
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-bold text-purple-900">
-                  AI Analysis - EO/EC Comparison
-                </h2>
-              </div>
-              <div className="flex gap-2" data-export-ignore>
-                {aiInterpretation && (
-                  <button
-                    onClick={handleGenerateAIInterpretation}
-                    disabled={isGeneratingAI}
-                    className="bg-white text-purple-700 px-4 py-2 rounded-lg hover:bg-purple-50 transition-colors font-medium border border-purple-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Regenerate
-                  </button>
-                )}
-                {!aiInterpretation && (
-                  <button
-                    onClick={handleGenerateAIInterpretation}
-                    disabled={isGeneratingAI}
-                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isGeneratingAI ? (
-                      <>
-                        <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        Generating...
-                      </>
-                    ) : (
-                      'Generate AI Analysis'
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Disclaimer */}
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-              <p className="text-amber-800 text-sm">
-                <strong>Disclaimer:</strong> This AI-generated interpretation is for educational purposes only and should not be used for clinical diagnosis or treatment decisions. Always consult a qualified healthcare professional for medical advice.
-              </p>
-            </div>
-
-            {/* Loading State */}
-            {isGeneratingAI && (
-              <div className="text-center py-8">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                <p className="mt-4 text-purple-800">
-                  Analyzing EO to EC transition patterns...
-                </p>
-              </div>
-            )}
-
-            {/* Error State */}
-            {aiError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                <p className="text-red-800">{aiError}</p>
-              </div>
-            )}
-
-            {/* AI Interpretation Content */}
-            {aiInterpretation && !isGeneratingAI && (
-              <div className="space-y-6">
-                <p className="text-xs text-purple-600">
-                  Generated: {new Date(aiInterpretation.generated_at).toLocaleString()} | Model: {aiInterpretation.model}
-                </p>
-
-                {/* Summary */}
-                {aiInterpretation.content.summary && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Summary</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.summary}</p>
-                  </div>
-                )}
-
-                {/* Alpha Reactivity */}
-                {aiInterpretation.content.alpha_reactivity && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Alpha Reactivity</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.alpha_reactivity}</p>
-                  </div>
-                )}
-
-                {/* Arousal Shift */}
-                {aiInterpretation.content.arousal_shift && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Arousal Shift</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.arousal_shift}</p>
-                  </div>
-                )}
-
-                {/* Theta/Beta Dynamics */}
-                {aiInterpretation.content.theta_beta_dynamics && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Theta/Beta Dynamics</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.theta_beta_dynamics}</p>
-                  </div>
-                )}
-
-                {/* Complexity Shift */}
-                {aiInterpretation.content.complexity_shift && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Complexity Shift</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.complexity_shift}</p>
-                  </div>
-                )}
-
-                {/* Network Connectivity */}
-                {aiInterpretation.content.network_connectivity && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Network Connectivity</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.network_connectivity}</p>
-                  </div>
-                )}
-
-                {/* Alpha Topography */}
-                {aiInterpretation.content.alpha_topography && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Alpha Topography</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.alpha_topography}</p>
-                  </div>
-                )}
-
-                {/* Individual Alpha Frequency */}
-                {aiInterpretation.content.individual_alpha_frequency && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Individual Alpha Frequency</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.individual_alpha_frequency}</p>
-                  </div>
-                )}
-
-                {/* Possible Clinical Correlations */}
-                {aiInterpretation.content.possible_clinical_correlations && (
-                  <div className="bg-white rounded-lg p-4 border border-blue-200 bg-blue-50">
-                    <h3 className="text-lg font-semibold text-blue-900 mb-2">Possible Clinical Correlations</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.possible_clinical_correlations}</p>
-                    <p className="text-xs text-blue-600 mt-3 italic">Note: These are research-based associations, not diagnoses. Professional evaluation is recommended.</p>
-                  </div>
-                )}
-
-                {/* Observations */}
-                {aiInterpretation.content.observations && (
-                  <div className="bg-white rounded-lg p-4 border border-purple-100">
-                    <h3 className="text-lg font-semibold text-purple-900 mb-2">Observations</h3>
-                    <p className="text-gray-800 whitespace-pre-wrap">{aiInterpretation.content.observations}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* No interpretation yet */}
-            {!aiInterpretation && !isGeneratingAI && (
-              <div className="text-center py-8 text-purple-700">
-                <p>Click &quot;Generate AI Analysis&quot; to get an expert interpretation of the EO/EC comparison patterns.</p>
-              </div>
-            )}
-          </div>
           )}
         </div>
       )}

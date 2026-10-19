@@ -84,21 +84,6 @@ docker run -d \
 | `ENABLE_RULE_ENGINE` | `true` | Enable risk pattern detection |
 | `ENABLE_EXPORT` | `true` | Enable PDF/JSON export |
 
-### AI Interpretation (Optional)
-
-To enable AI-powered interpretation of EEG results:
-
-```bash
-docker run -d \
-  --name squiggly \
-  -p 3000:3000 \
-  -e ADMIN_EMAIL=admin@example.com \
-  -e ADMIN_PASSWORD=your-secure-password \
-  -e OPENAI_API_KEY=sk-your-openai-key \
-  -v squiggly-data:/data \
-  squiggly
-```
-
 ## Data Persistence
 
 The container stores all data in the `/data` volume:

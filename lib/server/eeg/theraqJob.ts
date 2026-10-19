@@ -7,7 +7,7 @@ import type { PartialPipelineConfig } from '@divergentneuro/biofeedback-core';
 import type { TheraqPhase, TheraqResults } from '@/lib/theraq';
 import { analyzeTheraq, TheraqAnalysisError } from '@/lib/server/theraq';
 import { loadRecording, type SourceFormat } from './io/loadRecording';
-import { AnalysisJobError, cleanEeg, resolvePreprocessing, type PreprocessingConfig, type ProgressFn } from './pipeline';
+import { AnalysisJobError, BELOW_LOW_PASS_CHANNEL_QC, cleanEeg, resolvePreprocessing, type PreprocessingConfig, type ProgressFn } from './pipeline';
 
 export interface TheraqJobInput {
   phases: Partial<Record<TheraqPhase, { bytes: Uint8Array; format: SourceFormat }>>;
@@ -24,11 +24,18 @@ export function theraqPipelineConfig(cfg: PreprocessingConfig, sampleRate: numbe
     lowPassHz: Math.min(cfg.low_pass_hz, 0.45 * sampleRate),
   };
   if (cfg.artifact_mode === 'manual' || cfg.profile === 'legacy' || cfg.profile === 'rejectionOnly') {
-    return { profile: 'full', stages: ['channelQc', 'temporalFilter', 'qcReport'], asr: { enabled: false }, filter };
+    return {
+      profile: 'full',
+      stages: ['channelQc', 'temporalFilter', 'qcReport'],
+      asr: { enabled: false },
+      channelQc: BELOW_LOW_PASS_CHANNEL_QC,
+      filter,
+    };
   }
   return {
     profile: cfg.profile,
     stages: ['channelQc', 'temporalFilter', 'transientRepair', 'asr', 'physiological', 'qcReport'],
+    channelQc: BELOW_LOW_PASS_CHANNEL_QC,
     filter,
     ...(cfg.asr_k != null ? { asr: { k: cfg.asr_k } } : {}),
   };

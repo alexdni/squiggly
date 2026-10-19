@@ -23,7 +23,7 @@ import type {
   SpectrogramData,
   TimeSpan,
 } from '@/lib/analysis-results';
-import { DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
+import { ANALYSIS_MAX_HZ, DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
 import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
@@ -58,7 +58,7 @@ export interface AnalysisJobInput {
 }
 
 export interface AnalysisJobOutput {
-  results: Omit<AnalysisResults, 'cleaned_file_url' | 'ai_interpretation'>;
+  results: Omit<AnalysisResults, 'cleaned_file_url'>;
   cleaned: { bytes: Uint8Array; format: SourceFormat };
   /** sLORETA values, [condition][band][voxel]; described by results.sloreta */
   sloretaValues?: Float32Array;
@@ -100,10 +100,17 @@ export function resolvePreprocessing(stored: AnalysisJobInput['preprocessing']):
     asr_k: s.asr_k == null ? null : num(s.asr_k, 5, 100, 20),
     line_freq: s.line_freq === 50 ? 50 : 60,
     high_pass_hz: highPass,
-    low_pass_hz: num(s.low_pass_hz, highPass + 1, 200, d.low_pass_hz),
+    low_pass_hz: num(s.low_pass_hz, highPass + 1, ANALYSIS_MAX_HZ, d.low_pass_hz),
     epoch_duration: num(s.epoch_duration, 1, 10, d.epoch_duration),
   };
 }
+
+/**
+ * Channel QC judges channels only on what the analysis keeps. Its high-frequency noise test measures
+ * power above 45 Hz, which the low-pass discards, so it is off: it dropped whole channels whose
+ * 1-45 Hz EEG was fine.
+ */
+export const BELOW_LOW_PASS_CHANNEL_QC = { hfNoiseZ: Infinity } as const;
 
 export function buildPipelineConfig(
   cfg: PreprocessingConfig,
@@ -118,14 +125,19 @@ export function buildPipelineConfig(
       profile: 'full',
       stages: ['channelQc', 'temporalFilter', 'qcReport'],
       asr: { enabled: false },
+      channelQc: BELOW_LOW_PASS_CHANNEL_QC,
       filter,
     };
   }
   return {
     profile: cfg.profile,
+    // The legacy profile has no filter stage of its own; without one its cleaned data keeps
+    // everything above the low-pass
+    ...(cfg.profile === 'legacy' ? { stages: ['channelQc', 'legacyGate', 'temporalFilter', 'qcReport'] } : {}),
     filter,
+    channelQc: BELOW_LOW_PASS_CHANNEL_QC,
     rejection: { postCleanCeilingUv: cfg.rejection_threshold_uv },
-    legacy: { absoluteCeilingUv: cfg.rejection_threshold_uv },
+    legacy: { absoluteCeilingUv: cfg.rejection_threshold_uv, legacyFilter: { highHz: lowPass } },
     ...(cfg.asr_k != null ? { asr: { k: cfg.asr_k } } : {}),
   };
 }
