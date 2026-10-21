@@ -21,6 +21,8 @@ export interface AnalysisJobParams {
   segments: AnalysisJobInput['segments'];
   preprocessing: AnalysisJobInput['preprocessing'];
   manualArtifacts: { start: number; end: number }[];
+  /** event ids the analyst dismissed (analyses.config.event_reviews), passed to the engine */
+  dismissedEventIds?: string[];
 }
 
 const CLEANED_CONTENT_TYPE: Record<string, string> = {
@@ -52,6 +54,7 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
           segments: params.segments,
           preprocessing: params.preprocessing,
           manualArtifacts: params.manualArtifacts,
+          dismissedEventIds: params.dismissedEventIds,
           engine: engineId(),
         },
       },

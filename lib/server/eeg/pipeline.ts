@@ -10,12 +10,17 @@ import {
   InsufficientChannelsError,
   runArtifactPipeline,
   type Annotation,
+  type DetectedEvent,
+  type EventDetectionReport,
+  type EventInputs,
   type PartialPipelineConfig,
   type PipelineResult,
 } from '@divergentneuro/biofeedback-core';
 import type {
   AnalysisResults,
   Condition,
+  DetectedEventResult,
+  EventDetectionSummary,
   QcReportSummary,
   RejectedEpoch,
   HrvResults,
@@ -55,6 +60,8 @@ export interface AnalysisJobInput {
   engine: string;
   /** registered sLORETA kernel (see jobs.ts), or why none could be loaded */
   sloreta?: { kernelId: string } | { unavailable: string };
+  /** event ids the analyst dismissed on an earlier run (analyses.config.event_reviews) */
+  dismissedEventIds?: string[];
 }
 
 export interface AnalysisJobOutput {
@@ -112,6 +119,14 @@ export function resolvePreprocessing(stored: AnalysisJobInput['preprocessing']):
  */
 export const BELOW_LOW_PASS_CHANNEL_QC = { hfNoiseZ: Infinity } as const;
 
+/**
+ * Event detection (S6) in labels-only mode: events are detected, named and stored, but S6 adds
+ * no exclusions of its own, so every metric is unchanged until the detector thresholds are
+ * validated on TUAR. Dismissals still apply: dismissing a cleaning stage's rejection restores
+ * the epochs only it excluded.
+ */
+export const EVENT_DETECTION = { enabled: true, exclude: false } as const;
+
 export function buildPipelineConfig(
   cfg: PreprocessingConfig,
   sampleRate: number
@@ -127,6 +142,7 @@ export function buildPipelineConfig(
       asr: { enabled: false },
       channelQc: BELOW_LOW_PASS_CHANNEL_QC,
       filter,
+      events: EVENT_DETECTION,
     };
   }
   return {
@@ -139,6 +155,61 @@ export function buildPipelineConfig(
     rejection: { postCleanCeilingUv: cfg.rejection_threshold_uv },
     legacy: { absoluteCeilingUv: cfg.rejection_threshold_uv, legacyFilter: { highHz: lowPass } },
     ...(cfg.asr_k != null ? { asr: { k: cfg.asr_k } } : {}),
+    events: EVENT_DETECTION,
+  };
+}
+
+/**
+ * Auxiliary signals for event detection. `unnotched` is the EEG before removeMains (same channel
+ * order as the recording cleanEeg hands the engine), so the line-noise detector sees the hum.
+ * The ECG lead is passed only when it has the EEG's rate and length; the loader keeps it at its
+ * own rate, and when that differs it is omitted and the engine reports the cardiac detectors as
+ * not assessed ("no ECG lead") rather than us resampling it here.
+ */
+export function eventInputsFor(eeg: LoadedEeg, dismissedEventIds?: string[]): EventInputs {
+  const n = eeg.data[0]?.length ?? 0;
+  const ecg = eeg.ecg;
+  return {
+    unnotched: eeg.data,
+    ...(ecg && ecg.sampleRate === eeg.sampleRate && ecg.data.length === n ? { ecg: ecg.data } : {}),
+    ...(dismissedEventIds?.length ? { dismissedEventIds } : {}),
+  };
+}
+
+/** Engine events → plain JSON objects for analyses.results. */
+export function eventResults(events: DetectedEvent[]): DetectedEventResult[] {
+  return events.map((e) => ({
+    id: e.id,
+    category: e.category,
+    pattern: e.pattern,
+    startSec: e.startSec,
+    endSec: e.endSec,
+    channels: [...e.channels],
+    confidence: e.confidence,
+    evidence: { ...e.evidence },
+    handling: e.handling,
+    ...(e.handledBy !== undefined ? { handledBy: e.handledBy } : {}),
+    ...(e.rejects ? { rejects: { ...e.rejects } } : {}),
+    source: e.source,
+    ...(e.dismissed ? { dismissed: true } : {}),
+  }));
+}
+
+export function eventDetectionSummary(r: EventDetectionReport): EventDetectionSummary {
+  return {
+    coverage: {
+      tier: r.coverage.tier,
+      detectors: r.coverage.detectors.map((d) => ({
+        name: d.name,
+        ran: d.ran,
+        ...(d.skippedReason !== undefined ? { skippedReason: d.skippedReason } : {}),
+      })),
+    },
+    counts: { ...r.counts },
+    nRejectedEpochsAdded: r.nRejectedEpochsAdded,
+    nRejectedEpochsNet: r.nRejectedEpochsNet,
+    retainedEpochFractionRemoved: r.retainedEpochFractionRemoved,
+    dismissed: { ...r.dismissed },
   };
 }
 
@@ -308,8 +379,11 @@ export function removeMains(data: Float64Array[], sampleRate: number, lineHz: nu
   return data.map((d) => (d.length > 2 * pad ? sosFiltFilt(sections, d, pad) : d));
 }
 
-/** Run the artifact pipeline and re-reference to the average of the usable channels. */
-export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig): CleanedEeg {
+/**
+ * Run the artifact pipeline and re-reference to the average of the usable channels.
+ * `eventInputs` is only read by the engine when `config.events.enabled`.
+ */
+export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig, eventInputs?: EventInputs): CleanedEeg {
   if (eeg.labels.length < 2) {
     throw new AnalysisJobError(
       `Need at least 2 EEG channels with 10-20/10-10 labels; found ${eeg.labels.length}`
@@ -325,7 +399,8 @@ export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig): Cleaned
         nSamples: eeg.data[0].length,
         reference: 'source',
       },
-      config
+      config,
+      { eventInputs }
     );
   } catch (err) {
     if (err instanceof InsufficientChannelsError) {
@@ -356,7 +431,11 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   progress('cleaning');
   const pipelineConfig = buildPipelineConfig(cfg, eeg.sampleRate);
-  const { result, labels, data } = cleanEeg(eeg, pipelineConfig);
+  const { result, labels, data } = cleanEeg(
+    eeg,
+    pipelineConfig,
+    eventInputsFor(eeg, input.dismissedEventIds)
+  );
 
   progress('epoching');
   const report = result.report;
@@ -543,6 +622,8 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     psd,
     ...(hrv ? { hrv } : {}),
     ...(sloreta ? { sloreta: sloreta.meta } : {}),
+    ...(result.events ? { events: eventResults(result.events) } : {}),
+    ...(report.eventDetection ? { event_detection: eventDetectionSummary(report.eventDetection) } : {}),
     visuals: {},
     processing_metadata: {
       engine: input.engine,

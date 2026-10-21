@@ -5,6 +5,7 @@ import { checkProjectPermission } from '@/lib/rbac';
 import { runInBackground } from '@/lib/server/background';
 import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
 import { runAnalysisJob } from '@/lib/server/eeg/runAnalysisJob';
+import { dismissedEventIds } from '@/lib/server/eventReviews';
 
 // The analysis itself runs after the response (see runInBackground); this budget covers it.
 export const maxDuration = 300;
@@ -122,6 +123,8 @@ export async function POST(_request: Request, { params }: { params: { id: string
       segments,
       preprocessing,
       manualArtifacts,
+      // Analyst dismissals of detected events; malformed entries are ignored.
+      dismissedEventIds: dismissedEventIds(analysisData.config),
     })
   );
 

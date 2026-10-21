@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import AnalysisDetailsClient from '@/components/AnalysisDetailsClient';
 import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
+import { checkProjectPermission } from '@/lib/rbac';
 
 interface AnalysisPageProps {
   params: {
@@ -37,11 +38,16 @@ export default async function AnalysisPage({ params }: AnalysisPageProps) {
     .eq('id', analysisRecord.recording_id)
     .single();
 
+  // Same edit permission as PATCH /api/analyses/[id] and the event-reviews route: owners and
+  // collaborators may review detected events; viewers only see the decisions.
+  const projectId = (recording as { project_id?: string } | null)?.project_id;
+  const canEdit = projectId ? await checkProjectPermission(projectId, user.id, 'analysis:create') : false;
+
   // Combine the data in the format expected by the client component
   const analysisWithRecording = {
     ...(analysis as Record<string, unknown>),
     recording: recording || null,
   } as any;
 
-  return <AnalysisDetailsClient analysis={analysisWithRecording} user={user as any} />;
+  return <AnalysisDetailsClient analysis={analysisWithRecording} user={user as any} canEdit={canEdit} />;
 }

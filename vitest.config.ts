@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  // tsconfig keeps JSX for Next ("preserve"); component tests need the React 17+ runtime transform.
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     globals: true,

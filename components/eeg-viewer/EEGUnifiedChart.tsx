@@ -89,6 +89,11 @@ interface EEGUnifiedChartProps {
   onDragUpdate: (x: number, time: number) => void;
   onDragEnd: (x: number, time: number) => void;
   onDragCancel: () => void;
+  /**
+   * Click on the chart outside annotate mode: the time under the pointer (seconds) and its height
+   * above the bottom of the plot area (pixels)
+   */
+  onChartClick?: (time: number, pxAboveBottom: number) => void;
 }
 
 const MAIN_COLOR = '#374151';
@@ -109,6 +114,7 @@ export default function EEGUnifiedChart({
   onDragUpdate,
   onDragEnd,
   onDragCancel,
+  onChartClick,
 }: EEGUnifiedChartProps) {
   const chartRef = useRef<ChartJS<'line'> | null>(null);
 
@@ -296,6 +302,18 @@ export default function EEGUnifiedChart({
     [isAnnotateMode, dragState.isDragging, getTimeFromEvent, onDragEnd]
   );
 
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (isAnnotateMode || !onChartClick) return;
+      const result = getTimeFromEvent(e);
+      const chart = chartRef.current;
+      if (!result || !chart) return;
+      const y = e.clientY - chart.canvas.getBoundingClientRect().top;
+      onChartClick(result.time, chart.chartArea.bottom - y);
+    },
+    [isAnnotateMode, onChartClick, getTimeFromEvent]
+  );
+
   const handleMouseLeave = useCallback(() => {
     if (dragState.isDragging) {
       onDragCancel();
@@ -316,6 +334,7 @@ export default function EEGUnifiedChart({
       onMouseMove={handleMouseMove as any}
       onMouseUp={handleMouseUp as any}
       onMouseLeave={handleMouseLeave}
+      onClick={handleClick as any}
     >
       <Line ref={chartRef} data={chartData} options={options} />
     </div>

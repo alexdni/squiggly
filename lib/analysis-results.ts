@@ -259,6 +259,70 @@ export interface SloretaTimeline {
   spectra_path?: string;
 }
 
+// Detected EEG events (artifact pipeline event detection). App-side mirrors of the engine's
+// shapes, kept JSON-safe; this file is shared with the browser, so it must not import the engine.
+
+export type EventCategory = 'artifact' | 'variant' | 'epileptiform' | 'rhythmic-periodic';
+
+/** What the cleaning did about the event in the numbers. */
+export type EventHandling =
+  | 'rejected'
+  | 'repaired'
+  | 'removed-component'
+  | 'channel-excluded'
+  | 'interpolated'
+  | 'noted';
+
+export interface DetectedEventResult {
+  /** deterministic (16 hex chars): the same event keeps its id across Re-Analyze */
+  id: string;
+  category: EventCategory;
+  /** e.g. 'eye-blink', 'muscle', 'electrode-pop' */
+  pattern: string;
+  /** seconds from recording start */
+  startSec: number;
+  endSec: number;
+  /** channel labels; [] = all channels / generalized */
+  channels: string[];
+  /** 0..1 */
+  confidence: number;
+  evidence: Record<string, number | string | boolean>;
+  handling: EventHandling;
+  /** cleaning stage or IC label, when handling is neither 'rejected' nor 'noted' */
+  handledBy?: string;
+  /** pipeline epochs the event excluded; present iff handling === 'rejected' */
+  rejects?: { scope: 'epoch' | 'channel'; firstEpoch: number; lastEpoch: number };
+  /** named after a cleaning stage's action, or found by a detector */
+  source: 'pipeline-stage' | 'detector';
+  /** the analyst dismissed it before this run */
+  dismissed?: boolean;
+}
+
+export interface EventDetectionSummary {
+  coverage: {
+    /** montage coverage tier; 'none' when no detector could run */
+    tier: 'none' | 'A' | 'B' | 'C';
+    /** per detector: whether it ran, and why not */
+    detectors: { name: string; ran: boolean; skippedReason?: string }[];
+  };
+  counts: Record<EventCategory, number>;
+  /** epochs the cleaning stages kept that detection excluded, before dismissals */
+  nRejectedEpochsAdded: number;
+  /** epochs the cleaning stages kept that detection still excludes after dismissals */
+  nRejectedEpochsNet: number;
+  retainedEpochFractionRemoved: number;
+  dismissed: {
+    applied: number;
+    unknownIds: number;
+    /** known ids whose event was not a rejection (nothing to restore) */
+    notDismissible: number;
+    epochsRestored: number;
+  };
+}
+
+/** An analyst's decision on one detected event, stored in `analyses.config.event_reviews`. */
+export type EventReviewDecision = 'confirmed' | 'dismissed';
+
 export interface AnalysisResults {
   qc_report: QcReportSummary;
   band_power: Record<Condition, BandPower | null>;
@@ -277,6 +341,10 @@ export interface AnalysisResults {
   hrv?: HrvResults;
   /** Present when the recording has the full 19-channel montage and the kernel was available */
   sloreta?: SloretaResults;
+  /** Detected EEG events; absent on analyses run before event detection was added */
+  events?: DetectedEventResult[];
+  /** Detector coverage, counts and dismissal stats; absent on analyses run before detection was added */
+  event_detection?: EventDetectionSummary;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */
   visuals?: Record<string, string>;
   processing_metadata: ProcessingMetadata;

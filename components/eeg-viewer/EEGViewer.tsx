@@ -9,7 +9,13 @@ import EEGUnifiedChart from './EEGUnifiedChart';
 import EEGToolbar from './EEGToolbar';
 import EEGTimeSlider from './EEGTimeSlider';
 import EEGAnnotationModal from './EEGAnnotationModal';
+import DetectedEventDetails from './DetectedEventDetails';
+import { bandsAt, visibleBandAnnotations } from './detectedBands';
+import { detectedLaneAt } from './annotationPlugin';
 import { DEFAULT_FILTER_SETTINGS, type FilterSettings, type RejectedEpoch, type EEGAnnotation } from './types';
+import type { DetectedEventResult } from '@/lib/analysis-results';
+import { mergeEventBands } from '@/components/visuals/detected-events/format';
+import type { EventReviewState } from '@/components/visuals/detected-events/useEventReviews';
 
 interface EEGViewerProps {
   recordingId: string;
@@ -24,7 +30,24 @@ interface EEGViewerProps {
    * prepared like the pipeline's input (defaults: 1–45 Hz, 60 Hz).
    */
   pipelineFilters?: Partial<PipelineFilterSettings>;
+  /** results.events: drawn as read-only bands, merged per pattern where they overlap */
+  detectedEvents?: DetectedEventResult[];
+  /** shared review state (same instance as the Detected Events card) */
+  eventReview?: EventReviewState;
+  /** amplitude ceiling the analysis used, for naming amplitude-ceiling events */
+  amplitudeThresholdUv?: number;
+  /** move the window to an event and open its band; a new nonce re-applies the same event */
+  focusEvent?: { eventId: string; t: number; nonce: number } | null;
 }
+
+const READ_ONLY_REVIEW: EventReviewState = {
+  reviews: {},
+  canEdit: false,
+  pending: new Set(),
+  error: null,
+  setDecision: async () => {},
+  clearError: () => {},
+};
 
 type SignalSource = 'raw' | 'cleaned';
 
@@ -38,6 +61,10 @@ export default function EEGViewer({
   cleanedFileUrl,
   cleanedFileFormat,
   pipelineFilters,
+  detectedEvents,
+  eventReview,
+  amplitudeThresholdUv,
+  focusEvent,
 }: EEGViewerProps) {
   const [showOriginal, setShowOriginal] = useState(true);
   const [source, setSource] = useState<SignalSource>('raw');
@@ -62,6 +89,30 @@ export default function EEGViewer({
   }, [channelSelection, signalData]);
   const [timeStart, setTimeStart] = useState(0);
   const [showRejectedEpochs, setShowRejectedEpochs] = useState(true);
+  const [showDetectedEvents, setShowDetectedEvents] = useState(true);
+  const [selectedBandId, setSelectedBandId] = useState<string | null>(null);
+
+  const eventBands = useMemo(() => mergeEventBands(detectedEvents ?? []), [detectedEvents]);
+  const eventsById = useMemo(
+    () => new Map((detectedEvents ?? []).map((e) => [e.id, e] as const)),
+    [detectedEvents]
+  );
+  const selectedBand = useMemo(
+    () => (selectedBandId ? eventBands.find((b) => b.id === selectedBandId) ?? null : null),
+    [eventBands, selectedBandId]
+  );
+
+  // Linked from the Detected Events card: show the event near the left of the window, open its band.
+  const windowSeconds = filterSettings.windowDurationSeconds;
+  useEffect(() => {
+    if (!focusEvent) return;
+    setShowDetectedEvents(true);
+    setTimeStart(Math.max(0, focusEvent.t - Math.min(1, windowSeconds * 0.1)));
+    const band = eventBands.find((b) => b.eventIds.includes(focusEvent.eventId));
+    setSelectedBandId(band?.id ?? null);
+    // Re-run only for a new focus request, not when the window length or bands change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEvent?.nonce]);
 
   // Auto-select all channels on load
   useEffect(() => {
@@ -183,6 +234,39 @@ export default function EEGViewer({
   const allAnnotations = useMemo<EEGAnnotation[]>(
     () => [...annotations, ...rejectedAnnotations],
     [annotations, rejectedAnnotations]
+  );
+
+  // Detected-event bands are drawn on the chart but kept out of the annotations list below
+  // (there can be hundreds); only the ones in the visible window are handed to the plugin.
+  const bandAnnotations = useMemo<EEGAnnotation[]>(
+    () =>
+      showDetectedEvents && eventBands.length > 0
+        ? visibleBandAnnotations(eventBands, timeStart, timeStart + windowSeconds, {
+            amplitudeThresholdUv,
+            selectedId: selectedBandId,
+          })
+        : [],
+    [showDetectedEvents, eventBands, timeStart, windowSeconds, amplitudeThresholdUv, selectedBandId]
+  );
+  const chartAnnotations = useMemo<EEGAnnotation[]>(
+    () => (bandAnnotations.length > 0 ? [...allAnnotations, ...bandAnnotations] : allAnnotations),
+    [allAnnotations, bandAnnotations]
+  );
+
+  // A click on the event track picks the band in that lane; elsewhere, the shortest band there.
+  const handleChartClick = useCallback(
+    (time: number, pxAboveBottom: number) => {
+      if (bandAnnotations.length === 0) return;
+      const nLanes = 1 + Math.max(...bandAnnotations.map((a) => a.lane ?? 0));
+      const lane = detectedLaneAt(pxAboveBottom, nLanes);
+      const inLane =
+        lane === null
+          ? undefined
+          : bandAnnotations.find((a) => a.lane === lane && time >= a.startTime && time <= a.endTime);
+      const hit = inLane ? inLane.id : bandsAt(eventBands, time)[0]?.id;
+      setSelectedBandId(hit ?? null);
+    },
+    [bandAnnotations, eventBands]
   );
 
   const handleFilterChange = useCallback((settings: FilterSettings) => {
@@ -319,23 +403,46 @@ export default function EEGViewer({
         />
       </div>
 
-      {/* Rejected epochs toggle */}
-      {rejectedEpochs && rejectedEpochs.length > 0 && (
-        <div className="mb-2 flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showRejectedEpochs}
-              onChange={(e) => setShowRejectedEpochs(e.target.checked)}
-              className="rounded"
-            />
-            <span className="text-gray-700">
-              Show rejected epochs
-            </span>
-          </label>
-          <span className="text-xs text-red-500">
-            ({rejectedEpochs.length} epoch{rejectedEpochs.length !== 1 ? 's' : ''} rejected)
-          </span>
+      {/* Rejected epochs / detected events toggles */}
+      {((rejectedEpochs && rejectedEpochs.length > 0) || eventBands.length > 0) && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1">
+          {rejectedEpochs && rejectedEpochs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showRejectedEpochs}
+                  onChange={(e) => setShowRejectedEpochs(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-gray-700">
+                  Show rejected epochs
+                </span>
+              </label>
+              <span className="text-xs text-red-500">
+                ({rejectedEpochs.length} epoch{rejectedEpochs.length !== 1 ? 's' : ''} rejected)
+              </span>
+            </div>
+          )}
+          {eventBands.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showDetectedEvents}
+                  onChange={(e) => {
+                    setShowDetectedEvents(e.target.checked);
+                    if (!e.target.checked) setSelectedBandId(null);
+                  }}
+                  className="rounded"
+                />
+                <span className="text-gray-700">Show detected events</span>
+              </label>
+              <span className="text-xs text-violet-700">
+                (labels only; click a band for details)
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -349,13 +456,14 @@ export default function EEGViewer({
             channelNames={signalData.channelNames}
             selectedChannels={selectedChannels}
             sensitivityMicrovolts={filterSettings.sensitivityMicrovolts}
-            annotations={allAnnotations}
+            annotations={chartAnnotations}
             dragState={dragState}
             isAnnotateMode={isAnnotateMode}
             onDragStart={startDrag}
             onDragUpdate={updateDrag}
             onDragEnd={endDrag}
             onDragCancel={cancelDrag}
+            onChartClick={handleChartClick}
           />
 
           {/* Time slider */}
@@ -370,6 +478,18 @@ export default function EEGViewer({
         <div className="bg-gray-100 rounded-lg p-8 text-center">
           <p className="text-gray-800">Select at least one channel to display</p>
         </div>
+      )}
+
+      {selectedBand && showDetectedEvents && (
+        <DetectedEventDetails
+          band={selectedBand}
+          events={selectedBand.eventIds
+            .map((id) => eventsById.get(id))
+            .filter((e): e is DetectedEventResult => Boolean(e))}
+          review={eventReview ?? READ_ONLY_REVIEW}
+          amplitudeThresholdUv={amplitudeThresholdUv}
+          onClose={() => setSelectedBandId(null)}
+        />
       )}
 
       {/* Annotation modal */}

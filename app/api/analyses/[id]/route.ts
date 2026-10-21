@@ -3,14 +3,14 @@ import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
 import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
+import { projectIdForRecording } from '@/lib/server/analysisProject';
+import { updateWithStoredConfig } from '@/lib/server/eventReviews';
 
-/** Project that owns an analysis (via its recording), or null. */
-async function projectIdForRecording(
-  db: ReturnType<typeof getDatabaseClient>,
-  recordingId: string
-): Promise<string | null> {
-  const { data } = await db.from('recordings').select('project_id').eq('id', recordingId).single();
-  return (data as { project_id?: string } | null)?.project_id ?? null;
+/** A run in progress owns the row until it finishes or goes stale (instance recycled). */
+const STALE_MS = 10 * 60 * 1000;
+function isRunning(row: { status?: unknown; started_at?: unknown }): boolean {
+  const startedAt = typeof row.started_at === 'string' ? Date.parse(row.started_at) : 0;
+  return row.status === 'processing' && Date.now() - startedAt < STALE_MS;
 }
 
 export async function GET(
@@ -106,11 +106,18 @@ export async function PATCH(
     const db = getDatabaseClient();
     const { data: existing, error: fetchError } = await db
       .from('analyses')
-      .select('id, recording_id, status, started_at')
+      .select('id, recording_id, status, started_at, config, updated_at')
       .eq('id', params.id)
       .single();
     const current = existing as
-      | { id: string; recording_id: string; status: string; started_at: string | null }
+      | {
+          id: string;
+          recording_id: string;
+          status: string;
+          started_at: string | null;
+          config: unknown;
+          updated_at?: unknown;
+        }
       | null;
     if (fetchError || !current) {
       return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
@@ -120,33 +127,53 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // A run in progress owns the row until it finishes or goes stale (instance recycled).
-    const STALE_MS = 10 * 60 * 1000;
-    const startedAt = current.started_at ? Date.parse(current.started_at) : 0;
-    if (current.status === 'processing' && Date.now() - startedAt < STALE_MS) {
+    if (isRunning(current)) {
       return NextResponse.json({ error: 'Analysis is running' }, { status: 409 });
     }
 
     const updateData: Record<string, unknown> = {};
-    if (config !== undefined) updateData.config = config;
     if (status === 'pending') {
       updateData.status = 'pending';
       updateData.error_log = null;
       updateData.started_at = null;
       updateData.completed_at = null;
     }
-    if (Object.keys(updateData).length === 0) {
+    if (config === undefined && Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
     }
 
-    const { data: analysis, error } = await db
-      .from('analyses')
-      .update(updateData)
-      .eq('id', params.id)
-      .select('*')
-      .single();
+    // Event review decisions are written only by PUT /event-reviews. Clients send back their whole
+    // (possibly stale) config when saving settings, so the stored decisions always win here: a
+    // settings save or Re-Analyze never drops or rewinds them.
+    // On a compare-and-swap miss the running check is re-applied to the re-read row, so a reset
+    // cannot land on a run /process claimed in the meantime.
+    const { row: analysis, error, conflict, refused, blocked } = await updateWithStoredConfig(
+      db,
+      params.id,
+      current,
+      (stored) => {
+        if (config === undefined) return updateData;
+        const next: Record<string, unknown> = { ...(config as Record<string, unknown>) };
+        delete next.event_reviews;
+        if (stored.event_reviews !== undefined) next.event_reviews = stored.event_reviews;
+        return { ...updateData, config: next };
+      },
+      {
+        recheckColumns: ['status', 'started_at'],
+        recheck: (row) => (isRunning(row) ? 'Analysis is running' : null),
+      }
+    );
 
-    if (error) {
+    if (refused) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 409 });
+    }
+    if (conflict) {
+      return NextResponse.json({ error: 'Analysis changed while saving; please retry' }, { status: 409 });
+    }
+    if (error || !analysis) {
       return NextResponse.json(
         { error: 'Failed to update analysis' },
         { status: 500 }

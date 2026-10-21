@@ -6,6 +6,56 @@ interface AnnotationPluginOptions {
   dragState: AnnotationDragState;
 }
 
+const DEFAULT_DETECTED_RGB = '124, 58, 237';
+const LANE_PX = 10;
+const LANE_GAP_PX = 1;
+
+/** Event-track lane under a point `px` pixels above the plot's bottom edge, or null above the track. */
+export function detectedLaneAt(px: number, nLanes: number): number | null {
+  if (px < 0) return null;
+  const lane = Math.floor(px / (LANE_PX + LANE_GAP_PX));
+  return lane < nLanes ? lane : null;
+}
+
+/**
+ * Detected-event band: a bar in its pattern's lane of the event track along the bottom of the
+ * plot, labelled inside when wide enough. Only the selected band also tints the traces, so many
+ * overlapping events do not wash out the signal or the red rejected-epoch shading.
+ */
+function drawDetectedBand(
+  ctx: CanvasRenderingContext2D,
+  annotation: EEGAnnotation,
+  left: number,
+  right: number,
+  area: { top: number; bottom: number }
+) {
+  const rgb = annotation.color || DEFAULT_DETECTED_RGB;
+  const width = Math.max(right - left, 2);
+  const lane = annotation.lane ?? 0;
+  const y = area.bottom - (lane + 1) * (LANE_PX + LANE_GAP_PX);
+  ctx.save();
+  if (annotation.highlighted) {
+    ctx.fillStyle = `rgba(${rgb}, 0.12)`;
+    ctx.fillRect(left, area.top, width, area.bottom - area.top);
+    ctx.strokeStyle = `rgba(${rgb}, 0.9)`;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(left + 0.75, area.top + 0.75, width - 1.5, area.bottom - area.top - 1.5);
+  }
+  ctx.fillStyle = `rgba(${rgb}, ${annotation.highlighted ? 0.95 : 0.6})`;
+  ctx.fillRect(left, y, width, LANE_PX);
+  const label = annotation.description;
+  if (label) {
+    ctx.font = 'bold 9px sans-serif';
+    if (ctx.measureText(label).width + 6 <= width) {
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, left + 3, y + LANE_PX / 2 + 0.5);
+    }
+  }
+  ctx.restore();
+}
+
 export const annotationPlugin: Plugin<'line'> = {
   id: 'eegAnnotations',
 
@@ -32,6 +82,11 @@ export const annotationPlugin: Plugin<'line'> = {
       const right = Math.min(Math.max(x1, x2), chartArea.right);
 
       if (right <= chartArea.left || left >= chartArea.right) continue;
+
+      if (annotation.type === 'detected') {
+        drawDetectedBand(ctx, annotation, left, right, chartArea);
+        continue;
+      }
 
       const isRejected = annotation.type === 'rejected';
 

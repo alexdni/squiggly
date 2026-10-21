@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ARTIFACT_PROFILES } from '@/lib/constants';
-import type { AnalysisResults } from '@/lib/analysis-results';
+import type { AnalysisResults, DetectedEventResult } from '@/lib/analysis-results';
 import {
   LEGACY_ICA_METHOD_LABELS,
   MAX_POLL_MS,
@@ -28,6 +28,8 @@ import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
 import PsdHeadMap from './visuals/PsdHeadMap';
+import DetectedEvents, { amplitudeThresholdOf } from './visuals/DetectedEvents';
+import { useEventReviews } from './visuals/detected-events/useEventReviews';
 import { exportPdfReport, exportVisualizationsZip, type ReportMeta } from './export/analysisExport';
 import SquigglyLogo from '@/components/SquigglyLogo';
 
@@ -84,6 +86,8 @@ interface Analysis {
 interface AnalysisDetailsClientProps {
   analysis: Analysis;
   user: { id: string; email: string };
+  /** owner or collaborator of the project (may review detected events); viewers get false */
+  canEdit?: boolean;
 }
 
 const PROCESSING_STEPS = [
@@ -97,6 +101,7 @@ const PROCESSING_STEPS = [
 export default function AnalysisDetailsClient({
   analysis: initialAnalysis,
   user,
+  canEdit = false,
 }: AnalysisDetailsClientProps) {
   const router = useRouter();
   const [analysis, setAnalysis] = useState(initialAnalysis);
@@ -113,6 +118,13 @@ export default function AnalysisDetailsClient({
   const resultsRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<{ kind: 'pdf' | 'zip'; done: number; total: number } | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const eventReview = useEventReviews(initialAnalysis.id, analysis.config?.event_reviews, canEdit);
+  const viewerRef = useRef<HTMLDivElement>(null);
+  const [focusEvent, setFocusEvent] = useState<{ eventId: string; t: number; nonce: number } | null>(null);
+  const handleSelectEvent = useCallback((event: DetectedEventResult) => {
+    setFocusEvent((prev) => ({ eventId: event.id, t: event.startSec, nonce: (prev?.nonce ?? 0) + 1 }));
+    viewerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const updateSetting = <K extends keyof ArtifactSettings>(key: K, value: ArtifactSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -497,6 +509,7 @@ export default function AnalysisDetailsClient({
         </div>
 
         {/* Raw EEG Visualization */}
+        <div ref={viewerRef} className="scroll-mt-4">
         <RawEEGViewer
           recordingId={analysis.recording.id}
           filePath={analysis.recording.file_path}
@@ -508,7 +521,12 @@ export default function AnalysisDetailsClient({
             lowpassHz: analysis.results?.processing_metadata?.config?.low_pass_hz as number | undefined,
             notchHz: analysis.results?.processing_metadata?.config?.line_freq as number | undefined,
           }}
+          detectedEvents={results?.events}
+          eventReview={eventReview}
+          amplitudeThresholdUv={amplitudeThresholdOf(results)}
+          focusEvent={focusEvent}
         />
+        </div>
 
         {/* Analysis Results or Status Message */}
         {analysis.status === 'pending' && (
@@ -968,6 +986,9 @@ export default function AnalysisDetailsClient({
               </div>
               );
             })()}
+
+            {/* Detected events (labels only), next to the QC report */}
+            <DetectedEvents results={results} review={eventReview} onSelectEvent={handleSelectEvent} />
 
             {/* Raw Band Power Values */}
             {analysis.results.band_power && (

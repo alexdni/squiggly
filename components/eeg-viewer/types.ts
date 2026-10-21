@@ -4,9 +4,17 @@ export interface EEGAnnotation {
   startTime: number;
   endTime: number;
   description: string;
-  type: 'artifact' | 'event' | 'note' | 'rejected';
+  /** 'detected': a band of automatically detected events (read-only) */
+  type: 'artifact' | 'event' | 'note' | 'rejected' | 'detected';
+  /** CSS rgb triplet "r, g, b" for 'detected' bands */
   color?: string;
   readOnly?: boolean;
+  /** 'detected' bands: ids of the merged events */
+  eventIds?: string[];
+  /** drawn with an outline (the band whose details are open) */
+  highlighted?: boolean;
+  /** 'detected' bands: row of the event track along the bottom (one per pattern on screen) */
+  lane?: number;
 }
 
 export interface FilterSettings {
