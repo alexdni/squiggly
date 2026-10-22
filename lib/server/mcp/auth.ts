@@ -7,9 +7,33 @@ import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { DatabaseClient } from '@/lib/db/types';
 import { createUserDb } from '@/lib/server/mcp/db';
 
-export const AUTH_ISSUER = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`;
+/** The Supabase Auth issuer URL; throws (rather than advertising "undefined/auth/v1") when unconfigured. */
+export function authIssuer(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set, so the OAuth issuer URL is unknown');
+  return `${url}/auth/v1`;
+}
 
 const MCP_SCOPES = ['squiggly:read'];
+
+/** A definite "this token is not valid" answer from Auth, as opposed to an outage worth logging. */
+function isAuthRejection(e: unknown): boolean {
+  const { status, name } = (e ?? {}) as { status?: unknown; name?: unknown };
+  if (typeof status === 'number' && status >= 400 && status < 500) return true;
+  return name === 'AuthInvalidJwtError' || name === 'AuthSessionMissingError';
+}
+
+/** Logs a verification failure that is not a plain rejection. Never the token. */
+function logUnexpected(step: string, e: unknown) {
+  if (isAuthRejection(e)) return;
+  const err = e as { name?: unknown; status?: unknown; message?: unknown };
+  console.error('[mcp] token verification error', {
+    step,
+    name: typeof err?.name === 'string' ? err.name : undefined,
+    status: typeof err?.status === 'number' ? err.status : undefined,
+    message: typeof err?.message === 'string' ? err.message : String(e),
+  });
+}
 
 // Returns undefined for anything that is not a valid OAuth access token, which withMcpAuth turns into a
 // 401 with a WWW-Authenticate challenge. Browser session JWTs have no client_id and are refused.
@@ -25,15 +49,32 @@ export async function verifyMcpToken(_req: Request, bearer?: string): Promise<Au
   let claims;
   try {
     const { data, error } = await supabase.auth.getClaims(bearer);
-    if (error || !data) return undefined;
+    if (error || !data) {
+      if (error) logUnexpected('claims', error);
+      return undefined;
+    }
     claims = data.claims;
-  } catch {
+  } catch (e) {
+    logUnexpected('claims', e);
     return undefined;
   }
 
   if (typeof claims.client_id !== 'string' || !claims.client_id) return undefined;
   if (claims.aud !== 'authenticated') return undefined;
   if (typeof claims.sub !== 'string' || !claims.sub) return undefined;
+
+  // getClaims checks asymmetric JWTs locally against the JWKS, so a revoked grant would still pass
+  // until exp. Asking Auth for the user checks the token's session is still live.
+  try {
+    const { data, error } = await supabase.auth.getUser(bearer);
+    if (error || data?.user?.id !== claims.sub) {
+      if (error) logUnexpected('user', error);
+      return undefined;
+    }
+  } catch (e) {
+    logUnexpected('user', e);
+    return undefined;
+  }
 
   return {
     token: bearer,

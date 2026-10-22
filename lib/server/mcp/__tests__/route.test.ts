@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const getClaims = vi.fn();
+const getUser = vi.fn();
 const mode = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://proj.supabase.co';
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon';
   return { local: false };
 });
 vi.mock('@supabase/supabase-js', () => ({
-  createClient: () => ({ auth: { getClaims } }),
+  createClient: () => ({ auth: { getClaims, getUser } }),
 }));
 vi.mock('@/lib/auth', () => ({ isLocalAuthMode: () => mode.local }));
 vi.mock('@/lib/server/mcp/db', async () => {
@@ -36,6 +37,8 @@ const validClaims = (exp = Math.floor(Date.now() / 1000) + 600) => ({
 
 beforeEach(() => {
   getClaims.mockReset();
+  getUser.mockReset();
+  getUser.mockResolvedValue({ data: { user: { id: 'owner-user-id' } }, error: null });
   mode.local = false;
   vi.spyOn(console, 'info').mockImplementation(() => {});
 });
@@ -67,6 +70,14 @@ describe('/api/mcp route', () => {
     const res = await POST(mcpPost({ authorization: 'Bearer stale' }));
     expect(res.status).toBe(401);
     expect(res.headers.get('WWW-Authenticate')).toContain('invalid_token');
+  });
+
+  it('401s a token whose grant was revoked: valid claims, but getUser fails', async () => {
+    getClaims.mockResolvedValue(validClaims());
+    getUser.mockResolvedValue({ data: { user: null }, error: Object.assign(new Error('session_not_found'), { name: 'AuthApiError', status: 403 }) });
+    const res = await POST(mcpPost({ authorization: 'Bearer revoked' }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('WWW-Authenticate')).toContain('resource_metadata=');
   });
 
   it('serves tools with a valid OAuth token', async () => {
