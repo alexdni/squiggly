@@ -1,6 +1,7 @@
 // Role-Based Access Control utilities
 import type { ProjectRole } from '@/types/database';
 import { getDatabaseClient } from '@/lib/db';
+import type { DatabaseClient } from '@/lib/db';
 
 export type Permission =
   | 'project:read'
@@ -67,9 +68,9 @@ export function getRolePermissions(role: ProjectRole): Permission[] {
  */
 export async function getUserProjectRole(
   projectId: string,
-  userId: string
+  userId: string,
+  db: DatabaseClient = getDatabaseClient()
 ): Promise<ProjectRole | null> {
-  const db = getDatabaseClient();
 
   // Check if user is the owner
   const { data: project } = await db
@@ -105,9 +106,10 @@ export async function getUserProjectRole(
 export async function checkProjectPermission(
   projectId: string,
   userId: string,
-  permission: Permission
+  permission: Permission,
+  db: DatabaseClient = getDatabaseClient()
 ): Promise<boolean> {
-  const role = await getUserProjectRole(projectId, userId);
+  const role = await getUserProjectRole(projectId, userId, db);
 
   if (!role) {
     return false;
@@ -191,9 +193,9 @@ export async function getProjectMembers(projectId: string) {
  */
 export async function canAccessRecording(
   recordingId: string,
-  userId: string
+  userId: string,
+  db: DatabaseClient = getDatabaseClient()
 ): Promise<boolean> {
-  const db = getDatabaseClient();
 
   const { data: recording } = await db
     .from('recordings')
@@ -209,7 +211,8 @@ export async function canAccessRecording(
   return await checkProjectPermission(
     recordingData.project_id,
     userId,
-    'recording:read'
+    'recording:read',
+    db
   );
 }
 
@@ -218,9 +221,9 @@ export async function canAccessRecording(
  */
 export async function canAccessAnalysis(
   analysisId: string,
-  userId: string
+  userId: string,
+  db: DatabaseClient = getDatabaseClient()
 ): Promise<boolean> {
-  const db = getDatabaseClient();
 
   // First get the analysis to find recording_id
   const { data: analysis } = await db
@@ -249,6 +252,7 @@ export async function canAccessAnalysis(
   return await checkProjectPermission(
     recordingData.project_id,
     userId,
-    'analysis:read'
+    'analysis:read',
+    db
   );
 }
