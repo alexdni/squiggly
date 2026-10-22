@@ -5,7 +5,7 @@
 import { BAND_NAMES, type BandName } from '@/lib/analysis-results';
 import { isNum, sig3 } from './num';
 import { stepDown, worse, type Confidence } from './quality';
-import type { ConditionSummary, SessionSummary } from './summary';
+import { unavailableText, type ConditionSummary, type SessionSummary, type UnavailablePart } from './summary';
 
 type Cond = 'eo' | 'ec';
 type Source = Cond | 'both';
@@ -17,13 +17,22 @@ export interface ConditionDelta {
   lzc_delta?: number;
 }
 
+interface SideOut {
+  id: string;
+  date: string;
+  conditions: Cond[];
+  quality: SessionSummary['quality'];
+  unavailable?: UnavailablePart[];
+}
+
 export interface SessionComparison {
-  a: { id: string; date: string; conditions: Cond[]; quality: SessionSummary['quality'] };
-  b: { id: string; date: string; conditions: Cond[]; quality: SessionSummary['quality'] };
+  a: SideOut;
+  b: SideOut;
   /** whole days between the session dates (absolute). B is expected to be the later session */
   days_between: number | null;
   confidence: Confidence;
   caveats: string[];
+  /** bare engine versions per side (comma-separated when a session's analyses differ) */
   engine_versions?: { a: string; b: string };
   conditions: Partial<Record<Cond, ConditionDelta>>;
   ratio_deltas: Partial<Record<Source, Record<string, number>>>;
@@ -133,10 +142,25 @@ function flatRatios(r: NonNullable<SessionSummary['ratios']>[Source]): Record<st
   };
 }
 
+/** Distinct bare versions of a side's engine stamps, sorted. */
+function versionsOf(engines: string | string[] | undefined): string[] {
+  const list = typeof engines === 'string' ? [engines] : (engines ?? []);
+  return [...new Set(list.filter(Boolean).map(bareVersion))].sort();
+}
+
+/** The unavailable part of a side that explains a missing condition, if any. */
+function unavailableFor(s: SessionSummary, c: Cond): UnavailablePart | undefined {
+  return s.unavailable?.find((u) => u.condition === c || u.condition === 'both');
+}
+
+/**
+ * `engines` are each side's engine stamps: every analysis of the session, so a mismatch between
+ * a session's own EO and EC analyses is caught as well as one across sessions.
+ */
 export function compareSessions(
   a: SessionSummary,
   b: SessionSummary,
-  engines: { a?: string; b?: string },
+  engines: { a?: string | string[]; b?: string | string[] },
 ): SessionComparison {
   const caveats: string[] = [];
   let mismatch = false;
@@ -150,9 +174,15 @@ export function compareSessions(
   if (Number.isFinite(ta) && Number.isFinite(tb) && ta > tb) caveats.push('A is more recent than B');
 
   let engine_versions: SessionComparison['engine_versions'];
-  if (engines.a && engines.b && engines.a !== engines.b) {
-    engine_versions = { a: bareVersion(engines.a), b: bareVersion(engines.b) };
-    caveats.push(`engine version differs (${engine_versions.a} vs ${engine_versions.b})`);
+  const va = versionsOf(engines.a);
+  const vb = versionsOf(engines.b);
+  for (const [side, v] of [['A', va], ['B', vb]] as const) {
+    if (v.length > 1) caveats.push(`engine version differs within ${side} (${v.join(' vs ')})`);
+  }
+  const acrossDiffer = va.length > 0 && vb.length > 0 && va.join(',') !== vb.join(',');
+  if (acrossDiffer) caveats.push(`engine version differs (${va.join(', ')} vs ${vb.join(', ')})`);
+  if (acrossDiffer || va.length > 1 || vb.length > 1) {
+    engine_versions = { a: va.join(','), b: vb.join(',') };
     mismatch = true;
   }
   if (recordingKey(a, 'montage') !== recordingKey(b, 'montage')) {
@@ -163,13 +193,29 @@ export function compareSessions(
     caveats.push('sampling rate differs');
     mismatch = true;
   }
+  const explained = new Set<UnavailablePart>();
   for (const c of ['eo', 'ec'] as const) {
     const inA = !!a.conditions[c];
     const inB = !!b.conditions[c];
     if (inA === inB) continue;
     const label = c.toUpperCase();
-    caveats.push(`${label} missing in ${inA ? 'B' : 'A'}, ${label} deltas omitted`);
+    const side = inA ? 'B' : 'A';
+    // An unavailable analysis is not missing EEG: say why, so the user can fix it
+    const u = unavailableFor(inA ? b : a, c);
+    if (u) explained.add(u);
+    caveats.push(
+      u
+        ? `${label} unavailable in ${side} (${unavailableText(u.reason)}), ${label} deltas omitted`
+        : `${label} missing in ${side}, ${label} deltas omitted`,
+    );
     mismatch = true;
+  }
+  for (const [side, s] of [['A', a], ['B', b]] as const) {
+    for (const u of s.unavailable ?? []) {
+      if (explained.has(u)) continue;
+      const label = u.condition === 'both' ? 'EO/EC' : u.condition.toUpperCase();
+      caveats.push(`${label} unavailable in ${side} (${unavailableText(u.reason)})`);
+    }
   }
 
   let confidence = worse(a.quality.confidence, b.quality.confidence);
@@ -229,7 +275,13 @@ export function compareSessions(
   if (occ !== undefined && post !== undefined) out.reactivity_delta = { occipital_alpha_change_pct: occ, posterior_alpha_change_pct: post };
   return out;
 
-  function sideOut(s: SessionSummary): SessionComparison['a'] {
-    return { id: s.session.id, date: s.session.date, conditions: condsOf(s), quality: s.quality };
+  function sideOut(s: SessionSummary): SideOut {
+    return {
+      id: s.session.id,
+      date: s.session.date,
+      conditions: condsOf(s),
+      quality: s.quality,
+      ...(s.unavailable?.length ? { unavailable: s.unavailable } : {}),
+    };
   }
 }

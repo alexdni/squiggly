@@ -7,6 +7,8 @@ import { SECRETS, makeInput, makeRecording, makeResults } from './fixtures';
 interface Opts {
   date?: string;
   conditions?: ('eo' | 'ec')[];
+  /** per-condition summary input overrides, e.g. legacy results */
+  legacy?: ('eo' | 'ec')[];
   results?: Record<string, unknown>;
   rec?: Record<string, unknown>;
 }
@@ -19,7 +21,7 @@ function make(o: Opts = {}): SessionSummary {
   const ids: Record<string, string> = {};
   for (const c of conds) {
     const rec = makeRecording({ condition_type: c.toUpperCase() as 'EO' | 'EC', created_at: date, ...o.rec });
-    parts[c] = makeInput(rec, makeResults({ conditions: [c], ...o.results }));
+    parts[c] = makeInput(rec, makeResults({ conditions: [c], ...o.results, legacy: o.legacy?.includes(c) }));
     ids[c] = rec.id;
   }
   const session: Session = { id: `sess-${date}`, recordingIds: ids, date, pairing: 'filename' };
@@ -35,6 +37,26 @@ describe('compareSessions', () => {
     expect(c.days_between).toBe(10);
     expect(c.a.conditions).toEqual(['eo', 'ec']);
     expect(c.b.conditions).toEqual(['eo']);
+  });
+
+  it('an unavailable side is carried and explained, not reported as missing', () => {
+    const c = compareSessions(make(), make({ date: '2026-10-11T10:00:00Z', legacy: ['ec'] }), {});
+    expect(c.b.unavailable).toEqual([expect.objectContaining({ condition: 'ec', reason: 'legacy' })]);
+    expect(c.a.unavailable).toBeUndefined();
+    expect(c.caveats).toContain('EC unavailable in B (older engine: Re-Analyze in Squiggly), EC deltas omitted');
+    expect(c.caveats.join(' ')).not.toMatch(/EC missing/);
+    expect(c.conditions.ec).toBeUndefined();
+    expect(c.confidence).toBe('moderate');
+  });
+
+  it('an engine mismatch inside one session is a caveat too', () => {
+    const c = compareSessions(make(), make({ date: '2026-11-01T10:00:00Z' }), { a: ['x@1', 'x@2'], b: ['x@2'] });
+    expect(c.caveats).toContain('engine version differs within A (1 vs 2)');
+    expect(c.engine_versions).toEqual({ a: '1,2', b: '2' });
+    expect(c.confidence).toBe('moderate');
+    const same = compareSessions(make(), make({ date: '2026-11-01T10:00:00Z' }), { a: ['x@2', 'x@2'], b: ['x@2'] });
+    expect(same.engine_versions).toBeUndefined();
+    expect(same.confidence).toBe('high');
   });
 
   it('engine versions differ: caveat, confidence stepped down once, bare versions', () => {

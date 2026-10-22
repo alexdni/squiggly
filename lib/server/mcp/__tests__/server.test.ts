@@ -100,6 +100,58 @@ describe('MCP server', () => {
     expect(out.interpretation_guidance).toBe(GUIDANCE_SHORT);
   });
 
+  it('compare_sessions expands a pasted compare link given as a (b omitted or equal)', async () => {
+    const w = world();
+    const { call } = mcpHarness(w.tables);
+    const link = `https://squiggly.example/projects/${PROJECT_ID}/compare?a_id=${w.old.id}&b_id=${w.eo.id}`;
+    for (const args of [{ a: link }, { a: link, b: link }]) {
+      const res = await call('compare_sessions', args);
+      expect(res.isError, res.content[0].text).toBeFalsy();
+      const out = res.structuredContent as { a: { id: string }; b: { id: string } };
+      expect(out.a.id).toBe(sessionId([w.old.id]));
+      expect(out.b.id).toBe(sessionId([w.eo.id, w.ec.id]));
+    }
+  });
+
+  it('compare_sessions without b (and no compare link) asks for two refs', async () => {
+    const w = world();
+    const { call } = mcpHarness(w.tables);
+    for (const a of [w.oldA.id, `https://squiggly.example/projects/${PROJECT_ID}/compare?a_id=${w.old.id}`]) {
+      const res = await call('compare_sessions', { a });
+      expect(res.isError).toBe(true);
+      expect(res.content[0].text).toMatch(/pass two session\/analysis refs/i);
+    }
+  });
+
+  it('compare_sessions flags an engine mismatch between the analyses of one session', async () => {
+    const w = world();
+    const ecResults = w.ecA.results as { processing_metadata: { engine: string } };
+    ecResults.processing_metadata.engine = 'hybrid-asr-ica@0.34.0';
+    const { call } = mcpHarness(w.tables);
+    const res = await call('compare_sessions', { a: w.oldA.id, b: w.ecA.id });
+    const out = res.structuredContent as { caveats: string[]; engine_versions?: { a: string; b: string } };
+    expect(out.caveats).toContain('engine version differs within B (0.33.0 vs 0.34.0)');
+    expect(out.engine_versions).toEqual({ a: '0.32.0', b: '0.33.0,0.34.0' });
+  });
+
+  it('get_session_summary lists a recording with no analysis yet and explains it', async () => {
+    const w = world();
+    const tables = { ...w.tables, analyses: w.tables.analyses.filter((a) => a !== w.ecA) };
+    const { call } = mcpHarness(tables);
+    const res = await call('get_session_summary', { ref: w.eoA.id });
+    expect(res.isError).toBeFalsy();
+    const out = res.structuredContent as { session: { recordings: { id: string; analysis: unknown }[] }; status_note?: string };
+    expect(out.session.recordings.map((r) => r.id).sort()).toEqual([w.eo.id, w.ec.id].sort());
+    expect(out.session.recordings.find((r) => r.id === w.ec.id)!.analysis).toBeNull();
+    expect(out.status_note).toMatch(/EC .*not analyzed yet/);
+  });
+
+  it('get_analysis_detail describes 1-based event pages', async () => {
+    const { rpc } = mcpHarness(world().tables);
+    const { tools } = (await rpc('tools/list')) as { tools: { name: string; description: string }[] };
+    expect(tools.find((t) => t.name === 'get_analysis_detail')!.description).toMatch(/page \(events, 1-based/);
+  });
+
   it('get_analysis_detail returns a section and rejects unknown sections', async () => {
     const w = world();
     const { call } = mcpHarness(w.tables);

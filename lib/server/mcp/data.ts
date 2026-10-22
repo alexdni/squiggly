@@ -42,6 +42,8 @@ export interface LoadedSession {
   session: Session;
   parts: Parts;
   engines: Record<Source, string | undefined>;
+  /** the session's recording rows, filenames blanked; includes recordings with no analysis */
+  recordings: RecordingRow[];
 }
 
 const notFound = () => new McpUserError('Not found');
@@ -131,7 +133,7 @@ async function loadParts(
   sessions: Session[],
   recs: RecordingRow[],
   pinned: Record<string, string> = {},
-): Promise<{ session: Session; parts: Parts; engines: Record<Source, string | undefined> }[]> {
+): Promise<LoadedSession[]> {
   const byId = new Map(recs.map((r) => [r.id, r]));
   const recIds = sessions.flatMap((s) => SOURCES.map((k) => s.recordingIds[k]).filter((x): x is string => !!x));
   const heads = await latestAnalyses(db, recIds, pinned);
@@ -147,17 +149,19 @@ async function loadParts(
   return sessions.map((session) => {
     const parts: Parts = {};
     const engines: Record<Source, string | undefined> = { eo: undefined, ec: undefined, both: undefined };
+    const recordings: RecordingRow[] = [];
     for (const k of SOURCES) {
       const rid = session.recordingIds[k];
       const head = rid ? heads.get(rid) : undefined;
       const rec = rid ? byId.get(rid) : undefined;
+      if (rec) recordings.push({ ...rec, filename: '' });
       if (!head || !rec) continue;
       const a = fullById.get(head.id);
       const results = a?.results ?? null;
       parts[k] = { analysisId: head.id, recording: { ...rec, filename: '' }, status: a?.status ?? head.status, results, config: reviewsOnly(a?.config) };
       engines[k] = engineOf(results);
     }
-    return { session, parts, engines };
+    return { session, parts, engines, recordings };
   });
 }
 
@@ -314,5 +318,5 @@ export async function loadProjectSummaries(
   const recs = await projectRecordings(db, projectId);
   const sessions = pairSessions(recs).slice(0, n);
   const loaded = await loadParts(db, sessions, recs);
-  return loaded.map((l) => buildSessionSummary(l.session, l.parts));
+  return loaded.map((l) => buildSessionSummary(l.session, l.parts, l.recordings));
 }

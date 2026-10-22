@@ -34,6 +34,23 @@ describe('buildDetail', () => {
       expect(() => buildDetail(input(), 'band_power', { channel: 'Nope' })).toThrow(/Valid channels: .*Cz/);
       expect(() => buildDetail(input({ conditions: ['eo'] }), 'band_power', { condition: 'ec' })).toThrow(/ec/);
     });
+    it('honors the band filter', () => {
+      const out = buildDetail(input(), 'band_power', { band: 'theta' }) as any;
+      expect(Object.keys(out.channels)).toHaveLength(19);
+      for (const bands of Object.values(out.channels)) expect(Object.keys(bands as object)).toEqual(['theta']);
+      expect(out.band).toBe('theta');
+      expect(() => buildDetail(input(), 'band_power', { band: 'gamma9' })).toThrow(/Valid bands: .*alpha1/);
+    });
+    it('honors the region filter, alone or with a channel', () => {
+      const out = buildDetail(input(), 'band_power', { region: 'occipital' }) as any;
+      expect(Object.keys(out.channels).sort()).toEqual(['O1', 'O2']);
+      expect(out.region).toBe('occipital');
+      expect(Object.keys(out.channels.O1)).toHaveLength(8);
+      const one = buildDetail(input(), 'band_power', { region: 'occipital', channel: 'O2', band: 'alpha1' }) as any;
+      expect(one.channels).toEqual({ O2: { alpha1: expect.any(Object) } });
+      expect(() => buildDetail(input(), 'band_power', { region: 'nowhere' })).toThrow(/Valid regions: .*frontal/);
+      expect(() => buildDetail(input(), 'band_power', { region: 'occipital', channel: 'Fz' })).toThrow(/not in the occipital region/);
+    });
   });
 
   describe('connectivity', () => {
@@ -73,19 +90,32 @@ describe('buildDetail', () => {
   });
 
   describe('events', () => {
-    it('pages 100 at a time with next_page', () => {
+    it('pages 100 at a time, 1-based, with next_page', () => {
       const events = Array.from({ length: 250 }, () => makeEvent());
       const i = input({ events });
       const p0 = buildDetail(i, 'events', {}) as any;
+      expect(p0.page).toBe(1);
       expect(p0.items).toHaveLength(100);
-      expect(p0.next_page).toBe(1);
+      expect(p0.next_page).toBe(2);
       expect(p0.total).toBe(250);
-      expect((buildDetail(i, 'events', { page: 2 }) as any).items).toHaveLength(50);
-      expect((buildDetail(i, 'events', { page: 2 }) as any).next_page).toBeNull();
+      expect(buildDetail(i, 'events', { page: 1 })).toEqual(p0);
+      const p2 = buildDetail(i, 'events', { page: 2 }) as any;
+      expect(p2.items).toHaveLength(100);
+      expect(p2.items[0].id).not.toBe(p0.items[0].id);
+      expect(p2.next_page).toBe(3);
+      expect((buildDetail(i, 'events', { page: 3 }) as any).items).toHaveLength(50);
+      expect((buildDetail(i, 'events', { page: 3 }) as any).next_page).toBeNull();
       expect(dump(p0)).not.toContain(SECRETS.evidence);
       expect(Object.keys(p0.items[0]).sort()).toEqual(
         ['category', 'channels', 'condition', 'confidence', 'end_s', 'handling', 'id', 'pattern', 'review', 'start_s'],
       );
+    });
+    it('page 1 with fewer than 100 events returns all of them', () => {
+      const events = Array.from({ length: 7 }, () => makeEvent());
+      const out = buildDetail(input({ events }), 'events', { page: 1 }) as any;
+      expect(out.items).toHaveLength(7);
+      expect(out.page).toBe(1);
+      expect(out.next_page).toBeNull();
     });
     it('applies review decisions from config', () => {
       const e = makeEvent({ category: 'epileptiform' });

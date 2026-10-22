@@ -88,18 +88,44 @@ function pickCondition(has: (c: Condition) => boolean, wanted: Condition | undef
   return c;
 }
 
+const REGION_NAMES = Object.keys(REGIONAL_CHANNELS);
+
+/** The channels a region filter allows, or an explanation when the region is unknown. */
+function regionChannels(region: string): string[] {
+  const chs = (REGIONAL_CHANNELS as Record<string, string[]>)[region];
+  if (!chs) throw new McpUserError(`Unknown region "${region}". Valid regions: ${REGION_NAMES.join(', ')}.`);
+  return chs;
+}
+
 function bandPower(results: AnalysisResults, f: DetailFilter) {
   const condition = pickCondition((c) => !!results.band_power?.[c], f.condition, 'band power');
   const bp = results.band_power[condition]!;
   const names = Object.keys(bp);
-  if (f.channel && !bp[f.channel]) throw new McpUserError(`Unknown channel "${f.channel}". Valid channels: ${names.join(', ')}.`);
-  const channels: Record<string, Record<BandName, { abs: number; rel: number }>> = {};
-  for (const ch of f.channel ? [f.channel] : names) {
-    channels[ch] = Object.fromEntries(
-      BAND_NAMES.map((b) => [b, { abs: sig3(bp[ch][b]?.absolute), rel: sig3(bp[ch][b]?.relative) }]),
-    ) as Record<BandName, { abs: number; rel: number }>;
+  if (f.band && !(BAND_NAMES as readonly string[]).includes(f.band)) {
+    throw new McpUserError(`Unknown band "${f.band}". Valid bands: ${BAND_NAMES.join(', ')}.`);
   }
-  return { condition, units: { abs: 'µV²', rel: 'fraction of 1-45 Hz total' }, channels };
+  if (f.channel && !bp[f.channel]) throw new McpUserError(`Unknown channel "${f.channel}". Valid channels: ${names.join(', ')}.`);
+  let selected = f.channel ? [f.channel] : names;
+  if (f.region) {
+    const inRegion = regionChannels(f.region);
+    if (f.channel && !inRegion.includes(f.channel)) {
+      throw new McpUserError(`Channel "${f.channel}" is not in the ${f.region} region (${inRegion.join(', ')}).`);
+    }
+    selected = selected.filter((ch) => inRegion.includes(ch));
+    if (!selected.length) throw new McpUserError(`No ${f.region} channels in this analysis. Valid channels: ${names.join(', ')}.`);
+  }
+  const bands = f.band ? [f.band as BandName] : BAND_NAMES;
+  const channels: Record<string, Partial<Record<BandName, { abs: number; rel: number }>>> = {};
+  for (const ch of selected) {
+    channels[ch] = Object.fromEntries(bands.map((b) => [b, { abs: sig3(bp[ch][b]?.absolute), rel: sig3(bp[ch][b]?.relative) }]));
+  }
+  return {
+    condition,
+    ...(f.region ? { region: f.region } : {}),
+    ...(f.band ? { band: f.band } : {}),
+    units: { abs: 'µV²', rel: 'fraction of 1-45 Hz total' },
+    channels,
+  };
 }
 
 function connectivity(results: AnalysisResults, f: DetailFilter) {
@@ -133,8 +159,7 @@ function psd(results: AnalysisResults, f: DetailFilter) {
   let target: { channel: string } | { region: string };
   let rows: number[][];
   if (f.region) {
-    const chs = (REGIONAL_CHANNELS as Record<string, string[]>)[f.region];
-    if (!chs) throw new McpUserError(`Unknown region "${f.region}". Valid regions: ${Object.keys(REGIONAL_CHANNELS).join(', ')}.`);
+    const chs = regionChannels(f.region);
     rows = chs.filter((c) => data.channels[c]).map((c) => data.channels[c]);
     if (!rows.length) throw new McpUserError(`No ${f.region} channels in this PSD. Valid channels: ${known.join(', ')}.`);
     target = { region: f.region };
@@ -143,7 +168,7 @@ function psd(results: AnalysisResults, f: DetailFilter) {
     rows = [data.channels[f.channel]];
     target = { channel: f.channel };
   } else {
-    throw new McpUserError(`Give a channel or a region. Valid channels: ${known.join(', ')}. Valid regions: ${Object.keys(REGIONAL_CHANNELS).join(', ')}.`);
+    throw new McpUserError(`Give a channel or a region. Valid channels: ${known.join(', ')}. Valid regions: ${REGION_NAMES.join(', ')}.`);
   }
 
   const bins = Array.from({ length: ANALYSIS_MAX_HZ }, (_, i) => {
@@ -162,8 +187,9 @@ function psd(results: AnalysisResults, f: DetailFilter) {
 function events(input: AnalysisInput, f: DetailFilter) {
   const source = conditionOf(input.recording).toLowerCase() as EventSource;
   const all = analysisEvents(input, source).sort(eventOrder);
-  const page = Number.isInteger(f.page) && (f.page as number) > 0 ? (f.page as number) : 0;
-  const start = page * EVENTS_PER_PAGE;
+  // 1-based: page 1 is the first EVENTS_PER_PAGE events
+  const page = Number.isInteger(f.page) && (f.page as number) >= 1 ? (f.page as number) : 1;
+  const start = (page - 1) * EVENTS_PER_PAGE;
   return {
     total: all.length,
     page,

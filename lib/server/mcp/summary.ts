@@ -72,9 +72,20 @@ export interface ConditionSummary {
   >;
 }
 
+export type UnavailableReason = 'pending' | 'processing' | 'failed' | 'legacy' | 'not_analyzed';
+
+export interface UnavailablePart {
+  /** null when the recording has no analysis at all */
+  analysisId: string | null;
+  condition: Source;
+  reason: UnavailableReason;
+}
+
 export interface SessionSummary {
   session: { id: string; date: string; pairing: Session['pairing']; recordings: RecordingMeta[] };
-  unavailable?: { analysisId: string; reason: 'pending' | 'processing' | 'failed' | 'legacy' }[];
+  unavailable?: UnavailablePart[];
+  /** what is left out and what the user can do about it; set only when something is unavailable */
+  status_note?: string;
   clinical_flags: EventOut[];
   quality: { eo?: QualityBlock; ec?: QualityBlock; confidence: Confidence };
   conditions: { eo?: ConditionSummary; ec?: ConditionSummary };
@@ -114,21 +125,55 @@ const TOP_PAIRS = 5;
 export { sig3 };
 export type { EventOut, EventReview } from './events';
 
+const REASON_TEXT: Record<UnavailableReason, string> = {
+  legacy: 'older engine: Re-Analyze in Squiggly',
+  pending: 'analysis pending: try again once it has completed',
+  processing: 'analysis processing: try again once it has completed',
+  failed: 'analysis failed: Re-Analyze in Squiggly',
+  not_analyzed: 'not analyzed yet: analyze it in Squiggly',
+};
+const SOURCE_LABEL: Record<Source, string> = { eo: 'EO', ec: 'EC', both: 'EO/EC' };
+
+/** Short, user-actionable text for why a part is unavailable. */
+export function unavailableText(reason: UnavailableReason): string {
+  return REASON_TEXT[reason];
+}
+
+function statusNote(unavailable: UnavailablePart[]): string {
+  const lines = unavailable.map((u) => `${SOURCE_LABEL[u.condition]} recording: ${REASON_TEXT[u.reason]}.`);
+  return `${lines.join(' ')} Their numbers are left out for now; the recording data is not missing.`;
+}
+
+/**
+ * `recordings` are the session's recording rows (filenames already stripped); a recording with no
+ * analysis is still listed, with analysis null.
+ */
 export function buildSessionSummary(
   session: Session,
   parts: { eo?: AnalysisInput; ec?: AnalysisInput; both?: AnalysisInput },
+  recordings: RecordingRow[] = [],
 ): SessionSummary {
-  const sources = (['eo', 'ec', 'both'] as const).filter((s) => parts[s]);
-  const unavailable: NonNullable<SessionSummary['unavailable']> = [];
+  const all = ['eo', 'ec', 'both'] as const;
+  const unavailable: UnavailablePart[] = [];
   const ready: { source: Source; input: AnalysisInput; results: AnalysisResults }[] = [];
+  const metas: RecordingMeta[] = [];
 
-  for (const source of sources) {
-    const input = parts[source]!;
+  for (const source of all) {
+    const input = parts[source];
+    if (!input) {
+      const row = recordings.find((r) => r.id === session.recordingIds[source]);
+      if (row) {
+        metas.push(recordingMetaOf(row, null));
+        unavailable.push({ analysisId: null, condition: source, reason: 'not_analyzed' });
+      }
+      continue;
+    }
+    metas.push(recordingMeta(input));
     const status = (UNAVAILABLE_STATUS as readonly string[]).includes(input.status) ? input.status : null;
     if (status || input.status !== 'completed' || !input.results) {
-      unavailable.push({ analysisId: input.analysisId, reason: (status ?? 'pending') as 'pending' });
+      unavailable.push({ analysisId: input.analysisId, condition: source, reason: (status ?? 'pending') as UnavailableReason });
     } else if (isLegacyResults(input.results)) {
-      unavailable.push({ analysisId: input.analysisId, reason: 'legacy' });
+      unavailable.push({ analysisId: input.analysisId, condition: source, reason: 'legacy' });
     } else {
       ready.push({ source, input, results: input.results });
     }
@@ -160,9 +205,9 @@ export function buildSessionSummary(
       id: session.id,
       date: session.date,
       pairing: session.pairing,
-      recordings: sources.map((s) => recordingMeta(parts[s]!)),
+      recordings: metas,
     },
-    ...(unavailable.length ? { unavailable } : {}),
+    ...(unavailable.length ? { unavailable, status_note: statusNote(unavailable) } : {}),
     clinical_flags: [],
     quality,
     conditions,

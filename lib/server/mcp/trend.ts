@@ -3,7 +3,7 @@
 
 import { isNum, sig3 } from './num';
 import type { Confidence } from './quality';
-import type { SessionSummary } from './summary';
+import { unavailableText, type SessionSummary } from './summary';
 
 export const TREND_METRICS = [
   'theta_beta_frontal',
@@ -25,6 +25,9 @@ export interface TrendPoint {
   date: string;
   value: number | null;
   confidence: Confidence;
+  /** set when the value is null because part of the session is unavailable (older engine, pending, ...) */
+  unavailable?: true;
+  reason?: string;
 }
 
 const MAX_SESSIONS = 20;
@@ -78,11 +81,14 @@ export function buildTrend(
     .slice(-n);
   return metrics.map((metric) => ({
     metric,
-    points: picked.map((s) => ({
-      session_id: s.session.id,
-      date: s.session.date,
-      value: valueOf(s, metric),
-      confidence: s.quality.confidence,
-    })),
+    points: picked.map((s) => {
+      const value = valueOf(s, metric);
+      const point: TrendPoint = { session_id: s.session.id, date: s.session.date, value, confidence: s.quality.confidence };
+      if (value === null && s.unavailable?.length) {
+        point.unavailable = true;
+        point.reason = [...new Set(s.unavailable.map((u) => unavailableText(u.reason)))].join('; ');
+      }
+      return point;
+    }),
   }));
 }

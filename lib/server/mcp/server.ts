@@ -63,8 +63,22 @@ function sessionRef(ref: string): string {
   throw new McpUserError('Not a Squiggly session, analysis or recording reference');
 }
 
-/** The engine a session's numbers came from: EC, else EO, else the combined file. */
-const engineOf = (s: LoadedSession) => s.engines.ec ?? s.engines.eo ?? s.engines.both;
+/** Every engine stamp among a session's analyses (EO, EC and combined), so mismatches inside one session show too. */
+const enginesOf = (s: LoadedSession) => Object.values(s.engines).filter((e): e is string => !!e);
+
+/**
+ * compare_sessions refs: `a` and `b`, or a pasted compare page link as `a` (with `b` omitted or the
+ * same link), which names the two recordings itself.
+ */
+function compareRefs(a: string, b: string | undefined): [string, string] {
+  const p = parseRef(a);
+  const link = p.kind === 'project' && p.extra?.a && p.extra?.b ? p.extra : null;
+  if (link && (b === undefined || !b.trim() || b.trim() === a.trim())) return [link.a!, link.b!];
+  if (b === undefined || !b.trim()) {
+    throw new McpUserError('Pass two session/analysis refs (a and b), or a pasted Squiggly compare link as a.');
+  }
+  return [a, b];
+}
 
 const text = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: message }] });
 
@@ -145,8 +159,8 @@ export function registerSquigglyTools(server: McpServer, getCtx: GetMcpCtx): voi
     },
     async ({ ref }, extra) =>
       run('get_session_summary', extra, idsOf(ref), async (c) => {
-        const { session, parts } = await loadSession(c.db, c.userId, ref);
-        return buildSessionSummary(session, parts);
+        const { session, parts, recordings } = await loadSession(c.db, c.userId, ref);
+        return buildSessionSummary(session, parts, recordings);
       }),
   );
 
@@ -156,7 +170,8 @@ export function registerSquigglyTools(server: McpServer, getCtx: GetMcpCtx): voi
       title: 'Analysis detail',
       description:
         `Drill into one analysis. \`section\`: ${DETAIL_SECTIONS.join(', ')}. ` +
-        'Optional filters: condition (eo or ec), band, channel, region, and page (events). Results are bounded: up to 200 connectivity pairs, PSD in 1 Hz bins up to 45 Hz. ' +
+        'Optional filters: condition (eo or ec); band (band_power, connectivity); channel and region (band_power, psd); page (events, 1-based, 100 per page). ' +
+        'Results are bounded: up to 200 connectivity pairs, PSD in 1 Hz bins up to 45 Hz. ' +
         `\`analysis\`: an analysis id or a pasted Squiggly analysis link. ${LINKS}`,
       inputSchema: z.object({
         analysis: z.string().describe('Analysis id or pasted Squiggly analysis link'),
@@ -182,22 +197,25 @@ export function registerSquigglyTools(server: McpServer, getCtx: GetMcpCtx): voi
       description:
         'Compare two sessions like-for-like (EO with EO, EC with EC), as B minus A; B should be the later session. ' +
         'Returns regional and channel changes, ratio and asymmetry deltas, risk-pattern flips, comparability caveats and an overall confidence. ' +
-        `\`a\`, \`b\`: session ids, analysis ids, recording ids or pasted Squiggly analysis links. ${LINKS} ` +
+        `\`a\`, \`b\`: session ids, analysis ids, recording ids or pasted Squiggly analysis links. ` +
+        'A pasted Squiggly compare page link may be given as `a` alone: it names both recordings. ' +
+        `${LINKS} ` +
         GUIDANCE_SHORT,
       inputSchema: z.object({
-        a: z.string().describe('Earlier session: id or pasted Squiggly link'),
-        b: z.string().describe('Later session: id or pasted Squiggly link'),
+        a: z.string().describe('Earlier session: id or pasted Squiggly link (or a compare page link naming both)'),
+        b: z.string().optional().describe('Later session: id or pasted Squiggly link; omit only when a is a compare page link'),
       }),
       annotations: readOnly,
     },
     async ({ a, b }, extra) =>
       run('compare_sessions', extra, idsOf(a, b), async (c) => {
-        const sa = await loadSession(c.db, c.userId, a);
-        const sb = await loadSession(c.db, c.userId, b);
+        const [refA, refB] = compareRefs(a, b);
+        const sa = await loadSession(c.db, c.userId, refA);
+        const sb = await loadSession(c.db, c.userId, refB);
         const comparison = compareSessions(
-          buildSessionSummary(sa.session, sa.parts),
-          buildSessionSummary(sb.session, sb.parts),
-          { a: engineOf(sa), b: engineOf(sb) },
+          buildSessionSummary(sa.session, sa.parts, sa.recordings),
+          buildSessionSummary(sb.session, sb.parts, sb.recordings),
+          { a: enginesOf(sa), b: enginesOf(sb) },
         );
         return { ...comparison, interpretation_guidance: GUIDANCE_SHORT };
       }),

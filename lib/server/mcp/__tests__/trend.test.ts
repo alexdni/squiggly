@@ -3,13 +3,13 @@ import { buildSessionSummary, type SessionSummary } from '@/lib/server/mcp/summa
 import { TREND_METRICS, buildTrend } from '@/lib/server/mcp/trend';
 import { makeInput, makeRecording, makeResults } from './fixtures';
 
-function make(day: number, conditions: ('eo' | 'ec')[] = ['eo', 'ec'], results: Record<string, unknown> = {}): SessionSummary {
+function make(day: number, conditions: ('eo' | 'ec')[] = ['eo', 'ec'], results: Record<string, unknown> = {}, legacy: ('eo' | 'ec')[] = []): SessionSummary {
   const date = new Date(Date.UTC(2026, 0, day, 10)).toISOString();
   const parts: Record<string, ReturnType<typeof makeInput>> = {};
   const ids: Record<string, string> = {};
   for (const c of conditions) {
     const rec = makeRecording({ condition_type: c.toUpperCase() as 'EO' | 'EC', created_at: date });
-    parts[c] = makeInput(rec, makeResults({ conditions: [c], ...results }));
+    parts[c] = makeInput(rec, makeResults({ conditions: [c], ...results, legacy: legacy.includes(c) }));
     ids[c] = rec.id;
   }
   return buildSessionSummary({ id: `s${day}`, recordingIds: ids, date, pairing: 'filename' }, parts);
@@ -36,6 +36,14 @@ describe('buildTrend', () => {
     expect(peak.points[1].value).not.toBeNull();
     expect(react.points[0].value).toBeNull();
     expect(react.points[1].value).toBe(80);
+  });
+
+  it('marks a point unavailable (with the reason) when the session part is unavailable', () => {
+    const [t] = buildTrend([make(1, ['eo', 'ec'], {}, ['ec']), make(2)], ['alpha_peak_ec'], 10);
+    expect(t.points[0]).toMatchObject({ value: null, unavailable: true });
+    expect(t.points[0].reason).toMatch(/older engine: Re-Analyze in Squiggly/);
+    expect(t.points[1].unavailable).toBeUndefined();
+    expect('reason' in t.points[1]).toBe(false);
   });
 
   it('reads ratios, FAA and rejection with confidence', () => {

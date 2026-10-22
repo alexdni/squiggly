@@ -18,6 +18,7 @@ Start from data quality
 - Moderate confidence: fewer than 20 clean epochs in a condition; spectral estimates are noisy.
 - More than 5 ICA components removed: aggressive cleaning may have removed brain signal, especially frontal slow activity and posterior alpha.
 - With low or moderate confidence, say which findings are fragile and why (e.g. "frontal theta is uncertain: Fp1/Fp2 were interpolated").
+- When a summary has a status_note (or a comparison caveat or trend point says unavailable), relay it as written, e.g. "Re-Analyze in Squiggly" or "analysis pending": the recording exists, its numbers just aren't available yet. Do not call that data missing.
 
 Patterns, not diagnoses
 - risk_patterns are heuristic screens, not diagnoses. Report them as screens that fired.

@@ -180,7 +180,8 @@ describe('buildSessionSummary', () => {
   it('a processing analysis is unavailable and its condition absent', () => {
     const { session, eo, ec } = split({}, {}, { ec: { status: 'processing' } });
     const s = buildSessionSummary(session, { eo, ec: { ...ec, results: null } });
-    expect(s.unavailable).toEqual([{ analysisId: ec.analysisId, reason: 'processing' }]);
+    expect(s.unavailable).toEqual([{ analysisId: ec.analysisId, condition: 'ec', reason: 'processing' }]);
+    expect(s.status_note).toMatch(/EC .*processing/);
     expect(s.conditions.ec).toBeUndefined();
     expect(s.quality.ec).toBeUndefined();
     expect(s.conditions.eo).toBeDefined();
@@ -191,8 +192,33 @@ describe('buildSessionSummary', () => {
   it('legacy results are unavailable with reason "legacy"', () => {
     const { session, eo, ec } = split({}, { legacy: true });
     const s = buildSessionSummary(session, { eo, ec });
-    expect(s.unavailable).toEqual([{ analysisId: ec.analysisId, reason: 'legacy' }]);
+    expect(s.unavailable).toEqual([{ analysisId: ec.analysisId, condition: 'ec', reason: 'legacy' }]);
     expect(s.conditions.ec).toBeUndefined();
+    expect(s.status_note).toMatch(/EC .*older engine.*Re-Analyze in Squiggly/);
+  });
+
+  it('a pending analysis gets a status note', () => {
+    const { session, eo, ec } = split({}, {}, { eo: { status: 'pending' } });
+    const s = buildSessionSummary(session, { eo: { ...eo, results: null }, ec });
+    expect(s.unavailable).toEqual([{ analysisId: eo.analysisId, condition: 'eo', reason: 'pending' }]);
+    expect(s.status_note).toMatch(/EO .*pending/);
+  });
+
+  it('lists a recording that has no analysis yet, with analysis null and a status note', () => {
+    const { session, eo, ec } = split();
+    const s = buildSessionSummary(session, { eo }, [eo.recording, ec.recording]);
+    expect(s.session.recordings).toHaveLength(2);
+    const missing = s.session.recordings.find((r) => r.id === ec.recording.id)!;
+    expect(missing.analysis).toBeNull();
+    expect(missing.condition).toBe('EC');
+    expect(s.unavailable).toEqual([{ analysisId: null, condition: 'ec', reason: 'not_analyzed' }]);
+    expect(s.status_note).toMatch(/EC .*not analyzed yet/);
+    expect(JSON.stringify(s)).not.toContain('Anna');
+  });
+
+  it('has no status note when everything is available', () => {
+    const { session, eo, ec } = split();
+    expect(buildSessionSummary(session, { eo, ec }, [eo.recording, ec.recording]).status_note).toBeUndefined();
   });
 
   it('31% rejection on the EC side → low confidence', () => {
@@ -269,5 +295,7 @@ describe('guidance', () => {
     expect(GUIDANCE.trimEnd().endsWith('Pattern-level interpretation from EEG features — not a diagnosis.')).toBe(true);
     expect(GUIDANCE_SHORT.length).toBeLessThanOrEqual(400);
     expect(GUIDANCE_SHORT).toContain('not a diagnosis');
+    expect(GUIDANCE).toMatch(/status_note/);
+    expect(GUIDANCE).toMatch(/Re-Analyze/);
   });
 });
