@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@divergentneuro/biofeedback-core": "0.34.0-beta.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.39.0",
@@ -24,6 +25,7 @@
     "html-to-image": "1.11.11",
     "jspdf": "4.2.1",
     "jszip": "3.10.1",
+    "mcp-handler": "2.3.0",
     "next": "^14.2.35",
     "pg": "^8.17.1",
     "react": "^18.3.0",
@@ -31,7 +33,7 @@
     "react-dom": "^18.3.0",
     "server-only": "^0.0.1",
     "three": "^0.160.1",
-    "zod": "^3.22.4"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.41.0",
