@@ -71,3 +71,4 @@ pip-delete-this-directory.txt
 *.tgz
 /vendor/
 **/biofeedback-core/
+.superpowers/
