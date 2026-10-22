@@ -1,19 +1,39 @@
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { getCurrentUser, isLocalAuthMode } from '@/lib/auth';
+import { parseAuthorizationId } from '@/lib/server/oauth-consent';
 import SquigglyLogo from '@/components/SquigglyLogo';
 
 export const dynamic = 'force-dynamic';
 
+function Unavailable() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-b from-neuro-light to-white">
+      <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 space-y-4 text-center">
+        <h1 className="text-xl font-semibold text-neuro-dark">
+          Authorization request unavailable
+        </h1>
+        <p className="text-gray-700">
+          This request is invalid or has expired. Return to the app and try
+          connecting again.
+        </p>
+      </div>
+    </main>
+  );
+}
+
 export default async function ConsentPage({
   searchParams,
 }: {
-  searchParams: { authorization_id?: string };
+  searchParams: { authorization_id?: string | string[]; error?: string | string[] };
 }) {
   if (isLocalAuthMode()) notFound();
 
-  const id = searchParams.authorization_id;
-  if (!id) notFound();
+  if (searchParams.authorization_id === undefined) notFound();
+  const id = parseAuthorizationId(searchParams.authorization_id);
+  if (!id) return <Unavailable />;
+  const decisionFailed = searchParams.error === '1';
 
   const user = await getCurrentUser();
   if (!user) {
@@ -32,23 +52,9 @@ export default async function ConsentPage({
     redirect(redirectUrl);
   }
 
-  if (error || !data) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-b from-neuro-light to-white">
-        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 space-y-4 text-center">
-          <h1 className="text-xl font-semibold text-neuro-dark">
-            Authorization request unavailable
-          </h1>
-          <p className="text-gray-700">
-            This request is invalid or has expired. Return to the app and try
-            connecting again.
-          </p>
-        </div>
-      </main>
-    );
-  }
+  if (error || !data || !('client' in data) || !data.client) return <Unavailable />;
 
-  const clientName = data.client.client_name;
+  const clientName = data.client.client_name || 'An app';
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-b from-neuro-light to-white">
@@ -60,10 +66,22 @@ export default async function ConsentPage({
         </div>
 
         <div className="bg-white shadow-lg rounded-lg p-8 space-y-6">
+          {decisionFailed && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+              Your decision could not be recorded. Try again, or return to the
+              app and start connecting again.
+            </div>
+          )}
           <p className="text-gray-800">
-            <strong>{clientName}</strong> wants read-only access to analyses in
-            projects you can access in Squiggly. It will see EEG measurements
-            only: no client details, project names or file names.
+            <strong>{clientName}</strong> is asking to connect to your Squiggly
+            account. Squiggly&apos;s connector gives it read-only tools that
+            return EEG measurements only: no client details, project names or
+            file names. The access token it receives is tied to your account;
+            revoke it anytime under{' '}
+            <Link href="/settings/connected-apps" className="text-neuro-primary hover:underline">
+              Connected apps
+            </Link>
+            .
           </p>
 
           <dl className="text-sm text-gray-700 space-y-1">

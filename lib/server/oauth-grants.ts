@@ -27,7 +27,16 @@ export async function listGrants(
   if (!headers) return { data: null, error: 'No session' };
   const res = await fetch(base(), { headers, cache: 'no-store' });
   if (!res.ok) return { data: null, error: `Failed to list grants (${res.status})` };
-  return { data: (await res.json()) as OAuthGrant[], error: null };
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    return { data: null, error: 'Failed to list grants (unreadable response)' };
+  }
+  // A bare array today; newer Auth versions may wrap it as { grants: [...] }
+  const list = Array.isArray(body) ? body : (body as { grants?: unknown } | null)?.grants;
+  if (!Array.isArray(list)) return { data: null, error: 'Failed to list grants (unexpected response)' };
+  return { data: list as OAuthGrant[], error: null };
 }
 
 export async function revokeGrant(

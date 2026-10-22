@@ -1,5 +1,18 @@
+// The OAuth consent and connected-apps pages carry Approve/Revoke controls: never let another site
+// frame them (clickjacking).
+const NO_FRAMING = [
+  { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+  { key: 'X-Frame-Options', value: 'DENY' },
+]
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return [
+      { source: '/oauth/consent', headers: NO_FRAMING },
+      { source: '/settings/connected-apps', headers: NO_FRAMING },
+    ]
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '200mb',
