@@ -39,7 +39,8 @@ export interface RecordingMeta {
   montage: string | null;
   reference: string | null;
   condition: RecCondition;
-  analysis: { id: string; status: string };
+  /** null when the recording has no analysis yet */
+  analysis: { id: string; status: string } | null;
 }
 
 export interface PairOut {
@@ -204,7 +205,10 @@ export function buildSessionSummary(
 }
 
 export function recordingMeta(input: AnalysisInput): RecordingMeta {
-  const r = input.recording;
+  return recordingMetaOf(input.recording, { id: input.analysisId, status: input.status });
+}
+
+export function recordingMetaOf(r: RecordingRow, analysis: RecordingMeta['analysis']): RecordingMeta {
   return {
     id: r.id,
     uploaded_at: r.created_at,
@@ -214,7 +218,7 @@ export function recordingMeta(input: AnalysisInput): RecordingMeta {
     montage: typeof r.montage === 'string' ? r.montage : null,
     reference: typeof r.reference === 'string' ? r.reference : null,
     condition: conditionOf(r),
-    analysis: { id: input.analysisId, status: input.status },
+    analysis,
   };
 }
 

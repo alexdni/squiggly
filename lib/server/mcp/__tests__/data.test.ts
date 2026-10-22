@@ -1,20 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { DatabaseClient, QueryResult } from '@/lib/db/types';
 import { McpUserError } from '@/lib/server/mcp/errors';
 import { listProjects, listSessions, loadAnalysis, loadProjectSummaries, loadSession } from '@/lib/server/mcp/data';
 import { sessionId } from '@/lib/server/mcp/ids';
-import { PROJECT_ID, SECRETS, makeAnalysisRow, makeProject, makeRecording, makeResults } from './fixtures';
+import { buildSessionSummary } from '@/lib/server/mcp/summary';
+import { PROJECT_ID, SECRETS, makeAnalysisRow, makeEvent, makeProject, makeRecording, makeResults } from './fixtures';
 
 type Row = Record<string, unknown>;
 
 /** In-memory db: projects each select's column list (so unselected columns never leak) and records every select. */
 function fakeDb(tables: Record<string, object[]>) {
-  const selects: { table: string; columns: string }[] = [];
+  const selects: { table: string; columns: string; limit?: number }[] = [];
+  const errors: Record<string, Error> = {};
   const db = {
     from(table: string) {
       return {
         select(columns = '*') {
-          selects.push({ table, columns });
+          const rec: { table: string; columns: string; limit?: number } = { table, columns };
+          selects.push(rec);
           let out = [...(tables[table] ?? [])] as Row[];
           const b = {
             eq: (c: string, v: unknown) => ((out = out.filter((r) => r[c] === v)), b),
@@ -24,11 +27,13 @@ function fakeDb(tables: Record<string, object[]>) {
               out.sort((x, y) => dir * (Date.parse(String(x[c])) - Date.parse(String(y[c]))));
               return b;
             },
-            limit: (n: number) => ((out = out.slice(0, n)), b),
+            limit: (n: number) => ((rec.limit = n), (out = out.slice(0, n)), b),
             async single(): Promise<QueryResult> {
+              if (errors[table]) return { data: null, error: errors[table] };
               return out.length === 1 ? { data: project(out[0]), error: null } : { data: null, error: new Error('no row') };
             },
             async execute(): Promise<QueryResult<Row[]> > {
+              if (errors[table]) return { data: null, error: errors[table] };
               return { data: out.map(project) as never, error: null };
             },
           };
@@ -39,7 +44,7 @@ function fakeDb(tables: Record<string, object[]>) {
       };
     },
   } as unknown as DatabaseClient;
-  return { db, selects };
+  return { db, selects, errors };
 }
 
 const OWNER = 'owner-user-id';
@@ -124,7 +129,7 @@ describe('data loaders', () => {
     const out = await listSessions(db, OWNER, PROJECT_ID);
     expect(out.truncated).toBe(true);
     expect(out.sessions).toHaveLength(100);
-    expect(out.sessions[0].recordings[0].analysis.status).toBe('pending');
+    expect(out.sessions[0].recordings[0].analysis?.status).toBe('pending');
     expect(JSON.stringify(out)).not.toMatch(/r\d+\.edf/);
   });
 
@@ -179,5 +184,68 @@ describe('data loaders', () => {
       return f.selects;
     })();
     expect(list.some((s) => /results/.test(s.columns))).toBe(false);
+  });
+
+  it('passes only event_reviews from the stored config, so review decisions reach the summary', async () => {
+    const w = world();
+    const ev = makeEvent({ category: 'epileptiform', pattern: 'spike-wave', channels: ['T7'], handling: 'noted' });
+    const gone = makeEvent({ category: 'epileptiform', pattern: 'sharp', channels: ['F3'], handling: 'noted' });
+    const results = makeResults({ conditions: ['eo'], events: [ev, gone] });
+    const eoA = makeAnalysisRow(w.eo, results, { config: { secret: SECRETS.configSecret, event_reviews: { [ev.id]: 'confirmed', [gone.id]: 'dismissed' } } });
+    const { db } = fakeDb({ ...w.tables, analyses: [eoA, w.ecA] });
+    const a = await loadAnalysis(db, OWNER, eoA.id);
+    expect(a.config).toEqual({ event_reviews: { [ev.id]: 'confirmed', [gone.id]: 'dismissed' } });
+    const { session, parts } = await loadSession(db, OWNER, eoA.id);
+    const s = buildSessionSummary(session, parts);
+    expect(s.clinical_flags.map((f) => [f.id, f.review])).toEqual([[ev.id, 'confirmed']]);
+    expect(JSON.stringify(parts.eo?.config)).not.toContain(SECRETS.configSecret);
+    const [sum] = await loadProjectSummaries(db, OWNER, PROJECT_ID, 1);
+    expect(sum.clinical_flags.map((f) => f.review)).toEqual(['confirmed']);
+  });
+
+  it('uses explicit limits and flags truncation when the row cap is hit', async () => {
+    const recs = Array.from({ length: 1000 }, (_, i) =>
+      makeRecording({ condition_type: 'BOTH', filename: `r${i}.edf`, created_at: new Date(Date.UTC(2026, 0, 1) + i * 3600e3).toISOString() }),
+    );
+    const f = fakeDb({ projects: [makeProject()], project_members: [], recordings: recs, analyses: [] });
+    const out = await listSessions(f.db, OWNER, PROJECT_ID);
+    expect(out.truncated).toBe(true);
+    const few = fakeDb({ projects: [makeProject()], project_members: [], recordings: recs.slice(0, 999), analyses: [] });
+    expect((await listSessions(few.db, OWNER, PROJECT_ID)).truncated).toBe(true); // 999 sessions > 100
+    const tiny = fakeDb({ projects: [makeProject()], project_members: [], recordings: recs.slice(0, 3), analyses: [] });
+    expect((await listSessions(tiny.db, OWNER, PROJECT_ID)).truncated).toBe(false);
+    for (const t of [f, few, tiny]) {
+      expect(t.selects.filter((s) => ['recordings', 'analyses'].includes(s.table) && !/^id, recording_id, status, results$/.test(s.columns)).every((s) => s.limit === 1000)).toBe(true);
+    }
+  });
+
+  it('listProjects marks counts_approximate when the recordings cap is hit', async () => {
+    const recs = Array.from({ length: 1000 }, (_, i) =>
+      makeRecording({ condition_type: 'BOTH', created_at: new Date(Date.UTC(2026, 0, 1) + i * 3600e3).toISOString() }),
+    );
+    const f = fakeDb({ projects: [makeProject()], project_members: [], recordings: recs, analyses: [] });
+    const [p] = await listProjects(f.db, OWNER);
+    expect(p.recording_count).toBe(1000);
+    expect(p.counts_approximate).toBe(true);
+    expect(f.selects.filter((s) => s.table === 'recordings').every((s) => s.limit === 1000)).toBe(true);
+    const w = world();
+    expect((await listProjects(fakeDb(w.tables).db, OWNER))[0]).not.toHaveProperty('counts_approximate');
+  });
+
+  it('db errors still read as Not found but are logged server-side without row data', async () => {
+    const w = world();
+    const f = fakeDb(w.tables);
+    f.errors.recordings = new Error('boom');
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await notFound(listSessions(f.db, OWNER, PROJECT_ID))).toBe('Not found');
+    expect(spy).toHaveBeenCalledWith('[mcp] db error', { table: 'recordings', message: 'boom' });
+    spy.mockRestore();
+  });
+
+  it('a recording without an analysis has analysis: null', async () => {
+    const w = world();
+    const { db } = fakeDb({ ...w.tables, analyses: [] });
+    const out = await listSessions(db, OWNER, PROJECT_ID);
+    expect(out.sessions[0].recordings.every((r) => r.analysis === null)).toBe(true);
   });
 });

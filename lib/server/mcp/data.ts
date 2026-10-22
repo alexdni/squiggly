@@ -9,13 +9,16 @@ import type { AnalysisResults } from '@/lib/analysis-results';
 import { McpUserError } from './errors';
 import { UUID_RE, decodeSessionId, parseRef } from './ids';
 import { pairSessions, type RecordingRow, type Session } from './sessions';
-import { buildSessionSummary, recordingMeta, type AnalysisInput, type RecordingMeta, type SessionSummary } from './summary';
+import { buildSessionSummary, recordingMetaOf, type AnalysisInput, type RecordingMeta, type SessionSummary } from './summary';
 
 type Source = 'eo' | 'ec' | 'both';
 type Parts = { eo?: AnalysisInput; ec?: AnalysisInput; both?: AnalysisInput };
 
 export const MAX_SESSIONS = 100;
 const MAX_TREND = 20;
+/** PostgREST silently clips at 1000 rows, so every list query asks for exactly that and checks for it. */
+const ROW_CAP = 1000;
+const ID_CHUNK = 50;
 
 const RECORDING_COLS =
   'id, project_id, filename, condition_type, created_at, duration_seconds, sampling_rate, n_channels, montage, reference, eo_start, eo_end, ec_start, ec_end';
@@ -27,6 +30,8 @@ export interface ProjectListItem {
   recording_count: number;
   first_upload: string | null;
   last_upload: string | null;
+  /** true when the project has at least the row cap of recordings, so count and first_upload are lower bounds */
+  counts_approximate?: boolean;
 }
 
 export interface SessionWithRecordings extends Session {
@@ -41,25 +46,37 @@ export interface LoadedSession {
 
 const notFound = () => new McpUserError('Not found');
 
-async function rows<T>(q: Promise<{ data: unknown; error: Error | null }>): Promise<T[]> {
+/** Callers see 'Not found'; the real error is logged server-side (no tokens, no row contents). */
+function dbFailure(table: string, error: Error): McpUserError {
+  console.error('[mcp] db error', { table, message: error.message });
+  return notFound();
+}
+
+async function rows<T>(table: string, q: Promise<{ data: unknown; error: Error | null }>): Promise<T[]> {
   const { data, error } = await q;
-  if (error) throw notFound();
+  if (error) throw dbFailure(table, error);
   return (data ?? []) as T[];
 }
 
-async function one<T>(q: Promise<{ data: unknown; error: Error | null }>): Promise<T | null> {
+async function one<T>(table: string, q: Promise<{ data: unknown; error: Error | null }>): Promise<T | null> {
   const { data, error } = await q;
-  if (error || !data) return null;
+  if (error) {
+    // .single() reports a missing row as an error too; only log genuine failures
+    if (!/no rows|0 rows|no row|multiple/i.test(error.message)) console.error('[mcp] db error', { table, message: error.message });
+    return null;
+  }
+  if (!data) return null;
   return (Array.isArray(data) ? data[0] ?? null : data) as T | null;
 }
 
-async function require_(db: DatabaseClient, userId: string, projectId: string, permission: Permission): Promise<void> {
+async function assertPermission(db: DatabaseClient, userId: string, projectId: string, permission: Permission): Promise<void> {
   if (!(await checkProjectPermission(projectId, userId, permission, db))) throw notFound();
 }
 
 async function projectRecordings(db: DatabaseClient, projectId: string): Promise<RecordingRow[]> {
   return rows<RecordingRow>(
-    db.from('recordings').select(RECORDING_COLS).eq('project_id', projectId).order('created_at', { ascending: false }).execute(),
+    'recordings',
+    db.from('recordings').select(RECORDING_COLS).eq('project_id', projectId).order('created_at', { ascending: false }).limit(ROW_CAP).execute(),
   );
 }
 
@@ -77,11 +94,20 @@ async function latestAnalyses(
 ): Promise<Map<string, AnalysisHead>> {
   const out = new Map<string, AnalysisHead>();
   if (!recordingIds.length) return out;
-  const heads = await rows<AnalysisHead>(
-    db.from('analyses').select('id, recording_id, status, created_at').in('recording_id', recordingIds).order('created_at', { ascending: false }).execute(),
-  );
-  for (const h of heads) {
-    if (pinned[h.recording_id] ? h.id === pinned[h.recording_id] : !out.has(h.recording_id)) out.set(h.recording_id, h);
+  for (let i = 0; i < recordingIds.length; i += ID_CHUNK) {
+    const heads = await rows<AnalysisHead>(
+      'analyses',
+      db
+        .from('analyses')
+        .select('id, recording_id, status, created_at')
+        .in('recording_id', recordingIds.slice(i, i + ID_CHUNK))
+        .order('created_at', { ascending: false })
+        .limit(ROW_CAP)
+        .execute(),
+    );
+    for (const h of heads) {
+      if (pinned[h.recording_id] ? h.id === pinned[h.recording_id] : !out.has(h.recording_id)) out.set(h.recording_id, h);
+    }
   }
   return out;
 }
@@ -90,6 +116,12 @@ const engineOf = (results: AnalysisResults | null): string | undefined => {
   const e = (results?.processing_metadata as { engine?: unknown } | undefined)?.engine;
   return typeof e === 'string' ? e : undefined;
 };
+
+/** Only the stored event review decisions are carried; the rest of config stays server-side. */
+function reviewsOnly(config: unknown): { event_reviews: unknown } | null {
+  const reviews = config && typeof config === 'object' ? (config as { event_reviews?: unknown }).event_reviews : undefined;
+  return reviews === undefined ? null : { event_reviews: reviews };
+}
 
 const SOURCES: Source[] = ['eo', 'ec', 'both'];
 
@@ -105,8 +137,9 @@ async function loadParts(
   const heads = await latestAnalyses(db, recIds, pinned);
   const chosen = [...heads.values()].map((h) => h.id);
   const full = chosen.length
-    ? await rows<AnalysisHead & { results: AnalysisResults | null }>(
-        db.from('analyses').select('id, recording_id, status, results').in('id', chosen).execute(),
+    ? await rows<AnalysisHead & { results: AnalysisResults | null; config: unknown }>(
+        'analyses',
+        db.from('analyses').select('id, recording_id, status, results, config').in('id', chosen).limit(ROW_CAP).execute(),
       )
     : [];
   const fullById = new Map(full.map((a) => [a.id, a]));
@@ -121,7 +154,7 @@ async function loadParts(
       if (!head || !rec) continue;
       const a = fullById.get(head.id);
       const results = a?.results ?? null;
-      parts[k] = { analysisId: head.id, recording: { ...rec, filename: '' }, status: a?.status ?? head.status, results, config: null };
+      parts[k] = { analysisId: head.id, recording: { ...rec, filename: '' }, status: a?.status ?? head.status, results, config: reviewsOnly(a?.config) };
       engines[k] = engineOf(results);
     }
     return { session, parts, engines };
@@ -129,8 +162,9 @@ async function loadParts(
 }
 
 export async function listProjects(db: DatabaseClient, userId: string): Promise<ProjectListItem[]> {
-  const owned = await rows<{ id: string }>(db.from('projects').select('id').eq('owner_id', userId).execute());
+  const owned = await rows<{ id: string }>('projects', db.from('projects').select('id').eq('owner_id', userId).execute());
   const memberships = await rows<{ project_id: string; role: string }>(
+    'project_members',
     db.from('project_members').select('project_id, role').eq('user_id', userId).execute(),
   );
   const roles = new Map<string, string>();
@@ -139,18 +173,20 @@ export async function listProjects(db: DatabaseClient, userId: string): Promise<
   const ids = [...roles.keys()];
   if (!ids.length) return [];
 
-  const recs = await rows<{ project_id: string; created_at: string }>(
-    db.from('recordings').select('project_id, created_at').in('project_id', ids).execute(),
-  );
-  const stats = new Map<string, { n: number; first: string; last: string }>();
-  for (const r of recs) {
-    const s = stats.get(r.project_id);
-    if (!s) stats.set(r.project_id, { n: 1, first: r.created_at, last: r.created_at });
-    else {
-      s.n += 1;
-      if (Date.parse(r.created_at) < Date.parse(s.first)) s.first = r.created_at;
-      if (Date.parse(r.created_at) > Date.parse(s.last)) s.last = r.created_at;
-    }
+  // One capped query per project so a busy project cannot starve the others' counts
+  const stats = new Map<string, { n: number; first: string; last: string; approx: boolean }>();
+  for (const id of ids) {
+    const recs = await rows<{ created_at: string }>(
+      'recordings',
+      db.from('recordings').select('created_at').eq('project_id', id).order('created_at', { ascending: false }).limit(ROW_CAP).execute(),
+    );
+    if (!recs.length) continue;
+    stats.set(id, {
+      n: recs.length,
+      last: recs[0].created_at,
+      first: recs[recs.length - 1].created_at,
+      approx: recs.length >= ROW_CAP,
+    });
   }
 
   return ids
@@ -161,6 +197,7 @@ export async function listProjects(db: DatabaseClient, userId: string): Promise<
       recording_count: stats.get(id)?.n ?? 0,
       first_upload: stats.get(id)?.first ?? null,
       last_upload: stats.get(id)?.last ?? null,
+      ...(stats.get(id)?.approx ? { counts_approximate: true } : {}),
     }))
     .sort((a, b) => Date.parse(b.last_upload ?? '') - Date.parse(a.last_upload ?? '') || 0);
 }
@@ -171,10 +208,10 @@ export async function listSessions(
   projectId: string,
 ): Promise<{ sessions: SessionWithRecordings[]; truncated: boolean }> {
   if (!UUID_RE.test(projectId)) throw notFound();
-  await require_(db, userId, projectId, 'project:read');
+  await assertPermission(db, userId, projectId, 'project:read');
   const recs = await projectRecordings(db, projectId);
   const all = pairSessions(recs);
-  const truncated = all.length > MAX_SESSIONS;
+  const truncated = all.length > MAX_SESSIONS || recs.length >= ROW_CAP;
   const sessions = all.slice(0, MAX_SESSIONS);
 
   const byId = new Map(recs.map((r) => [r.id, r]));
@@ -188,13 +225,7 @@ export async function listSessions(
         .filter((x): x is string => !!x)
         .map((rid) => {
           const head = heads.get(rid);
-          return recordingMeta({
-            analysisId: head?.id ?? '',
-            recording: { ...byId.get(rid)!, filename: '' },
-            status: head?.status ?? 'none',
-            results: null,
-            config: null,
-          });
+          return recordingMetaOf(byId.get(rid)!, head ? { id: head.id, status: head.status } : null);
         }),
     })),
     truncated,
@@ -203,14 +234,14 @@ export async function listSessions(
 
 /** Resolves an analysis id to the pieces needed for auth and pairing. */
 async function analysisContext(db: DatabaseClient, id: string) {
-  const a = await one<AnalysisHead>(db.from('analyses').select('id, recording_id, status').eq('id', id).single());
+  const a = await one<AnalysisHead>('analyses', db.from('analyses').select('id, recording_id, status').eq('id', id).single());
   if (!a) return null;
   const rec = await recordingById(db, a.recording_id);
   return rec ? { analysis: a, recording: rec } : null;
 }
 
 async function recordingById(db: DatabaseClient, id: string): Promise<RecordingRow | null> {
-  return one<RecordingRow>(db.from('recordings').select(RECORDING_COLS).eq('id', id).single());
+  return one<RecordingRow>('recordings', db.from('recordings').select(RECORDING_COLS).eq('id', id).single());
 }
 
 export async function loadSession(db: DatabaseClient, userId: string, ref: string): Promise<LoadedSession> {
@@ -240,7 +271,7 @@ export async function loadSession(db: DatabaseClient, userId: string, ref: strin
   }
   if (!recording) throw notFound();
 
-  await require_(db, userId, recording.project_id, 'analysis:read');
+  await assertPermission(db, userId, recording.project_id, 'analysis:read');
   const recs = await projectRecordings(db, recording.project_id);
   const session = pairSessions(recs).find((s) =>
     sessionIdWanted ? s.id === sessionIdWanted : Object.values(s.recordingIds).includes(recording!.id),
@@ -257,9 +288,9 @@ export async function loadAnalysis(db: DatabaseClient, userId: string, analysisR
   if ((parsed.kind !== 'analysis' && parsed.kind !== 'unknown') || !UUID_RE.test(parsed.id)) throw notFound();
   const ctx = await analysisContext(db, parsed.id);
   if (!ctx) throw notFound();
-  await require_(db, userId, ctx.recording.project_id, 'analysis:read');
-  const full = await one<AnalysisHead & { results: AnalysisResults | null }>(
-    db.from('analyses').select('id, recording_id, status, results').eq('id', ctx.analysis.id).single(),
+  await assertPermission(db, userId, ctx.recording.project_id, 'analysis:read');
+  const full = await one<AnalysisHead & { results: AnalysisResults | null; config: unknown }>('analyses', 
+    db.from('analyses').select('id, recording_id, status, results, config').eq('id', ctx.analysis.id).single(),
   );
   if (!full) throw notFound();
   return {
@@ -267,7 +298,7 @@ export async function loadAnalysis(db: DatabaseClient, userId: string, analysisR
     recording: { ...ctx.recording, filename: '' },
     status: full.status,
     results: full.results ?? null,
-    config: null,
+    config: reviewsOnly(full.config),
   };
 }
 
@@ -278,7 +309,7 @@ export async function loadProjectSummaries(
   lastN: number,
 ): Promise<SessionSummary[]> {
   if (!UUID_RE.test(projectId)) throw notFound();
-  await require_(db, userId, projectId, 'analysis:read');
+  await assertPermission(db, userId, projectId, 'analysis:read');
   const n = Math.min(MAX_TREND, Math.max(1, Math.floor(Number.isFinite(lastN) ? lastN : MAX_TREND)));
   const recs = await projectRecordings(db, projectId);
   const sessions = pairSessions(recs).slice(0, n);

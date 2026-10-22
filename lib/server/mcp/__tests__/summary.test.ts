@@ -185,7 +185,7 @@ describe('buildSessionSummary', () => {
     expect(s.quality.ec).toBeUndefined();
     expect(s.conditions.eo).toBeDefined();
     expect(s.eo_ec_reactivity).toBeUndefined();
-    expect(s.session.recordings.find((r) => r.analysis.id === ec.analysisId)?.analysis.status).toBe('processing');
+    expect(s.session.recordings.find((r) => r.analysis?.id === ec.analysisId)?.analysis?.status).toBe('processing');
   });
 
   it('legacy results are unavailable with reason "legacy"', () => {
