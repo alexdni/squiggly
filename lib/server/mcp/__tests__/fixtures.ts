@@ -121,6 +121,16 @@ export interface ResultsOptions {
   hrv?: boolean;
   sloreta?: boolean;
   legacy?: boolean;
+  /** processing_metadata.engine; default 'hybrid-asr-ica@0.33.0' */
+  engine?: string;
+  /** risk_patterns overrides, merged over the default (adhd_like only) */
+  risk?: Partial<Record<'adhd_like' | 'anxiety_like' | 'depression_like' | 'sleep_dysregulation' | 'hyper_arousal', boolean>>;
+  /** asymmetry values; default frontal_alpha -0.123456, parietal_alpha 0.054321, frontal_theta 0.011111 */
+  asymmetry?: Record<string, number>;
+  /** theta/beta ratio overrides */
+  thetaBeta?: { frontal_avg?: number; central_avg?: number };
+  /** multiplies absolute power (all bands) of the named channels */
+  channelScale?: Record<string, number>;
 }
 
 const REGION_OF: Record<string, 'occipital' | 'parietal' | 'other'> = {
@@ -132,14 +142,19 @@ const REGION_OF: Record<string, 'occipital' | 'parietal' | 'other'> = {
  * Band power: absolute = (bandIndex + 1) * (1 + 0.1 * channelIndex), with EC alpha1/alpha2
  * multiplied by the region's gain. Relative = absolute / sum over bands for that channel.
  */
-export function makeBandPower(cond: Condition, gain: { occipital: number; parietal: number }): BandPower {
+export function makeBandPower(
+  cond: Condition,
+  gain: { occipital: number; parietal: number },
+  channelScale: Record<string, number> = {},
+): BandPower {
   const bp: BandPower = {};
   CHANNELS_1020.forEach((ch, i) => {
     const abs = BAND_NAMES.map((b, k) => {
       const base = (k + 1) * (1 + 0.1 * i);
       const region = REGION_OF[ch] ?? 'other';
       const isAlpha = b === 'alpha1' || b === 'alpha2';
-      return cond === 'ec' && isAlpha && region !== 'other' ? base * gain[region] : base;
+      const scaled = base * (channelScale[ch] ?? 1);
+      return cond === 'ec' && isAlpha && region !== 'other' ? scaled * gain[region] : scaled;
     });
     const total = abs.reduce((a, v) => a + v, 0);
     bp[ch] = Object.fromEntries(
@@ -307,21 +322,21 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
   const per = <T,>(make: (c: Condition) => T) => ({ eo: has('eo') ? make('eo') : null, ec: has('ec') ? make('ec') : null });
   const results: AnalysisResults = {
     qc_report: qc,
-    band_power: per((c) => makeBandPower(c, gain)),
+    band_power: per((c) => makeBandPower(c, gain, opts.channelScale)),
     connectivity: per((c) => makeConnectivity(c, opts.connectivityPairs)),
     lzc: per(makeLzc),
     alpha_peak: per(makeAlphaPeak),
     band_ratios: {
-      theta_beta_ratio: { frontal_avg: 2.71828, central_avg: 2.12345 },
+      theta_beta_ratio: { frontal_avg: opts.thetaBeta?.frontal_avg ?? 2.71828, central_avg: opts.thetaBeta?.central_avg ?? 2.12345 },
       alpha_theta_ratio: { occipital_avg: 1.61803, parietal_avg: 1.41421 },
     },
-    asymmetry: { frontal_alpha: -0.123456, parietal_alpha: 0.054321, frontal_theta: 0.011111 },
-    risk_patterns: { adhd_like: true, anxiety_like: false, depression_like: false, sleep_dysregulation: false, hyper_arousal: false },
+    asymmetry: opts.asymmetry ?? { frontal_alpha: -0.123456, parietal_alpha: 0.054321, frontal_theta: 0.011111 },
+    risk_patterns: { adhd_like: true, anxiety_like: false, depression_like: false, sleep_dysregulation: false, hyper_arousal: false, ...opts.risk },
     rejected_epochs: [{ start: 20, end: 22, reason: 'amplitude', condition: conditions[0] }],
     psd: per(() => makePsd(opts.psdStepHz)),
     visuals: {},
     processing_metadata: {
-      engine: 'hybrid-asr-ica@0.33.0',
+      engine: opts.engine ?? 'hybrid-asr-ica@0.33.0',
       config: { secret: SECRETS.configSecret },
       processing_time_seconds: 12.5,
     },
