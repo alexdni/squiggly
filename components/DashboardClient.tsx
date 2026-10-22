@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import SquigglyLogo from '@/components/SquigglyLogo';
 
@@ -58,6 +59,14 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               <div className="text-sm text-gray-800">
                 {user.email}
               </div>
+              {process.env.NEXT_PUBLIC_AUTH_MODE !== 'local' && (
+                <Link
+                  href="/settings/connected-apps"
+                  className="text-sm text-neuro-primary hover:underline"
+                >
+                  Connected apps
+                </Link>
+              )}
               <button
                 onClick={handleSignOut}
                 className="bg-neuro-primary text-white px-4 py-2 rounded-lg hover:bg-neuro-accent transition-colors"

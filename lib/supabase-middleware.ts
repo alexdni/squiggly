@@ -2,6 +2,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/types/database';
+import { safeRedirect } from '@/lib/safe-redirect';
 
 // Check if we're in local auth mode
 function isLocalAuthMode(): boolean {
@@ -58,9 +59,12 @@ async function updateSessionLocal(request: NextRequest) {
       request.nextUrl.pathname === '/signup') &&
     isAuthenticated
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+    // Honor the login return path (e.g. back to the OAuth consent page)
+    const target = new URL(
+      safeRedirect(request.nextUrl.searchParams.get('redirect')),
+      request.url
+    );
+    return NextResponse.redirect(target);
   }
 
   return supabaseResponse;
@@ -119,9 +123,12 @@ async function updateSessionSupabase(request: NextRequest) {
       request.nextUrl.pathname === '/signup') &&
     user
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+    // Honor the login return path (e.g. back to the OAuth consent page)
+    const target = new URL(
+      safeRedirect(request.nextUrl.searchParams.get('redirect')),
+      request.url
+    );
+    return NextResponse.redirect(target);
   }
 
   return supabaseResponse;

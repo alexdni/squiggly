@@ -1,9 +1,10 @@
 'use client';
 
 import { createClient } from '@/lib/supabase-client';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 import SquigglyLogo from '@/components/SquigglyLogo';
+import { safeRedirect } from '@/lib/safe-redirect';
 
 // Force dynamic rendering (don't pre-render at build time)
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,7 @@ const isLocalAuthMode = () => {
 
 function LocalLoginForm() {
   const router = useRouter();
+  const redirectTo = safeRedirect(useSearchParams().get('redirect'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -41,8 +43,8 @@ function LocalLoginForm() {
         return;
       }
 
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // Redirect to the return path (dashboard by default)
+      router.push(redirectTo);
       router.refresh();
     } catch (err) {
       setError('An unexpected error occurred');
@@ -108,6 +110,7 @@ function LocalLoginForm() {
 }
 
 function GoogleLoginForm() {
+  const redirectTo = safeRedirect(useSearchParams().get('redirect'));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -120,7 +123,7 @@ function GoogleLoginForm() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectTo)}`,
         },
       });
 
@@ -192,7 +195,9 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white shadow-lg rounded-lg p-8 space-y-6">
-          {localAuth ? <LocalLoginForm /> : <GoogleLoginForm />}
+          <Suspense fallback={null}>
+            {localAuth ? <LocalLoginForm /> : <GoogleLoginForm />}
+          </Suspense>
 
           <div className="text-center text-sm text-gray-700 mt-6">
             <p className="font-semibold text-neuro-danger mb-2">
