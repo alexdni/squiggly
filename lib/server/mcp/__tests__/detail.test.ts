@@ -139,6 +139,22 @@ describe('buildDetail', () => {
       expect(s).not.toMatch(/https?:\/\//);
       expect(s).not.toContain(SECRETS.kernelId);
     });
+    it('sanitizes and caps bad-channel labels and reasons', () => {
+      const reasons = ['see https://storage.example.test/x.edf', '/var/task/x/KERN_SECRET.bin', 'x'.repeat(200), ...Array.from({ length: 20 }, (_, k) => `flat ${k}`)];
+      const bad = [
+        { label: 'T7', reasons, interpolated: true },
+        { label: '../etc', reasons: ['flat'], interpolated: false },
+        ...Array.from({ length: 80 }, (_, k) => ({ label: `C${k}`, reasons: [], interpolated: false })),
+      ];
+      const out = buildDetail(input({ timeline: { spans: [], bad_channels: bad } }), 'qc', {}) as any;
+      expect(out.bad_channels).toHaveLength(64);
+      expect(out.bad_channels.map((b: any) => b.label)).not.toContain('../etc');
+      const t7 = out.bad_channels[0];
+      expect(t7.reasons.length).toBeLessThanOrEqual(10);
+      expect(t7.reasons.every((r: string) => r.length > 0 && r.length <= 80)).toBe(true);
+      const s = dump(out.bad_channels);
+      for (const bad of ['http', 'storage.example', '/var/task', 'KERN_SECRET', '../etc']) expect(s).not.toContain(bad);
+    });
     it('works without a timeline', () => {
       const out = buildDetail(input(), 'qc', {}) as any;
       expect(out.rejected_spans).toEqual([]);

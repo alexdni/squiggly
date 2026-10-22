@@ -14,7 +14,7 @@ import { ANALYSIS_MAX_HZ, REGIONAL_CHANNELS } from '@/lib/constants';
 import { McpUserError } from './errors';
 import { analysisEvents, eventOrder, type EventSource } from './events';
 import { isNum, mean, sig3 } from './num';
-import { isLegacyResults, qualityBlock } from './quality';
+import { isLegacyResults, qualityBlock, sanitizeWarning } from './quality';
 import { conditionOf } from './sessions';
 import type { AnalysisInput } from './summary';
 
@@ -240,6 +240,26 @@ function downsample(s: TimeSeries): TimeSeries {
   return { t, v };
 }
 
+const CHANNEL_LABEL_RE = /^[A-Za-z0-9-]{1,8}$/;
+const MAX_BAD_CHANNELS = 64;
+const MAX_REASONS = 10;
+const MAX_REASON_CHARS = 80;
+
+/** Engine-supplied text: labels must look like electrode names, reasons are sanitized and capped. */
+function badChannels(list: NonNullable<AnalysisResults['qc_report']['timeline']>['bad_channels'] | undefined) {
+  return (Array.isArray(list) ? list : [])
+    .filter((b) => b && typeof b.label === 'string' && CHANNEL_LABEL_RE.test(b.label))
+    .slice(0, MAX_BAD_CHANNELS)
+    .map((b) => ({
+      label: b.label,
+      reasons: (Array.isArray(b.reasons) ? b.reasons : [])
+        .map((r) => sanitizeWarning(String(r)).slice(0, MAX_REASON_CHARS))
+        .filter((r) => r.length > 0)
+        .slice(0, MAX_REASONS),
+      interpolated: b.interpolated === true,
+    }));
+}
+
 function qc(results: AnalysisResults, f: DetailFilter) {
   const condition = f.condition === 'eo' || f.condition === 'ec' ? f.condition : undefined;
   const tl = results.qc_report.timeline;
@@ -248,10 +268,6 @@ function qc(results: AnalysisResults, f: DetailFilter) {
     quality: qualityBlock(results.qc_report, condition),
     rejected_spans_total: spans.length,
     rejected_spans: spans.slice(0, MAX_SPANS).map(([a, b]) => [Math.round(a * 100) / 100, Math.round(b * 100) / 100]),
-    bad_channels: (tl?.bad_channels ?? []).map((b) => ({
-      label: String(b.label),
-      reasons: Array.isArray(b.reasons) ? b.reasons.map(String) : [],
-      interpolated: b.interpolated === true,
-    })),
+    bad_channels: badChannels(tl?.bad_channels),
   };
 }
