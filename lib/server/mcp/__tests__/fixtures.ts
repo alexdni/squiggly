@@ -110,6 +110,14 @@ export interface ResultsOptions {
   events?: DetectedEventResult[];
   /** detector coverage rows; default all ran */
   detectors?: EventDetectionSummary['coverage']['detectors'];
+  /** PSD frequency step in Hz (0–60 Hz); default 0.5 */
+  psdStepHz?: number;
+  /** pair_data length; extra pairs are synthetic channel names; default all 171 channel pairs */
+  connectivityPairs?: number;
+  /** qc_report.timeline spans and bad channels with reasons */
+  timeline?: { spans: [number, number][]; bad_channels: { label: string; reasons: string[]; interpolated: boolean }[] };
+  /** HRV series length for nn_ms; default 3 */
+  hrvSeriesLength?: number;
   hrv?: boolean;
   sloreta?: boolean;
   legacy?: boolean;
@@ -141,7 +149,7 @@ export function makeBandPower(cond: Condition, gain: { occipital: number; pariet
   return bp;
 }
 
-function makeConnectivity(cond: Condition): Connectivity {
+function makeConnectivity(cond: Condition, pairCount?: number): Connectivity {
   const ch = [...CHANNELS_1020];
   const n = ch.length;
   const offset = cond === 'ec' ? 0.05 : 0;
@@ -169,6 +177,14 @@ function makeConnectivity(cond: Condition): Connectivity {
       pair_data.push(entry);
     }
   }
+  if (pairCount !== undefined) {
+    for (let k = pair_data.length; k < pairCount; k++) {
+      const entry: Connectivity['pair_data'][number] = { ch1: `X${k}`, ch2: `Y${k}`, type: 'other', region: 'mixed' };
+      CONNECTIVITY_BAND_NAMES.forEach((band, b) => (entry[band] = value(b, k, k + 1)));
+      pair_data.push(entry);
+    }
+    pair_data.length = pairCount;
+  }
   return { connectivity_matrices: matrices, network_metrics: metrics, pair_data };
 }
 
@@ -184,8 +200,8 @@ function makeLzc(cond: Condition): Lzc {
   );
 }
 
-function makePsd(): PsdData {
-  const freqs = Array.from({ length: 121 }, (_, k) => k * 0.5); // 0–60 Hz in 0.5 Hz steps
+function makePsd(step = 0.5): PsdData {
+  const freqs = Array.from({ length: Math.round(60 / step) + 1 }, (_, k) => k * step); // 0–60 Hz
   return { freqs, channels: Object.fromEntries(CHANNELS_1020.map((c, i) => [c, freqs.map((f) => 10 / (1 + f) + i * 0.01)])) };
 }
 
@@ -284,12 +300,15 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
     final_sfreq: 256,
     n_channels: 19,
     warnings: opts.warnings ?? [],
+    ...(opts.timeline
+      ? { timeline: { duration_sec: 300, labels: [...CHANNELS_1020], spans: opts.timeline.spans, channel_spans: {}, bad_channels: opts.timeline.bad_channels } }
+      : {}),
   };
   const per = <T,>(make: (c: Condition) => T) => ({ eo: has('eo') ? make('eo') : null, ec: has('ec') ? make('ec') : null });
   const results: AnalysisResults = {
     qc_report: qc,
     band_power: per((c) => makeBandPower(c, gain)),
-    connectivity: per(makeConnectivity),
+    connectivity: per((c) => makeConnectivity(c, opts.connectivityPairs)),
     lzc: per(makeLzc),
     alpha_peak: per(makeAlphaPeak),
     band_ratios: {
@@ -299,7 +318,7 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
     asymmetry: { frontal_alpha: -0.123456, parietal_alpha: 0.054321, frontal_theta: 0.011111 },
     risk_patterns: { adhd_like: true, anxiety_like: false, depression_like: false, sleep_dysregulation: false, hyper_arousal: false },
     rejected_epochs: [{ start: 20, end: 22, reason: 'amplitude', condition: conditions[0] }],
-    psd: per(() => makePsd()),
+    psd: per(() => makePsd(opts.psdStepHz)),
     visuals: {},
     processing_metadata: {
       engine: 'hybrid-asr-ica@0.33.0',
@@ -309,7 +328,13 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
     cleaned_file_url: SECRETS.cleanedFileUrl,
     cleaned_file_format: '.edf',
   };
-  if (opts.hrv) results.hrv = makeHrv();
+  if (opts.hrv) {
+    results.hrv = makeHrv();
+    if (opts.hrvSeriesLength) {
+      const n = opts.hrvSeriesLength;
+      results.hrv.series.nn_ms = { t: Array.from({ length: n }, (_, k) => k), v: Array.from({ length: n }, (_, k) => 800 + (k % 50)) };
+    }
+  }
   if (opts.sloreta) results.sloreta = makeSloreta(conditions);
   if (opts.events) {
     results.events = opts.events;

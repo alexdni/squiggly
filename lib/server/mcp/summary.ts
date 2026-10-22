@@ -9,12 +9,11 @@ import {
   type BandName,
   type Condition as Cond,
   type ConnectivityBandName,
-  type DetectedEventResult,
   type EventCategory,
-  type EventHandling,
 } from '@/lib/analysis-results';
 import { REGIONAL_CHANNELS } from '@/lib/constants';
-import { parseEventReviews } from '@/lib/server/eventReviews';
+import { CLINICAL, analysisEvents, eventOrder, type EventOut } from './events';
+import { isNum, mean, sig3 } from './num';
 import { GUIDANCE_SHORT } from './guidance';
 import { isLegacyResults, qualityBlock, worse, type Confidence, type QualityBlock } from './quality';
 import { conditionOf, type Condition as RecCondition, type RecordingRow, type Session } from './sessions';
@@ -72,22 +71,6 @@ export interface ConditionSummary {
   >;
 }
 
-export type EventReview = 'confirmed' | 'dismissed' | 'unreviewed';
-
-export interface EventOut {
-  id: string;
-  category: EventCategory;
-  pattern: string;
-  start_s: number;
-  end_s: number;
-  channels: string[];
-  confidence: number;
-  handling: EventHandling;
-  review: EventReview;
-  /** which analysis (file) the event came from */
-  condition: Source;
-}
-
 export interface SessionSummary {
   session: { id: string; date: string; pairing: Session['pairing']; recordings: RecordingMeta[] };
   unavailable?: { analysisId: string; reason: 'pending' | 'processing' | 'failed' | 'legacy' }[];
@@ -119,8 +102,6 @@ export interface SessionSummary {
 const RISK_KEYS = ['adhd_like', 'anxiety_like', 'depression_like', 'sleep_dysregulation', 'hyper_arousal'] as const;
 type RiskKey = (typeof RISK_KEYS)[number];
 const HRV_KEYS = ['mean_hr_bpm', 'sdnn_ms', 'rmssd_ms', 'pnn50_pct', 'vlf_ms2', 'lf_ms2', 'hf_ms2', 'lf_nu', 'hf_nu', 'lf_hf'] as const;
-const EVENT_CATEGORIES: EventCategory[] = ['epileptiform', 'rhythmic-periodic', 'variant', 'artifact'];
-const CLINICAL: EventCategory[] = ['epileptiform', 'rhythmic-periodic'];
 const REGIONS = Object.keys(REGIONAL_CHANNELS) as Region[];
 const SITES_1020: string[] = REGIONS.flatMap((r) => REGIONAL_CHANNELS[r]);
 const UNAVAILABLE_STATUS = ['pending', 'processing', 'failed'] as const;
@@ -129,14 +110,8 @@ const MAX_EVENT_ITEMS = 40;
 const MAX_DISMISSED_ITEMS = 20;
 const TOP_PAIRS = 5;
 
-/** 3 significant figures. */
-export function sig3(n: number): number {
-  return n === 0 || !Number.isFinite(n) ? n : Number(n.toPrecision(3));
-}
-
-const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const round2 = (n: number) => Math.round(n * 100) / 100;
-const mean = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+export { sig3 };
+export type { EventOut, EventReview } from './events';
 
 export function buildSessionSummary(
   session: Session,
@@ -385,30 +360,6 @@ function sloretaOut(r: AnalysisResults, source: Source): NonNullable<SessionSumm
   return Object.keys(out).length ? out : undefined;
 }
 
-function eventOut(e: DetectedEventResult, review: EventReview, condition: Source): EventOut {
-  return {
-    id: String(e.id),
-    category: e.category,
-    pattern: String(e.pattern),
-    start_s: round2(Number(e.startSec)),
-    end_s: round2(Number(e.endSec)),
-    channels: Array.isArray(e.channels) ? e.channels.map(String) : [],
-    confidence: sig3(Number(e.confidence)),
-    handling: e.handling,
-    review,
-    condition,
-  };
-}
-
-/** Clinical categories first, confirmed before unreviewed, then by time. */
-function eventOrder(a: EventOut, b: EventOut): number {
-  return (
-    EVENT_CATEGORIES.indexOf(a.category) - EVENT_CATEGORIES.indexOf(b.category) ||
-    Number(b.review === 'confirmed') - Number(a.review === 'confirmed') ||
-    a.start_s - b.start_s
-  );
-}
-
 function eventsOut(ready: { source: Source; input: AnalysisInput; results: AnalysisResults }[]) {
   const withEvents = ready.filter((p) => Array.isArray(p.results.events) || p.results.event_detection);
   if (!withEvents.length) return null;
@@ -416,13 +367,7 @@ function eventsOut(ready: { source: Source; input: AnalysisInput; results: Analy
   const all: EventOut[] = [];
   const notAssessed = new Map<string, { detector: string; reason: string }>();
   for (const { source, input, results } of withEvents) {
-    const cfg = input.config && typeof input.config === 'object' ? (input.config as { event_reviews?: unknown }) : {};
-    const reviews = parseEventReviews(cfg.event_reviews);
-    for (const e of results.events ?? []) {
-      if (!e || !EVENT_CATEGORIES.includes(e.category)) continue;
-      const review: EventReview = reviews[e.id] ?? (e.dismissed === true ? 'dismissed' : 'unreviewed');
-      all.push(eventOut(e, review, source));
-    }
+    all.push(...analysisEvents(input, source));
     for (const d of results.event_detection?.coverage?.detectors ?? []) {
       if (d?.ran !== false) continue;
       const entry = { detector: String(d.name), reason: String(d.skippedReason ?? 'not run') };
