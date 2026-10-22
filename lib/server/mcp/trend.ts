@@ -1,3 +1,4 @@
+import 'server-only';
 // Metric trend across sessions for get_metric_trend: one value per session and metric, ascending
 // by date. A metric a session does not have is null, never omitted, so gaps stay visible.
 

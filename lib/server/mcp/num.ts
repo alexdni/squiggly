@@ -1,3 +1,4 @@
+import 'server-only';
 // Small numeric helpers shared by the MCP output builders.
 
 /** 3 significant figures. */

@@ -106,5 +106,9 @@ describe('MCP leak test', () => {
     expect(all).toContain('"T7"');
     expect(all).toContain('Source localization unavailable');
     expect(all).toContain('"pattern":"other"');
+    // sanitized engine text keeps its readable part
+    expect(all).toContain('"region":"left frontal"');
+    expect(all).toContain('needs temporal chain');
+    expect(all).toContain('"muscle"');
   });
 });

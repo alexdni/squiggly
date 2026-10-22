@@ -1,3 +1,4 @@
+import 'server-only';
 // Bounded drill-down of one analysis for get_analysis_detail. Like the summary, every section is
 // built from allowlisted fields: nothing is copied wholesale from results or config.
 
@@ -14,7 +15,7 @@ import { ANALYSIS_MAX_HZ, REGIONAL_CHANNELS } from '@/lib/constants';
 import { McpUserError } from './errors';
 import { analysisEvents, eventOrder, type EventSource } from './events';
 import { isNum, mean, sig3 } from './num';
-import { isLegacyResults, qualityBlock, sanitizeWarning } from './quality';
+import { CHANNEL_LABEL_RE, engineText, isLegacyResults, qualityBlock } from './quality';
 import { conditionOf } from './sessions';
 import type { AnalysisInput } from './summary';
 
@@ -135,7 +136,7 @@ function connectivity(results: AnalysisResults, f: DetailFilter) {
     throw new McpUserError(`Unknown band "${f.band}". Valid bands: ${CONNECTIVITY_BAND_NAMES.join(', ')}.`);
   }
   const all = (results.connectivity[condition]?.pair_data ?? [])
-    .filter((p) => isNum(p[band]) && typeof p.ch1 === 'string' && typeof p.ch2 === 'string')
+    .filter((p) => isNum(p[band]) && CHANNEL_LABEL_RE.test(String(p.ch1)) && CHANNEL_LABEL_RE.test(String(p.ch2)))
     .map((p) => ({ ch1: p.ch1, ch2: p.ch2, value: p[band] as number }))
     .sort((a, b) => b.value - a.value);
   return {
@@ -215,7 +216,7 @@ function sloreta(results: AnalysisResults) {
         mean: sig3(s.mean),
         peak:
           p && Array.isArray(p.mni) && isNum(p.value)
-            ? { mni: p.mni.slice(0, 3).map((v) => Math.round(Number(v) * 10) / 10), region: String(p.region ?? ''), value: sig3(p.value) }
+            ? { mni: p.mni.slice(0, 3).map((v) => Math.round(Number(v) * 10) / 10), region: engineText(p.region), value: sig3(p.value) }
             : null,
       };
     }
@@ -266,10 +267,8 @@ function downsample(s: TimeSeries): TimeSeries {
   return { t, v };
 }
 
-const CHANNEL_LABEL_RE = /^[A-Za-z0-9-]{1,8}$/;
 const MAX_BAD_CHANNELS = 64;
 const MAX_REASONS = 10;
-const MAX_REASON_CHARS = 80;
 
 /** Engine-supplied text: labels must look like electrode names, reasons are sanitized and capped. */
 function badChannels(list: NonNullable<AnalysisResults['qc_report']['timeline']>['bad_channels'] | undefined) {
@@ -279,7 +278,7 @@ function badChannels(list: NonNullable<AnalysisResults['qc_report']['timeline']>
     .map((b) => ({
       label: b.label,
       reasons: (Array.isArray(b.reasons) ? b.reasons : [])
-        .map((r) => sanitizeWarning(String(r)).slice(0, MAX_REASON_CHARS))
+        .map(engineText)
         .filter((r) => r.length > 0)
         .slice(0, MAX_REASONS),
       interpolated: b.interpolated === true,

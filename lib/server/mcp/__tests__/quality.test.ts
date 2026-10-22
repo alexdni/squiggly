@@ -19,6 +19,25 @@ function qc(over: Partial<QcReportSummary> = {}): QcReportSummary {
 }
 
 describe('qualityBlock', () => {
+  it('keeps only electrode-like channel labels and sanitizes ICA labels (engine text)', () => {
+    const q = qualityBlock(
+      qc({
+        bad_channels: ['T7', 'Anna Smith', '/var/task/x.bin'],
+        interpolated_channels: ['Fp1', 'Anna_Smith_EO'],
+        ica_removed_labels: ['eye-blink', 'muscle (see /var/task/sloreta/KERN_SECRET.bin)', 'https://storage.example.test/a.edf'],
+      }),
+    );
+    expect(q.bad_channels).toEqual(['T7']);
+    expect(q.interpolated_channels).toEqual(['Fp1']);
+    expect(q.ica_removed_labels).toEqual(['eye-blink', 'muscle']);
+  });
+
+  it('grades bad channels by the raw count, even when labels are dropped from output', () => {
+    const q = qualityBlock(qc({ n_channels: 19, bad_channels: ['T7', 'x y', 'a b', 'c d'] }));
+    expect(q.confidence).toBe('low');
+    expect(q.bad_channels).toEqual(['T7']);
+  });
+
   it('grades a clean report high', () => {
     const q = qualityBlock(qc());
     expect(q.confidence).toBe('high');

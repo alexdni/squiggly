@@ -1,3 +1,4 @@
+import 'server-only';
 // Event output shared by the session summary and the events detail section. Built from
 // allowlisted fields: `evidence`, `rejects` and `source` of the engine's events are never copied,
 // and the engine's free-text fields (pattern, handling, channels, id) must look like what they are.
@@ -5,6 +6,7 @@
 import type { AnalysisResults, DetectedEventResult, EventCategory, EventHandling } from '@/lib/analysis-results';
 import { parseEventReviews } from '@/lib/server/eventReviews';
 import { round2, sig3 } from './num';
+import { channelLabels } from './quality';
 
 export type EventReview = 'confirmed' | 'dismissed' | 'unreviewed';
 export type EventSource = 'eo' | 'ec' | 'both';
@@ -30,7 +32,6 @@ const HANDLINGS: EventHandling[] = ['rejected', 'repaired', 'removed-component',
 /** detector pattern names are slugs ('eye-blink', 'spike-wave') */
 const PATTERN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
 const MAX_PATTERN_CHARS = 40;
-const CHANNEL_LABEL_RE = /^[A-Za-z0-9-]{1,8}$/;
 const EVENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const patternOf = (p: unknown) => (typeof p === 'string' && p.length <= MAX_PATTERN_CHARS && PATTERN_RE.test(p) ? p : 'other');
@@ -42,7 +43,7 @@ export function eventOut(e: DetectedEventResult, review: EventReview, condition:
     pattern: patternOf(e.pattern),
     start_s: round2(Number(e.startSec)),
     end_s: round2(Number(e.endSec)),
-    channels: Array.isArray(e.channels) ? e.channels.filter((c): c is string => typeof c === 'string' && CHANNEL_LABEL_RE.test(c)) : [],
+    channels: channelLabels(e.channels),
     confidence: sig3(Number(e.confidence)),
     handling: HANDLINGS.includes(e.handling) ? e.handling : 'other',
     review,

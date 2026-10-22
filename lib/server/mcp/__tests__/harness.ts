@@ -39,7 +39,18 @@ export function world() {
   const eo = makeRecording({ condition_type: 'EO', filename: SECRETS.filename, created_at: '2026-10-01T10:00:00Z' });
   const ec = makeRecording({ condition_type: 'EC', filename: 'Anna_Smith_2026-10-01_EC.edf', created_at: '2026-10-01T10:10:00Z' });
   const old = makeRecording({ condition_type: 'BOTH', filename: 'Anna_Smith_2026-09-01.edf', created_at: '2026-09-01T10:00:00Z' });
-  const common = { warnings: LEAKY_WARNINGS, timeline, events, hrv: true, sloreta: true };
+  // Engine-supplied labels and text that must be filtered (labels) or sanitized (free text)
+  const leakyText = {
+    bad_channels: ['T7', 'Anna Smith'],
+    icaLabels: ['eye-blink', 'muscle (see /var/task/sloreta/KERN_SECRET.bin)', 'https://storage.example.test/Anna_Smith.edf'],
+    extraPairs: [{ ch1: 'Anna_Smith', ch2: 'Fz' }, { ch1: 'Cz', ch2: '/storage/x' }],
+    sloretaRegion: 'left frontal (atlas https://storage.example.test/Anna_Smith/atlas.nii)',
+    detectors: [
+      { name: 'eye-blink', ran: true },
+      { name: 'spike-wave', ran: false, skippedReason: 'needs temporal chain (montage file /var/task/montages/Anna_Smith.json)' },
+    ],
+  };
+  const common = { warnings: LEAKY_WARNINGS, timeline, events, hrv: true, sloreta: true, ...leakyText };
   const reviews = { secret: SECRETS.configSecret, event_reviews: { [spike.id]: 'confirmed' } };
   const eoA = makeAnalysisRow(eo, makeResults({ conditions: ['eo'], ...common }), { config: reviews });
   const ecA = makeAnalysisRow(ec, makeResults({ conditions: ['ec'], ...common }), { config: reviews });

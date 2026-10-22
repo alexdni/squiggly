@@ -1,3 +1,4 @@
+import 'server-only';
 // Data-quality block and confidence grading from the analysis QC report.
 
 import type { QcReportSummary } from '@/lib/analysis-results';
@@ -18,6 +19,20 @@ export interface QualityBlock {
 }
 
 const ORDER: Confidence[] = ['low', 'moderate', 'high'];
+
+/** Engine-supplied channel labels must look like electrode names to be shown. */
+export const CHANNEL_LABEL_RE = /^[A-Za-z0-9-]{1,8}$/;
+
+export function channelLabels(list: unknown): string[] {
+  return Array.isArray(list) ? list.filter((c): c is string => typeof c === 'string' && CHANNEL_LABEL_RE.test(c)) : [];
+}
+
+const MAX_TEXT_CHARS = 80;
+
+/** Engine free text (reasons, labels, region names): sanitized like a warning and capped. */
+export function engineText(v: unknown): string {
+  return sanitizeWarning(String(v ?? '')).slice(0, MAX_TEXT_CHARS);
+}
 
 const MAX_REJECTION_PCT = 30;
 const MAX_BAD_CHANNEL_FRACTION = 0.15;
@@ -56,16 +71,17 @@ export function qualityBlock(qc: QcReportSummary, condition?: 'eo' | 'ec'): Qual
     ? { [condition]: condition === 'eo' ? qc.final_epochs_eo : qc.final_epochs_ec }
     : { eo: qc.final_epochs_eo, ec: qc.final_epochs_ec };
 
-  const bad_channels = qc.bad_channels ?? [];
+  // The grade uses the engine's count; only electrode-like labels are shown
+  const badCount = Array.isArray(qc.bad_channels) ? qc.bad_channels.length : 0;
 
   if (rejection > MAX_REJECTION_PCT) {
     confidence = 'low';
     reasons.push(`${round(rejection)}% of epochs rejected (over ${MAX_REJECTION_PCT}%)`);
   }
-  if (qc.n_channels > 0 && bad_channels.length / qc.n_channels > MAX_BAD_CHANNEL_FRACTION) {
+  if (qc.n_channels > 0 && badCount / qc.n_channels > MAX_BAD_CHANNEL_FRACTION) {
     confidence = 'low';
     reasons.push(
-      `${bad_channels.length} of ${qc.n_channels} channels marked bad (over ${MAX_BAD_CHANNEL_FRACTION * 100}%)`,
+      `${badCount} of ${qc.n_channels} channels marked bad (over ${MAX_BAD_CHANNEL_FRACTION * 100}%)`,
     );
   }
 
@@ -86,10 +102,10 @@ export function qualityBlock(qc: QcReportSummary, condition?: 'eo' | 'ec'): Qual
   return {
     rejection_pct: rejection,
     epochs_kept,
-    bad_channels,
-    interpolated_channels: qc.interpolated_channels ?? [],
+    bad_channels: channelLabels(qc.bad_channels),
+    interpolated_channels: channelLabels(qc.interpolated_channels),
     ica_components_removed: qc.ica_components_removed,
-    ica_removed_labels: qc.ica_removed_labels ?? [],
+    ica_removed_labels: (Array.isArray(qc.ica_removed_labels) ? qc.ica_removed_labels : []).map(engineText).filter((l) => l.length > 0),
     asr_applied: qc.asr?.ran === true,
     warnings: (qc.warnings ?? []).map(sanitizeWarning).filter((w) => w.length > 0),
     confidence,

@@ -83,6 +83,10 @@ function compareRefs(a: string, b: string | undefined): [string, string] {
 const text = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: message }] });
 
 export function registerSquigglyTools(server: McpServer, getCtx: GetMcpCtx): void {
+  // Calls with invalid arguments are rejected by the SDK's input validation before they reach
+  // these handlers, so they get no mcp_call line. mcp-handler's onEvent hook is no substitute: it
+  // sees the method and the raw request body (pasted refs can carry names), not the validation
+  // outcome, so it could only log what this file refuses to log.
   async function run(
     tool: string,
     extra: ServerContext,

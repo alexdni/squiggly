@@ -1,3 +1,4 @@
+import 'server-only';
 // Server-side EO/EC session pairing. Filenames are used for pairing only
 // and are never carried on a Session.
 import { sessionId } from './ids';

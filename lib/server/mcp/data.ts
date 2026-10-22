@@ -1,3 +1,4 @@
+import 'server-only';
 // User-scoped data loaders for the MCP tools. Every query runs through the injected db (bound to
 // the caller's OAuth token, so RLS applies) and RBAC is re-checked with the same db. Selects list
 // explicit columns: never client_metadata, project name, file_path or `*`. Denial, a missing row and

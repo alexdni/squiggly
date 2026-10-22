@@ -1,3 +1,4 @@
+import 'server-only';
 // Interpretation guidance for AI assistants reading Squiggly analyses over MCP. One source text,
 // exposed as the server instructions, the interpret/compare prompts and a resource; the short form
 // rides along in tool descriptions and in summary outputs (ChatGPT mostly ignores prompts).

@@ -1,3 +1,4 @@
+import 'server-only';
 // Compact session summary for get_session_summary. A session is an EO + an EC analysis from
 // separately uploaded files, or one BOTH analysis; each condition is read from the analysis that
 // holds it. Built from allowlisted fields only: nothing is copied wholesale from results/config.
@@ -15,7 +16,7 @@ import { REGIONAL_CHANNELS } from '@/lib/constants';
 import { CLINICAL, analysisEvents, eventOrder, type EventOut } from './events';
 import { isNum, mean, sig3 } from './num';
 import { GUIDANCE_SHORT } from './guidance';
-import { isLegacyResults, qualityBlock, worse, type Confidence, type QualityBlock } from './quality';
+import { CHANNEL_LABEL_RE, engineText, isLegacyResults, qualityBlock, worse, type Confidence, type QualityBlock } from './quality';
 import { conditionOf, type Condition as RecCondition, type RecordingRow, type Session } from './sessions';
 
 export interface AnalysisInput {
@@ -307,7 +308,7 @@ function conditionSummary(r: AnalysisResults, cond: Cond): ConditionSummary {
     const m = conn?.network_metrics?.[band];
     if (!m) continue;
     const pairs: PairOut[] = (conn?.pair_data ?? [])
-      .filter((p) => isNum(p[band]) && typeof p.ch1 === 'string' && typeof p.ch2 === 'string')
+      .filter((p) => isNum(p[band]) && CHANNEL_LABEL_RE.test(String(p.ch1)) && CHANNEL_LABEL_RE.test(String(p.ch2)))
       .map((p) => ({ ch1: p.ch1, ch2: p.ch2, value: p[band] as number }))
       .sort((a, b) => b.value - a.value);
     const out = (p: PairOut) => ({ ch1: p.ch1, ch2: p.ch2, value: sig3(p.value) });
@@ -400,7 +401,7 @@ function sloretaOut(r: AnalysisResults, source: Source): NonNullable<SessionSumm
         mean: sig3(s.mean),
         peak:
           p && Array.isArray(p.mni) && isNum(p.value)
-            ? { mni: p.mni.slice(0, 3).map((v) => Math.round(Number(v) * 10) / 10), region: String(p.region ?? ''), value: sig3(p.value) }
+            ? { mni: p.mni.slice(0, 3).map((v) => Math.round(Number(v) * 10) / 10), region: engineText(p.region), value: sig3(p.value) }
             : null,
       };
     }
@@ -419,7 +420,7 @@ function eventsOut(ready: { source: Source; input: AnalysisInput; results: Analy
     all.push(...analysisEvents(input, source));
     for (const d of results.event_detection?.coverage?.detectors ?? []) {
       if (d?.ran !== false) continue;
-      const entry = { detector: String(d.name), reason: String(d.skippedReason ?? 'not run') };
+      const entry = { detector: engineText(d.name) || 'unnamed', reason: engineText(d.skippedReason ?? 'not run') || 'not run' };
       notAssessed.set(`${entry.detector}\u0000${entry.reason}`, entry);
     }
   }

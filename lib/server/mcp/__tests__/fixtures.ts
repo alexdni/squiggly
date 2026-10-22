@@ -131,6 +131,12 @@ export interface ResultsOptions {
   thetaBeta?: { frontal_avg?: number; central_avg?: number };
   /** multiplies absolute power (all bands) of the named channels */
   channelScale?: Record<string, number>;
+  /** qc_report.ica_removed_labels; default ['eye-blink'] */
+  icaLabels?: string[];
+  /** extra connectivity pairs appended to pair_data (e.g. with non-electrode labels) */
+  extraPairs?: { ch1: string; ch2: string }[];
+  /** sLORETA peak region text; default 'left frontal' */
+  sloretaRegion?: string;
 }
 
 const REGION_OF: Record<string, 'occipital' | 'parietal' | 'other'> = {
@@ -164,7 +170,7 @@ export function makeBandPower(
   return bp;
 }
 
-function makeConnectivity(cond: Condition, pairCount?: number): Connectivity {
+function makeConnectivity(cond: Condition, pairCount?: number, extraPairs: { ch1: string; ch2: string }[] = []): Connectivity {
   const ch = [...CHANNELS_1020];
   const n = ch.length;
   const offset = cond === 'ec' ? 0.05 : 0;
@@ -199,6 +205,12 @@ function makeConnectivity(cond: Condition, pairCount?: number): Connectivity {
       pair_data.push(entry);
     }
     pair_data.length = pairCount;
+  }
+  for (const p of extraPairs) {
+    const entry: Connectivity['pair_data'][number] = { ...p, type: 'other', region: 'mixed' };
+    // strongest of all, so a leak would land in the summary's top pairs and the detail's first page
+    CONNECTIVITY_BAND_NAMES.forEach((band) => (entry[band] = 0.99));
+    pair_data.push(entry);
   }
   return { connectivity_matrices: matrices, network_metrics: metrics, pair_data };
 }
@@ -245,13 +257,13 @@ export function makeHrv(): HrvResults {
   };
 }
 
-export function makeSloreta(conditions: Condition[]): SloretaResults {
+export function makeSloreta(conditions: Condition[], region = 'left frontal'): SloretaResults {
   const stats: SloretaResults['stats'] = {};
   for (const c of conditions) {
     stats[c] = Object.fromEntries(
       BAND_NAMES.map((b, k) => [
         b,
-        { max: 3.14159 + k, mean: 1.23456 + k * 0.1, peak: { voxel: 100 + k, mni: [-32.4, 18.6, 44.2], value: 3.14159 + k, region: 'left frontal' } },
+        { max: 3.14159 + k, mean: 1.23456 + k * 0.1, peak: { voxel: 100 + k, mni: [-32.4, 18.6, 44.2], value: 3.14159 + k, region } },
       ]),
     );
   }
@@ -309,7 +321,7 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
     bad_channels: opts.bad_channels ?? [],
     interpolated_channels: opts.bad_channels ?? [],
     ica_components_removed: opts.ica_components_removed ?? 2,
-    ica_removed_labels: ['eye-blink'],
+    ica_removed_labels: opts.icaLabels ?? ['eye-blink'],
     asr: { ran: true, k: 20, fraction_windows_modified: 0.04 },
     original_sfreq: 256,
     final_sfreq: 256,
@@ -323,7 +335,7 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
   const results: AnalysisResults = {
     qc_report: qc,
     band_power: per((c) => makeBandPower(c, gain, opts.channelScale)),
-    connectivity: per((c) => makeConnectivity(c, opts.connectivityPairs)),
+    connectivity: per((c) => makeConnectivity(c, opts.connectivityPairs, opts.extraPairs)),
     lzc: per(makeLzc),
     alpha_peak: per(makeAlphaPeak),
     band_ratios: {
@@ -350,7 +362,7 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
       results.hrv.series.nn_ms = { t: Array.from({ length: n }, (_, k) => k), v: Array.from({ length: n }, (_, k) => 800 + (k % 50)) };
     }
   }
-  if (opts.sloreta) results.sloreta = makeSloreta(conditions);
+  if (opts.sloreta) results.sloreta = makeSloreta(conditions, opts.sloretaRegion);
   if (opts.events) {
     results.events = opts.events;
     const counts = { artifact: 0, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0 };

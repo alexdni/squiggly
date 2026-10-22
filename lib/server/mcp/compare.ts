@@ -1,3 +1,4 @@
+import 'server-only';
 // Condition-aware comparison of two session summaries (B minus A) for compare_sessions. Strictly
 // like-for-like: EO against EO, EC against EC. Output is EEG numbers and caveats only; the single
 // engine detail allowed is the bare version string (after '@') when the two versions differ.
