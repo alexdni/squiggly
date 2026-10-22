@@ -1,5 +1,6 @@
 // Event output shared by the session summary and the events detail section. Built from
-// allowlisted fields: `evidence`, `rejects` and `source` of the engine's events are never copied.
+// allowlisted fields: `evidence`, `rejects` and `source` of the engine's events are never copied,
+// and the engine's free-text fields (pattern, handling, channels, id) must look like what they are.
 
 import type { AnalysisResults, DetectedEventResult, EventCategory, EventHandling } from '@/lib/analysis-results';
 import { parseEventReviews } from '@/lib/server/eventReviews';
@@ -16,7 +17,7 @@ export interface EventOut {
   end_s: number;
   channels: string[];
   confidence: number;
-  handling: EventHandling;
+  handling: EventHandling | 'other';
   review: EventReview;
   /** which analysis (file) the event came from */
   condition: EventSource;
@@ -25,16 +26,25 @@ export interface EventOut {
 export const EVENT_CATEGORIES: EventCategory[] = ['epileptiform', 'rhythmic-periodic', 'variant', 'artifact'];
 export const CLINICAL: EventCategory[] = ['epileptiform', 'rhythmic-periodic'];
 
+const HANDLINGS: EventHandling[] = ['rejected', 'repaired', 'removed-component', 'channel-excluded', 'interpolated', 'noted'];
+/** detector pattern names are slugs ('eye-blink', 'spike-wave') */
+const PATTERN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+const MAX_PATTERN_CHARS = 40;
+const CHANNEL_LABEL_RE = /^[A-Za-z0-9-]{1,8}$/;
+const EVENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+const patternOf = (p: unknown) => (typeof p === 'string' && p.length <= MAX_PATTERN_CHARS && PATTERN_RE.test(p) ? p : 'other');
+
 export function eventOut(e: DetectedEventResult, review: EventReview, condition: EventSource): EventOut {
   return {
     id: String(e.id),
     category: e.category,
-    pattern: String(e.pattern),
+    pattern: patternOf(e.pattern),
     start_s: round2(Number(e.startSec)),
     end_s: round2(Number(e.endSec)),
-    channels: Array.isArray(e.channels) ? e.channels.map(String) : [],
+    channels: Array.isArray(e.channels) ? e.channels.filter((c): c is string => typeof c === 'string' && CHANNEL_LABEL_RE.test(c)) : [],
     confidence: sig3(Number(e.confidence)),
-    handling: e.handling,
+    handling: HANDLINGS.includes(e.handling) ? e.handling : 'other',
     review,
     condition,
   };
@@ -60,7 +70,7 @@ export function analysisEvents(input: { results: AnalysisResults | null; config:
   const reviews = parseEventReviews(cfg.event_reviews);
   const out: EventOut[] = [];
   for (const e of input.results?.events ?? []) {
-    if (!e || !EVENT_CATEGORIES.includes(e.category)) continue;
+    if (!e || !EVENT_CATEGORIES.includes(e.category) || !EVENT_ID_RE.test(String(e.id))) continue;
     out.push(eventOut(e, eventReview(e, reviews), source));
   }
   return out;
