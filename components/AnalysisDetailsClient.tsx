@@ -32,6 +32,7 @@ import DetectedEvents, { amplitudeThresholdOf } from './visuals/DetectedEvents';
 import { useEventReviews } from './visuals/detected-events/useEventReviews';
 import { exportPdfReport, exportVisualizationsZip, type ReportMeta } from './export/analysisExport';
 import SquigglyLogo from '@/components/SquigglyLogo';
+import ConnectAiModal from './ConnectAiModal';
 
 // chart.js renders client-side only
 const NetworkMetricsBars = dynamic(() => import('./visuals/NetworkMetricsBars'), { ssr: false });
@@ -108,6 +109,7 @@ export default function AnalysisDetailsClient({
   const [isProcessing, setIsProcessing] = useState(false);
   const [pollingElapsed, setPollingElapsed] = useState(0);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [showConnectAi, setShowConnectAi] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [settings, setSettings] = useState<ArtifactSettings>(() =>
     settingsFromConfig(initialAnalysis.config?.preprocessing)
@@ -403,6 +405,18 @@ export default function AnalysisDetailsClient({
               <p className="text-gray-800">{analysis.recording.filename}</p>
             </div>
             <div className="flex items-center gap-3">
+              {analysis.status === 'completed' && process.env.NEXT_PUBLIC_AUTH_MODE !== 'local' && (
+                <button
+                  onClick={() => setShowConnectAi(true)}
+                  className="border border-neuro-primary text-neuro-primary px-4 py-2 rounded-lg hover:bg-neuro-light transition-colors font-medium flex items-center gap-2"
+                  title="Connect Claude or ChatGPT to walk through this analysis"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  Ask Claude / ChatGPT
+                </button>
+              )}
               {analysis.status === 'completed' && (
                 <button
                   onClick={handleReanalyze}
@@ -434,6 +448,11 @@ export default function AnalysisDetailsClient({
               </div>
             </div>
           </div>
+          <ConnectAiModal
+            isOpen={showConnectAi}
+            onClose={() => setShowConnectAi(false)}
+            analysisUrl={typeof window !== 'undefined' ? `${window.location.origin}/analyses/${analysis.id}` : ''}
+          />
           {reanalyzeError && (
             <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-red-800 text-sm">{reanalyzeError}</p>
