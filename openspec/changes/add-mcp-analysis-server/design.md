@@ -58,8 +58,10 @@ them, and enforces who may see what.
     authorization path `/oauth/consent`. The Site URL is the production origin.
 - **Consent page `app/oauth/consent/page.tsx`.** It requires a Squiggly session and redirects to
   `/login?next=...` if there isn't one. It shows the requesting client's name and redirect URI and
-  states plainly what it grants: "read-only access to analyses in projects you can access; EEG
-  numbers only, no client details or names". It has Approve and Deny buttons and uses the
+  states plainly what it grants: the connector's tools are read-only and return EEG measurements
+  only (no client details, project names or file names), and the access token itself is tied to
+  the user's account and revocable under Connected apps (see Token scope). It has Approve and
+  Deny buttons and uses the
   supabase-js OAuth server helpers for authorization details, approve and deny. Start from the
   Supabase "OAuth Consent" Next.js block, restyled to the app.
 - **Protected resource metadata** at `app/.well-known/oauth-protected-resource/route.ts`
@@ -73,6 +75,8 @@ them, and enforces who may see what.
     against the Supabase docs.
   - Build a **per-request Supabase client** with `global.headers.Authorization = Bearer <token>`,
     so RLS runs as the user.
+  - After the claim checks, call `auth.getUser(token)` as well: `getClaims` verifies asymmetric
+    tokens locally against the JWKS, so without it a revoked grant keeps working until `exp`.
   - Wrap the handler with `withMcpAuth(..., { required: true })`.
 - **DB access**: `lib/db` currently builds its Supabase client from cookies
   (`lib/db/supabase-db.ts:247`). Add a way to construct the DB/RBAC helpers from an explicit
@@ -84,6 +88,23 @@ them, and enforces who may see what.
   instructions and record the gap in this doc.
 - `middleware.ts` must not redirect `/api/mcp`, `/.well-known/*` or `/oauth/consent` (the consent
   page does its own login redirect, preserving the query string).
+
+### Token scope
+The access token Supabase issues to a connected app is a user-level Supabase JWT (role
+`authenticated`, plus a `client_id` claim). The MCP tools only read, through allowlisted output,
+but the same token also works directly against PostgREST and Storage under the user's RLS. The
+consent copy says so ("the access token it receives is tied to your account").
+
+`supabase/migrations/restrict_oauth_client_tokens.sql` (written, not yet applied) adds RESTRICTIVE
+policies keyed on `(auth.jwt() ->> 'client_id') IS NOT NULL`:
+- no INSERT, UPDATE or DELETE on `projects`, `project_members`, `recordings`, `analyses`,
+  `project_analyses`, `export_logs`, `eeg_annotations`;
+- no SELECT, INSERT, UPDATE or DELETE on `storage.objects`.
+
+Still open, pending a decision: row reads through the direct API stay allowed (the MCP tools need
+them), so such a token can read columns the tools never return, such as
+`projects.client_metadata`, project names and recording filenames. Closing that needs column-level
+grants or views for client tokens.
 
 ### Transport
 - `mcp-handler` `createMcpHandler` at `app/api/mcp/route.ts`, Streamable HTTP, stateless, no
