@@ -309,6 +309,31 @@ for details.
 
 ---
 
+## Connect Claude / ChatGPT (MCP)
+
+Cloud mode exposes a read-only [MCP](https://modelcontextprotocol.io) server so an AI assistant can
+read your EEG results and help interpret them. Server URL:
+
+```
+https://squiggly.alexni.ai/api/mcp
+```
+
+**Claude.ai:** Settings → Connectors → Add custom connector → paste the URL.
+**ChatGPT:** Settings → Connectors → enable developer mode → Create → paste the URL (OAuth).
+
+You sign in to Squiggly, then approve the connection on the consent screen. Access is read-only and
+limited to the projects you can already open. The assistant sees EEG measurements only (QC, band
+power, connectivity, asymmetry, complexity, events, comparisons); client details, project names and
+file names are never shared. Projects appear as "Project 1a2b3c4d".
+
+Tools: `list_projects`, `list_sessions`, `get_session_summary`, `get_analysis_detail`,
+`compare_sessions`, `get_metric_trend`. Prompts: `interpret_session`, `compare_two_sessions`.
+
+To disconnect an app, open **Settings → Connected apps** (`/settings/connected-apps`) and revoke it;
+its next call is rejected. The endpoint is not available in Docker mode (`AUTH_MODE=local` returns 404).
+
+---
+
 ## Project Structure
 
 ```

@@ -59,6 +59,26 @@ Environment variables (Production and Preview):
 Runs still `processing` after 10 minutes (e.g. the instance was recycled) are shown as stalled and
 can be restarted.
 
+### 4. MCP server (Claude / ChatGPT connector)
+
+`/api/mcp` is an OAuth-protected, read-only MCP endpoint. Supabase acts as the OAuth server. In the
+Supabase dashboard:
+
+1. Authentication → OAuth Server → enable it and allow dynamic client registration.
+2. Set the authorization path to `/oauth/consent`.
+3. Authentication → URL Configuration: Site URL = `https://squiggly.alexni.ai`. The redirect
+   allowlist must include `https://squiggly.alexni.ai/auth/callback**`; the login return path uses
+   `?redirect=`, so the wildcard is required.
+
+Notes:
+- OAuth access tokens carry a `client_id` claim. The endpoint accepts only these tokens and rejects
+  ordinary session JWTs; `/settings/connected-apps` uses the claim to list and revoke grants.
+- Discovery metadata is served at `/.well-known/oauth-protected-resource` and
+  `/.well-known/oauth-protected-resource/api/mcp`.
+- The endpoint uses the caller's own token, never the service-role key, so RLS applies.
+- It is not mounted when `AUTH_MODE=local`.
+- Connector URL for users: `https://squiggly.alexni.ai/api/mcp` (see README).
+
 ### Sizing
 
 A 20-minute 19-channel recording takes roughly 30–60 s of CPU and about 200–400 MB of memory.
