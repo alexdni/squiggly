@@ -35,6 +35,14 @@ export const SECRETS = {
   configSecret: 'CONFIG_SECRET',
 } as const;
 
+/** QC warnings built from exception messages, carrying a URL, a server path and the kernel id. */
+export const LEAKY_WARNINGS = [
+  'Source localization unavailable: the head-model kernel could not be loaded (fetch https://storage.example.test/kernels/KERN_SECRET.bin failed)',
+  'HRV could not be computed from ECG: ENOENT: no such file /var/task/sloreta/KERN_SECRET.bin',
+  'Source localization failed: kernel KERN_SECRET: checksum mismatch at /var/task/sloreta/KERN_SECRET.bin',
+  'Cleaned file could not be stored.',
+];
+
 /** The 19 10-20 sites, in fixture channel order (index i drives the band power values). */
 export const CHANNELS_1020 = [
   'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
@@ -95,6 +103,8 @@ export interface ResultsOptions {
   epochs?: { eo?: number; ec?: number };
   bad_channels?: string[];
   ica_components_removed?: number;
+  /** QC warnings; default [] */
+  warnings?: string[];
   /** EC alpha1/alpha2 multiplier by region (occipital, parietal); default 1.8 and 1.3 */
   ecAlphaGain?: { occipital?: number; parietal?: number };
   events?: DetectedEventResult[];
@@ -273,7 +283,7 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
     original_sfreq: 256,
     final_sfreq: 256,
     n_channels: 19,
-    warnings: [],
+    warnings: opts.warnings ?? [],
   };
   const per = <T,>(make: (c: Condition) => T) => ({ eo: has('eo') ? make('eo') : null, ec: has('ec') ? make('ec') : null });
   const results: AnalysisResults = {

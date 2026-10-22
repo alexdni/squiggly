@@ -91,10 +91,44 @@ export function qualityBlock(qc: QcReportSummary, condition?: 'eo' | 'ec'): Qual
     ica_components_removed: qc.ica_components_removed,
     ica_removed_labels: qc.ica_removed_labels ?? [],
     asr_applied: qc.asr?.ran === true,
-    warnings: qc.warnings ?? [],
+    warnings: (qc.warnings ?? []).map(sanitizeWarning).filter((w) => w.length > 0),
     confidence,
     reasons,
   };
+}
+
+const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi;
+// absolute or relative path with two or more segments, a file-like relative path, or a Windows path
+const PATH_RE = /(?:[a-z]:)?[\w.~@%+-]*(?:[\\/][\w.@%+-]+){2,}[\\/]?|\b[\w.-]+(?:[\\/][\w.@%+-]+)+\.\w{1,5}\b|(?:^|\s)\/[\w.@%+-]+\.\w{1,5}\b/gi;
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const LONG_HEX_RE = /\b[0-9a-f]{16,}\b/gi;
+const KERNEL_ID_RE = /\bkernel\s+[^\s:,;.]+/gi;
+// "<what> failed: <exception message>" and the like: keep the human-readable prefix only
+const DETAIL_AFTER_RE = /^(.*?\b(?:failed|unavailable|could not be computed from [^:]*)):\s.*$/is;
+
+/**
+ * QC warnings are partly built from exception messages, which can carry server paths, storage
+ * URLs and kernel ids. Keep the readable statement, drop the detail.
+ */
+export function sanitizeWarning(w: string): string {
+  let s = typeof w === 'string' ? w : '';
+  let prev: string;
+  do {
+    prev = s;
+    s = s.replace(/\s*\([^()]*\)/g, '');
+  } while (s !== prev);
+  const cut = DETAIL_AFTER_RE.exec(s);
+  if (cut) s = `${cut[1]}.`;
+  s = s
+    .replace(URL_RE, '')
+    .replace(PATH_RE, ' ')
+    .replace(UUID_RE, '')
+    .replace(LONG_HEX_RE, '')
+    .replace(KERNEL_ID_RE, 'kernel')
+    .replace(/\s+([.,;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return /^[\s.,;:()-]*$/.test(s) ? '' : s;
 }
 
 function round(n: number): number {

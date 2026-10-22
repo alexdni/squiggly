@@ -110,8 +110,8 @@ export interface SessionSummary {
     items: EventOut[];
     dismissed: EventOut[];
     not_assessed: { detector: string; reason: string }[];
-    /** set when items/dismissed were capped */
-    omitted?: { items: number; dismissed: number };
+    /** set when clinical_flags/items/dismissed were capped: how many were left out */
+    omitted?: { clinical_flags: number; items: number; dismissed: number };
   };
   interpretation_guidance: string;
 }
@@ -124,6 +124,7 @@ const CLINICAL: EventCategory[] = ['epileptiform', 'rhythmic-periodic'];
 const REGIONS = Object.keys(REGIONAL_CHANNELS) as Region[];
 const SITES_1020: string[] = REGIONS.flatMap((r) => REGIONAL_CHANNELS[r]);
 const UNAVAILABLE_STATUS = ['pending', 'processing', 'failed'] as const;
+const MAX_CLINICAL_FLAGS = 20;
 const MAX_EVENT_ITEMS = 40;
 const MAX_DISMISSED_ITEMS = 20;
 const TOP_PAIRS = 5;
@@ -434,14 +435,25 @@ function eventsOut(ready: { source: Source; input: AnalysisInput; results: Analy
   const dismissed = all.filter((e) => e.review === 'dismissed').sort(eventOrder);
   for (const e of kept) counts[e.category] += 1;
 
+  // Clinical events are listed once, in clinical_flags (confirmed first); counts still include them
+  const clinical = kept
+    .filter((e) => CLINICAL.includes(e.category))
+    .sort((a, b) => Number(b.review === 'confirmed') - Number(a.review === 'confirmed') || eventOrder(a, b));
+  const rest = kept.filter((e) => !CLINICAL.includes(e.category));
+
   const block: NonNullable<SessionSummary['events']> = {
     counts,
-    items: kept.slice(0, MAX_EVENT_ITEMS),
+    items: rest.slice(0, MAX_EVENT_ITEMS),
     dismissed: dismissed.slice(0, MAX_DISMISSED_ITEMS),
     not_assessed: [...notAssessed.values()],
   };
-  const omitted = { items: Math.max(kept.length - MAX_EVENT_ITEMS, 0), dismissed: Math.max(dismissed.length - MAX_DISMISSED_ITEMS, 0) };
-  if (omitted.items || omitted.dismissed) block.omitted = omitted;
+  const over = (n: number, max: number) => Math.max(n - max, 0);
+  const omitted = {
+    clinical_flags: over(clinical.length, MAX_CLINICAL_FLAGS),
+    items: over(rest.length, MAX_EVENT_ITEMS),
+    dismissed: over(dismissed.length, MAX_DISMISSED_ITEMS),
+  };
+  if (omitted.clinical_flags || omitted.items || omitted.dismissed) block.omitted = omitted;
 
-  return { clinical: kept.filter((e) => CLINICAL.includes(e.category)), block };
+  return { clinical: clinical.slice(0, MAX_CLINICAL_FLAGS), block };
 }

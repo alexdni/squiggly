@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { qualityBlock, isLegacyResults, worse, stepDown } from '@/lib/server/mcp/quality';
+import { qualityBlock, isLegacyResults, worse, stepDown, sanitizeWarning } from '@/lib/server/mcp/quality';
+import { LEAKY_WARNINGS } from './fixtures';
 import type { QcReportSummary } from '@/lib/analysis-results';
 
 function qc(over: Partial<QcReportSummary> = {}): QcReportSummary {
@@ -147,5 +148,50 @@ describe('isLegacyResults', () => {
   it('is false for non-objects', () => {
     expect(isLegacyResults(null)).toBe(false);
     expect(isLegacyResults('x')).toBe(false);
+  });
+});
+
+describe('sanitizeWarning', () => {
+  it('keeps plain engine warnings unchanged', () => {
+    expect(sanitizeWarning('All EC epochs were rejected; EC features are unavailable.')).toBe(
+      'All EC epochs were rejected; EC features are unavailable.',
+    );
+    expect(sanitizeWarning('Cleaned file could not be stored.')).toBe('Cleaned file could not be stored.');
+    expect(sanitizeWarning('Source localization needs all 19 10-20 channels after QC; missing T7, O2.')).toBe(
+      'Source localization needs all 19 10-20 channels after QC; missing T7, O2.',
+    );
+  });
+
+  it('drops parenthesized detail', () => {
+    expect(sanitizeWarning('ECG channel skipped (flat line).')).toBe('ECG channel skipped.');
+  });
+
+  it('cuts the detail after "failed: ", "unavailable: " and "could not be computed from X: "', () => {
+    expect(sanitizeWarning('Source localization failed: ENOENT /var/task/x')).toBe('Source localization failed.');
+    expect(sanitizeWarning('Source localization unavailable: the head-model kernel could not be loaded (boom)')).toBe(
+      'Source localization unavailable.',
+    );
+    expect(sanitizeWarning('HRV could not be computed from ECG: too few beats')).toBe('HRV could not be computed from ECG.');
+  });
+
+  it('strips URLs, paths and long hex / uuid ids, and drops empty results', () => {
+    const out = sanitizeWarning(
+      'Upload to https://x.example.test/a/b.edf of /var/task/k.bin and data/raw/file.edf id 0123456789abcdef0123 run 1b4e28ba-2fa1-11d2-883f-0016d3cca427',
+    );
+    expect(out).not.toMatch(/https?:|\/var|data\/raw|0123456789abcdef|1b4e28ba/);
+    expect(out.startsWith('Upload to')).toBe(true);
+    expect(sanitizeWarning('(only detail)')).toBe('');
+  });
+
+  it('qualityBlock sanitizes warnings and drops empty ones', () => {
+    const q = qualityBlock(qc({ warnings: [...LEAKY_WARNINGS, '(gone)'] }));
+    const text = q.warnings.join(' | ');
+    for (const s of ['http', 'storage.example', '/var/task', 'KERN_SECRET', '.bin']) expect(text).not.toContain(s);
+    expect(q.warnings).toEqual([
+      'Source localization unavailable.',
+      'HRV could not be computed from ECG.',
+      'Source localization failed.',
+      'Cleaned file could not be stored.',
+    ]);
   });
 });

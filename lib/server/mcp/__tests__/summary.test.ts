@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildSessionSummary, sig3 } from '@/lib/server/mcp/summary';
 import { GUIDANCE, GUIDANCE_SHORT } from '@/lib/server/mcp/guidance';
 import type { Session } from '@/lib/server/mcp/sessions';
-import { SECRETS, makeEvent, makeInput, makeRecording, makeResults } from './fixtures';
+import { LEAKY_WARNINGS, SECRETS, makeEvent, makeInput, makeRecording, makeResults } from './fixtures';
 
 function splitSession(eoId: string, ecId: string): Session {
   return { id: 'sess-split', recordingIds: { eo: eoId, ec: ecId }, date: '2026-10-01T10:00:00Z', pairing: 'filename' };
@@ -225,6 +225,42 @@ describe('buildSessionSummary', () => {
     expect(json).not.toMatch(/_path"/);
     expect(json).not.toMatch(/https?:\/\//);
     expect(json).not.toContain('Anna');
+  });
+});
+
+describe('buildSessionSummary: leaks and caps', () => {
+  it('QC warnings reach the summary sanitized, keeping the readable prefix', () => {
+    const { session, eo, ec } = split({}, { warnings: LEAKY_WARNINGS });
+    const s = buildSessionSummary(session, { eo, ec });
+    const json = JSON.stringify(s);
+    for (const bad of ['https://', 'storage.example', '/var/task', 'KERN_SECRET']) expect(json).not.toContain(bad);
+    expect(s.quality.ec!.warnings).toContain('Source localization unavailable.');
+    expect(s.quality.ec!.warnings).toContain('HRV could not be computed from ECG.');
+  });
+
+  it('clinical events are listed once: in clinical_flags, not again in events.items', () => {
+    const flag = makeEvent({ category: 'epileptiform', handling: 'noted' });
+    const blink = makeEvent();
+    const { session, eo, ec } = split({ events: [flag, blink] });
+    const s = buildSessionSummary(session, { eo, ec });
+    expect(s.clinical_flags.map((e) => e.id)).toEqual([flag.id]);
+    expect(s.events!.items.map((e) => e.id)).toEqual([blink.id]);
+    expect(s.events!.counts.epileptiform).toBe(1);
+  });
+
+  it('caps clinical_flags at 20, confirmed first, counts the rest, and stays under 32 000 chars', () => {
+    const events = Array.from({ length: 200 }, () => makeEvent({ category: 'epileptiform', pattern: 'spike-wave', handling: 'noted' }));
+    const confirmed = events.slice(150, 155).map((e) => e.id);
+    const reviews = Object.fromEntries(confirmed.map((id) => [id, 'confirmed']));
+    const { session, eo, ec } = split({ events, hrv: true, sloreta: true }, { sloreta: true }, { eo: { config: { event_reviews: reviews } } });
+    const s = buildSessionSummary(session, { eo, ec });
+    expect(s.clinical_flags).toHaveLength(20);
+    expect(s.clinical_flags.slice(0, 5).map((e) => e.id).sort()).toEqual([...confirmed].sort());
+    expect(s.clinical_flags.slice(0, 5).every((e) => e.review === 'confirmed')).toBe(true);
+    expect(s.events!.omitted?.clinical_flags).toBe(180);
+    expect(s.events!.items).toEqual([]);
+    expect(s.events!.counts.epileptiform).toBe(200);
+    expect(JSON.stringify(s).length).toBeLessThan(32_000);
   });
 });
 
