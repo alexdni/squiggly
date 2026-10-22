@@ -203,7 +203,7 @@ export function buildSessionSummary(
   return { ...summary, interpretation_guidance: GUIDANCE_SHORT };
 }
 
-function recordingMeta(input: AnalysisInput): RecordingMeta {
+export function recordingMeta(input: AnalysisInput): RecordingMeta {
   const r = input.recording;
   return {
     id: r.id,
