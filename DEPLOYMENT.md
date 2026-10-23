@@ -69,6 +69,10 @@ Supabase dashboard:
 3. Authentication → URL Configuration: Site URL = `https://squiggly.alexni.ai`. The redirect
    allowlist must include `https://squiggly.alexni.ai/auth/callback**`; the login return path uses
    `?redirect=`, so the wildcard is required.
+4. Project Settings → JWT Keys: migrate the legacy JWT secret and rotate to an asymmetric (ES256)
+   signing key; keep the legacy key as previously used. Claude and ChatGPT request the `openid`
+   scope, and Supabase cannot sign ID tokens with HS256: `/oauth/token` fails with 500
+   `HS256 is not supported for ID token signing` until this is done.
 
 Notes:
 - OAuth access tokens carry a `client_id` claim. The endpoint accepts only these tokens and rejects
