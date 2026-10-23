@@ -9,7 +9,8 @@ import { checkProjectPermission, type Permission } from '@/lib/rbac';
 import type { AnalysisResults } from '@/lib/analysis-results';
 import { McpUserError } from './errors';
 import { UUID_RE, decodeSessionId, parseRef } from './ids';
-import { pairSessions, type RecordingRow, type Session } from './sessions';
+import { conditionOf, pairSessions, type RecordingRow, type Session } from './sessions';
+import { relabelToCondition } from './relabel';
 import { buildSessionSummary, recordingMetaOf, type AnalysisInput, type RecordingMeta, type SessionSummary } from './summary';
 
 type Source = 'eo' | 'ec' | 'both';
@@ -48,6 +49,11 @@ export interface LoadedSession {
 }
 
 const notFound = () => new McpUserError('Not found');
+
+/** The row with its filename blanked; condition_type carries the condition the filename gave it. */
+function scrubbed(rec: RecordingRow): RecordingRow {
+  return { ...rec, filename: '', condition_type: conditionOf(rec) };
+}
 
 /** Callers see 'Not found'; the real error is logged server-side (no tokens, no row contents). */
 function dbFailure(table: string, error: Error): McpUserError {
@@ -155,11 +161,12 @@ async function loadParts(
       const rid = session.recordingIds[k];
       const head = rid ? heads.get(rid) : undefined;
       const rec = rid ? byId.get(rid) : undefined;
-      if (rec) recordings.push({ ...rec, filename: '' });
-      if (!head || !rec) continue;
+      const clean = rec && scrubbed(rec);
+      if (clean) recordings.push(clean);
+      if (!head || !clean) continue;
       const a = fullById.get(head.id);
-      const results = a?.results ?? null;
-      parts[k] = { analysisId: head.id, recording: { ...rec, filename: '' }, status: a?.status ?? head.status, results, config: reviewsOnly(a?.config) };
+      const results = relabelToCondition(a?.results ?? null, clean.condition_type);
+      parts[k] = { analysisId: head.id, recording: clean, status: a?.status ?? head.status, results, config: reviewsOnly(a?.config) };
       engines[k] = engineOf(results);
     }
     return { session, parts, engines, recordings };
@@ -298,11 +305,12 @@ export async function loadAnalysis(db: DatabaseClient, userId: string, analysisR
     db.from('analyses').select('id, recording_id, status, results, config').eq('id', ctx.analysis.id).single(),
   );
   if (!full) throw notFound();
+  const recording = scrubbed(ctx.recording);
   return {
     analysisId: full.id,
-    recording: { ...ctx.recording, filename: '' },
+    recording,
     status: full.status,
-    results: full.results ?? null,
+    results: relabelToCondition(full.results ?? null, recording.condition_type),
     config: reviewsOnly(full.config),
   };
 }

@@ -59,6 +59,17 @@ describe('compareSessions', () => {
     expect(same.confidence).toBe('high');
   });
 
+  it('a mixed side is named once, not repeated inside a cross-session caveat', () => {
+    const c = compareSessions(make(), make({ date: '2026-11-01T10:00:00Z' }), {
+      a: ['e@0.33.0-beta.2', 'e@0.33.0-beta.2'],
+      b: ['e@0.33.0-beta.2', 'e@0.34.0-beta.0'],
+    });
+    expect(c.caveats.filter((x) => x.startsWith('engine'))).toEqual(['engine version differs within B (0.33.0-beta.2 vs 0.34.0-beta.0)']);
+    const apart = compareSessions(make(), make({ date: '2026-11-01T10:00:00Z' }), { a: 'e@1', b: ['e@2', 'e@3'] });
+    expect(apart.caveats).toContain('engine version differs between A (1) and B (2 and 3)');
+    expect(apart.confidence).toBe('moderate');
+  });
+
   it('engine versions differ: caveat, confidence stepped down once, bare versions', () => {
     const c = compareSessions(make(), make({ date: '2026-11-01T10:00:00Z' }), {
       a: 'hybrid-asr-ica@0.33.0',

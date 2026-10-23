@@ -73,6 +73,12 @@ failing that by nearest upload within 24 hours. Filenames SHALL NOT appear in an
 - **WHEN** a project has `..._EO.edf` and `..._EC.edf` with the same base name
 - **THEN** they form one session with `pairing: 'filename'`
 
+#### Scenario: Split upload analyzed as one whole-recording segment
+- **WHEN** an EC recording (by `condition_type` or filename token) has results only under `eo`,
+  because it was uploaded as BOTH with no segment markers
+- **THEN** its results are read as EC by every tool
+- **AND** the recording reports condition EC
+
 #### Scenario: Unpaired file
 - **WHEN** an EO recording has no EC partner
 - **THEN** it forms a single-condition session with `pairing: 'single'`

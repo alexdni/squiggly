@@ -181,7 +181,13 @@ export function compareSessions(
     if (v.length > 1) caveats.push(`engine version differs within ${side} (${v.join(' vs ')})`);
   }
   const acrossDiffer = va.length > 0 && vb.length > 0 && va.join(',') !== vb.join(',');
-  if (acrossDiffer) caveats.push(`engine version differs (${va.join(', ')} vs ${vb.join(', ')})`);
+  const subset = (x: string[], y: string[]) => x.every((v) => y.includes(v));
+  if (va.length === 1 && vb.length === 1) {
+    if (acrossDiffer) caveats.push(`engine version differs (${va[0]} vs ${vb[0]})`);
+  } else if (acrossDiffer && !subset(va, vb) && !subset(vb, va)) {
+    // a mixed side already has its own caveat; name the cross-session gap only when it adds something
+    caveats.push(`engine version differs between A (${va.join(' and ')}) and B (${vb.join(' and ')})`);
+  }
   if (acrossDiffer || va.length > 1 || vb.length > 1) {
     engine_versions = { a: va.join(','), b: vb.join(',') };
     mismatch = true;

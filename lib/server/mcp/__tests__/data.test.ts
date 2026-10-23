@@ -207,4 +207,31 @@ describe('data loaders', () => {
     const out = await listSessions(db, OWNER, PROJECT_ID);
     expect(out.sessions[0].recordings.every((r) => r.analysis === null)).toBe(true);
   });
+
+  it('split BOTH uploads named …45EO / …45EC pair, and the EC file\'s whole-recording results read as EC', async () => {
+    const eo = makeRecording({ condition_type: 'BOTH', filename: 'Client 2026 pre 45EO.edf', created_at: '2026-10-01T10:00:00Z' });
+    const ec = makeRecording({ condition_type: 'BOTH', filename: 'Client 2026 pre 45EC.edf', created_at: '2026-10-01T10:12:00Z' });
+    // with no segment markers the engine files the whole recording under eo, for both files
+    const eoA = makeAnalysisRow(eo, makeResults({ conditions: ['eo'] }));
+    const ecA = makeAnalysisRow(ec, makeResults({ conditions: ['eo'] }));
+    const { db } = fakeDb({ projects: [makeProject()], project_members: [], recordings: [eo, ec], analyses: [eoA, ecA] });
+
+    const loaded = await loadSession(db, OWNER, ecA.id);
+    expect(loaded.session.pairing).toBe('filename');
+    expect(loaded.session.recordingIds).toEqual({ eo: eo.id, ec: ec.id });
+    expect(loaded.parts.ec!.results!.band_power.ec).not.toBeNull();
+    expect(loaded.parts.ec!.results!.band_power.eo).toBeNull();
+    expect(loaded.parts.ec!.results!.qc_report.final_epochs_ec).toBeGreaterThan(0);
+    expect(loaded.parts.eo!.results!.band_power.eo).not.toBeNull();
+
+    const summary = buildSessionSummary(loaded.session, loaded.parts, loaded.recordings);
+    expect(summary.conditions.eo).toBeDefined();
+    expect(summary.conditions.ec).toBeDefined();
+    expect(summary.session.recordings.map((r) => r.condition).sort()).toEqual(['EC', 'EO']);
+    expect(JSON.stringify(summary)).not.toContain('45E');
+
+    const single = await loadAnalysis(db, OWNER, ecA.id);
+    expect(single.recording.condition_type).toBe('EC');
+    expect(single.results!.band_power.ec).not.toBeNull();
+  });
 });

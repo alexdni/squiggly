@@ -29,7 +29,8 @@ export interface Session {
   pairing: 'filename' | 'time' | 'single';
 }
 
-const TOKEN_RE = /(^|[\s_.-])(EO|EC|eyes[\s_-]?open|eyes[\s_-]?closed)(?=$|[\s_.-])/i;
+// Any non-letter may precede the token (e.g. '…45EO.edf'); a digit after it is a TheraQ phase file ('EO1'), not a token.
+const TOKEN_RE = /(^|[^a-z])(EO|EC|eyes[\s_-]?open|eyes[\s_-]?closed)(?=$|[^a-z0-9])/i;
 const THERAQ_RE = /(^|[\s_.-])E[OC]\d(?=$|[\s_.-])/i;
 const MAX_GAP_MS = 24 * 3600 * 1000;
 

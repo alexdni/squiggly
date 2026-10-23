@@ -32,6 +32,21 @@ describe('conditionOf / isTheraqPhaseFile', () => {
     expect(conditionOf(rec('x_eyes-open.edf', '2026-01-01T00:00:00Z', { condition_type: 'BOTH' }))).toBe('EO');
     expect(conditionOf(rec('x.edf', '2026-01-01T00:00:00Z', { condition_type: 'BOTH' }))).toBe('BOTH');
   });
+  it('finds the token after a digit, but not inside a word or as a TheraQ phase', () => {
+    const both = (f: string) => conditionOf(rec(f, '2026-01-01T00:00:00Z', { condition_type: 'BOTH' }));
+    expect(both('Client pre 45EO.edf')).toBe('EO');
+    expect(both('Client pre 45EC.edf')).toBe('EC');
+    expect(both('(EC).edf')).toBe('EC');
+    expect(both('SPEC.edf')).toBe('BOTH');
+    expect(both('x_EO1.edf')).toBe('BOTH');
+  });
+  it('pairs digit-adjacent EO/EC files by name', () => {
+    const a = rec('Client pre 45EO.edf', '2026-01-01T10:00:00Z', { condition_type: 'BOTH' });
+    const b = rec('Client pre 45EC.edf', '2026-01-01T10:10:00Z', { condition_type: 'BOTH' });
+    const c = rec('Client post 52EC.edf', '2026-01-01T10:05:00Z', { condition_type: 'BOTH' });
+    const s = pairSessions([a, b, c]);
+    expect(s.find((x) => x.recordingIds.eo === a.id)).toMatchObject({ pairing: 'filename', recordingIds: { eo: a.id, ec: b.id } });
+  });
   it('detects TheraQ phase files', () => {
     expect(isTheraqPhaseFile('x_EO1.edf')).toBe(true);
     expect(isTheraqPhaseFile('x EC2 foo')).toBe(true);
