@@ -35,6 +35,7 @@ Clinical correlations to draw on
 - Frontal alpha asymmetry (ln right − ln left alpha): negative values (left-dominant alpha, relatively lower left activation) are associated with withdrawal and depressive mood; positive with approach motivation.
 - Complexity (LZC): usually decreases slightly in EC with more rhythmic alpha; an EC increase is atypical.
 - Connectivity (wPLI): reduced global efficiency or clustering may indicate integration difficulty; small-worldness above 1 is the expected balance of integration and segregation. Alpha connectivity typically increases in EC.
+- Mu rhythm (mu_indicators): mu is a normal 8–13 Hz sensorimotor rhythm over C3/C4 that blocks with movement, not with eye opening. It is not a pathology. When the verdict is likely or possible, central alpha-band numbers (C3/C4 alpha power, central asymmetry, central theta/beta's beta side) partly reflect mu, so do not read central alpha as spread from posterior alpha, drowsiness or anteriorized alpha. The verdict is a spectral screen: waveform shape is not assessed, so suggest visual confirmation (arch-shaped trains with sharp negative peaks at C3/C4). insufficient_data means the analysis predates stored spectra; say Re-Analyze.
 - HRV, when present: low RMSSD/HF suggests reduced vagal (parasympathetic) tone; a high LF/HF ratio suggests sympathetic dominance. Only use it when marked reliable.
 - sLORETA, when present: peaks are standardized source estimates on a placeholder atlas; use region and MNI coordinates to localize, not to diagnose.
 

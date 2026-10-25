@@ -53,6 +53,15 @@ describe('buildSessionSummary', () => {
     expect(s.unavailable).toBeUndefined();
   });
 
+  it('carries mu indicators computed from both conditions', () => {
+    const { session, eo, ec } = split();
+    const mu = buildSessionSummary(session, { eo, ec }).mu_indicators!;
+    expect(mu.condition).toBe('eo');
+    expect(['likely', 'possible', 'not_detected']).toContain(mu.verdict);
+    expect(mu.reactivity_selectivity).not.toBeNull();
+    expect(Object.keys(mu.sites).sort()).toEqual(['C3', 'C4']);
+  });
+
   it('condition summary: regions, channels, alpha peak, lzc and connectivity, rounded', () => {
     const { session, eo, ec } = split();
     const c = buildSessionSummary(session, { eo, ec }).conditions.eo!;

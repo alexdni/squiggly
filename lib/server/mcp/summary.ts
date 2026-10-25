@@ -13,6 +13,7 @@ import {
   type EventCategory,
 } from '@/lib/analysis-results';
 import { REGIONAL_CHANNELS } from '@/lib/constants';
+import { computeMuIndicators, type MuIndicators } from '@/lib/mu-indicators';
 import { CLINICAL, analysisEvents, eventOrder, type EventOut } from './events';
 import { isNum, mean, sig3 } from './num';
 import { GUIDANCE_SHORT } from './guidance';
@@ -91,6 +92,8 @@ export interface SessionSummary {
   quality: { eo?: QualityBlock; ec?: QualityBlock; confidence: Confidence };
   conditions: { eo?: ConditionSummary; ec?: ConditionSummary };
   eo_ec_reactivity?: { occipital_alpha_change_pct: number; posterior_alpha_change_pct: number };
+  /** spectral screen for central (sensorimotor) mu rhythm; waveform shape is not assessed */
+  mu_indicators?: MuIndicators;
   ratios?: BySource<{
     theta_beta_ratio: { frontal_avg: number; central_avg: number };
     alpha_theta_ratio: { occipital_avg: number; parietal_avg: number };
@@ -219,6 +222,11 @@ export function buildSessionSummary(
       occipital_alpha_change_pct: alphaChange(holder.eo, holder.ec, REGIONAL_CHANNELS.occipital),
       posterior_alpha_change_pct: alphaChange(holder.eo, holder.ec, [...REGIONAL_CHANNELS.parietal, ...REGIONAL_CHANNELS.occipital]),
     };
+  }
+
+  if (holder.eo || holder.ec) {
+    const part = (cond: Cond) => (holder[cond] ? { band_power: holder[cond]!.band_power[cond], psd: holder[cond]!.psd?.[cond] } : null);
+    summary.mu_indicators = computeMuIndicators({ eo: part('eo'), ec: part('ec') });
   }
 
   const bySource = <T>(pick: (r: AnalysisResults, source: Source) => T | undefined): BySource<T> | undefined => {
