@@ -92,7 +92,7 @@ export interface SessionSummary {
   quality: { eo?: QualityBlock; ec?: QualityBlock; confidence: Confidence };
   conditions: { eo?: ConditionSummary; ec?: ConditionSummary };
   eo_ec_reactivity?: { occipital_alpha_change_pct: number; posterior_alpha_change_pct: number };
-  /** spectral screen for central (sensorimotor) mu rhythm; waveform shape is not assessed */
+  /** central (sensorimotor) mu rhythm: spectral screen plus waveform trains when the detector ran */
   mu_indicators?: MuIndicators;
   ratios?: BySource<{
     theta_beta_ratio: { frontal_avg: number; central_avg: number };
@@ -225,7 +225,10 @@ export function buildSessionSummary(
   }
 
   if (holder.eo || holder.ec) {
-    const part = (cond: Cond) => (holder[cond] ? { band_power: holder[cond]!.band_power[cond], psd: holder[cond]!.psd?.[cond] } : null);
+    const part = (cond: Cond) => {
+      const r = holder[cond];
+      return r ? { band_power: r.band_power[cond], psd: r.psd?.[cond], morphology: r.mu_morphology?.[cond] } : null;
+    };
     summary.mu_indicators = computeMuIndicators({ eo: part('eo'), ec: part('ec') });
   }
 

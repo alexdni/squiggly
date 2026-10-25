@@ -47,6 +47,7 @@ const PATTERN_NAMES: Record<string, string> = {
   'ecg-artifact': 'ECG artifact',
   'pulse-artifact': 'Pulse artifact',
   'line-noise': 'Line noise',
+  'mu-rhythm': 'Mu rhythm',
 };
 
 export interface PatternNameOptions {
@@ -73,6 +74,7 @@ const DETECTOR_NAMES: Record<string, string> = {
   chewing: 'Chewing',
   cardiac: 'Cardiac (ECG and pulse)',
   'line-noise': 'Line noise',
+  'mu-rhythm': 'Mu rhythm (C3/C4)',
 };
 
 export function detectorName(name: string): string {
@@ -201,6 +203,11 @@ const EVIDENCE_LABELS: Record<string, string> = {
   varianceFraction: 'variance fraction',
   label: 'label',
   confidence: 'confidence',
+  freqHz: 'Hz',
+  cycles: 'cycles',
+  archSharpness: 'arch sharpness',
+  occipitalOverlap: 'occipital overlap',
+  amplitudeUv: 'amplitude µV',
 };
 
 /** Evidence keys shown elsewhere (handling text) or internal. */
@@ -309,6 +316,40 @@ export function groupEvents(events: DetectedEventResult[]): EventGroup[] {
 export function countByCategory(events: DetectedEventResult[]): Partial<Record<EventCategory, number>> {
   const out: Partial<Record<EventCategory, number>> = {};
   for (const e of events) out[e.category] = (out[e.category] ?? 0) + 1;
+  return out;
+}
+
+/**
+ * Whether an analyst can dismiss the event: rejections (puts the epochs back on Re-Analyze), and
+ * waveform labels such as mu, where dismissing says the label is wrong and changes no metric.
+ */
+export function canDismiss(e: DetectedEventResult): boolean {
+  return e.handling === 'rejected' || TRACE_HIGHLIGHT_PATTERNS.has(e.pattern);
+}
+
+/** Patterns drawn as highlighted trace segments on their own channels in the viewer. */
+export const TRACE_HIGHLIGHT_PATTERNS = new Set(['mu-rhythm']);
+
+export interface TraceHighlight {
+  channel: string;
+  startSec: number;
+  endSec: number;
+  category: EventCategory;
+}
+
+/** Channel-specific highlights overlapping [t0, t1], leaving out dismissed events. */
+export function traceHighlights(
+  events: DetectedEventResult[],
+  reviews: Record<string, EventReviewDecision>,
+  t0: number,
+  t1: number
+): TraceHighlight[] {
+  const out: TraceHighlight[] = [];
+  for (const e of events) {
+    if (!TRACE_HIGHLIGHT_PATTERNS.has(e.pattern) || e.endSec < t0 || e.startSec > t1) continue;
+    if (decisionFor(e, reviews) === 'dismissed') continue;
+    for (const channel of e.channels) out.push({ channel, startSec: e.startSec, endSec: e.endSec, category: e.category });
+  }
   return out;
 }
 

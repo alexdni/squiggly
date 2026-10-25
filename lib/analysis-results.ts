@@ -320,6 +320,24 @@ export interface EventDetectionSummary {
   };
 }
 
+/** Mu rhythm trains at one central site over one condition (cleaned data, Laplacian). */
+export interface MuMorphologySite {
+  /** arch-shaped trains kept as mu (each one is a 'mu-rhythm' event) */
+  bursts: number;
+  bursts_per_min: number;
+  /** share of the analyzed time inside a mu burst, 0–100 */
+  burst_time_pct: number;
+  median_burst_s: number;
+  /** median negative/positive sharpness over every regular 8–13 Hz train; null when none */
+  sharpness_ratio: number | null;
+  /** regular 8–13 Hz trains of any shape */
+  rhythmic_trains: number;
+}
+
+export type MuMorphology = Partial<
+  Record<Condition, { analyzed_sec: number; sites: Partial<Record<'C3' | 'C4', MuMorphologySite>> }>
+>;
+
 /** An analyst's decision on one detected event, stored in `analyses.config.event_reviews`. */
 export type EventReviewDecision = 'confirmed' | 'dismissed';
 
@@ -345,6 +363,8 @@ export interface AnalysisResults {
   events?: DetectedEventResult[];
   /** Detector coverage, counts and dismissal stats; absent on analyses run before detection was added */
   event_detection?: EventDetectionSummary;
+  /** Mu rhythm burst summary; absent on analyses run before the mu detector */
+  mu_morphology?: MuMorphology;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */
   visuals?: Record<string, string>;
   processing_metadata: ProcessingMetadata;

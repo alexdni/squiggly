@@ -151,3 +151,28 @@ describe('event inputs', () => {
     expect(result.report.eventDetection!.coverage.detectors.some((d) => d.skippedReason === 'no ECG lead')).toBe(false);
   }, 60_000);
 });
+
+describe('mu detection in the event summary', () => {
+  it('adds a coverage row, counts mu events as variants, and stops counting dismissed mu ids as unknown', async () => {
+    const { withMuDetection } = await import('../pipeline');
+    const base = {
+      coverage: { tier: 'C' as const, detectors: [{ name: 'muscle', ran: true }] },
+      counts: { artifact: 4, variant: 1, epileptiform: 0, 'rhythmic-periodic': 0 },
+      nRejectedEpochsAdded: 0,
+      nRejectedEpochsNet: 0,
+      retainedEpochFractionRemoved: 0,
+      dismissed: { applied: 0, unknownIds: 2, notDismissible: 0, epochsRestored: 0 },
+    };
+    const muEvent = (id: string) => ({
+      id, category: 'variant' as const, pattern: 'mu-rhythm', startSec: 1, endSec: 2, channels: ['C3'],
+      confidence: 0.8, evidence: {}, handling: 'noted' as const, source: 'detector' as const,
+    });
+    const out = withMuDetection(base, [muEvent('aaaaaaaaaaaaaaaa'), muEvent('bbbbbbbbbbbbbbbb')], new Set(['aaaaaaaaaaaaaaaa', 'ffffffffffffffff']));
+    expect(out.coverage.detectors.at(-1)).toEqual({ name: 'mu-rhythm', ran: true });
+    expect(out.counts.variant).toBe(3);
+    expect(out.dismissed.unknownIds).toBe(1);
+    expect(withMuDetection(base, [], new Set(), 'needs C3 or C4').coverage.detectors.at(-1)).toEqual({
+      name: 'mu-rhythm', ran: false, skippedReason: 'needs C3 or C4',
+    });
+  });
+});

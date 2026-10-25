@@ -16,7 +16,7 @@ describe('runAnalysis', () => {
       { bytes: bytes.slice(), format: 'edf', segments, preprocessing: { profile: 'full' }, engine: 'test' },
       (s) => stages.push(s)
     );
-    expect(stages).toEqual(['loading', 'cleaning', 'epoching', 'features', 'spectrograms', 'exporting']);
+    expect(stages).toEqual(['loading', 'cleaning', 'epoching', 'features', 'mu', 'spectrograms', 'exporting']);
 
     const qc = results.qc_report;
     expect(qc.artifact_mode).toBe('pipeline');

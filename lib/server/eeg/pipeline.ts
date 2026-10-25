@@ -32,6 +32,7 @@ import { ANALYSIS_MAX_HZ, DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
 import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
+import { detectMuBursts, MU_DETECTOR, muEventResults } from './features/muBursts';
 import { computePsd, computeSpectrograms, extractFeatures, type EpochSet } from './features';
 import {
   computeSourceMaps,
@@ -210,6 +211,31 @@ export function eventDetectionSummary(r: EventDetectionReport): EventDetectionSu
     nRejectedEpochsNet: r.nRejectedEpochsNet,
     retainedEpochFractionRemoved: r.retainedEpochFractionRemoved,
     dismissed: { ...r.dismissed },
+  };
+}
+
+/**
+ * The engine's detection summary plus the mu detector: its coverage row, its events in the variant
+ * count, and mu ids the analyst dismissed, which the engine counted as unknown.
+ */
+export function withMuDetection(
+  summary: EventDetectionSummary,
+  muEvents: DetectedEventResult[],
+  dismissed: ReadonlySet<string>,
+  skippedReason?: string
+): EventDetectionSummary {
+  const muDismissed = muEvents.filter((e) => dismissed.has(e.id)).length;
+  return {
+    ...summary,
+    coverage: {
+      ...summary.coverage,
+      detectors: [
+        ...summary.coverage.detectors,
+        { name: MU_DETECTOR, ran: !skippedReason, ...(skippedReason ? { skippedReason } : {}) },
+      ],
+    },
+    counts: { ...summary.counts, variant: (summary.counts.variant ?? 0) + muEvents.length },
+    dismissed: { ...summary.dismissed, unknownIds: Math.max(0, summary.dismissed.unknownIds - muDismissed) },
   };
 }
 
@@ -473,6 +499,16 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   const features = extractFeatures(eo, ec);
   const psd = { eo: eo ? computePsd(eo) : null, ec: ec ? computePsd(ec) : null };
 
+  // Mu rhythm trains on the cleaned data; labels only, never changes a metric.
+  progress('mu');
+  const muKeep = keep.slice();
+  for (const m of manual) {
+    muKeep.fill(0, Math.max(0, Math.floor(m.start * cleaned.sampleRate)), Math.min(muKeep.length, Math.ceil(m.end * cleaned.sampleRate)));
+  }
+  const mu = detectMuBursts({ labels, data, sampleRate: cleaned.sampleRate, keep: muKeep, segments: input.segments });
+  const dismissed = new Set(input.dismissedEventIds ?? []);
+  const muEvents = muEventResults(mu.bursts, dismissed);
+
   progress('spectrograms');
   const spectrograms: Record<Condition, Record<string, SpectrogramData> | null> = { eo: null, ec: null };
   for (const c of conditions) {
@@ -622,8 +658,11 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     psd,
     ...(hrv ? { hrv } : {}),
     ...(sloreta ? { sloreta: sloreta.meta } : {}),
-    ...(result.events ? { events: eventResults(result.events) } : {}),
-    ...(report.eventDetection ? { event_detection: eventDetectionSummary(report.eventDetection) } : {}),
+    ...(result.events || muEvents.length ? { events: [...eventResults(result.events ?? []), ...muEvents] } : {}),
+    ...(report.eventDetection
+      ? { event_detection: withMuDetection(eventDetectionSummary(report.eventDetection), muEvents, dismissed, mu.skipped) }
+      : {}),
+    ...(Object.keys(mu.summary).length ? { mu_morphology: mu.summary } : {}),
     visuals: {},
     processing_metadata: {
       engine: input.engine,

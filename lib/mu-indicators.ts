@@ -5,7 +5,7 @@
 // re-analysis. A 1/f-corrected central peak is required: on the validation set, band power alone
 // flagged electrode pops at C3 as mu.
 
-import type { BandPower, PsdData } from '@/lib/analysis-results';
+import type { BandPower, MuMorphology, PsdData } from '@/lib/analysis-results';
 
 export type MuVerdict = 'likely' | 'possible' | 'not_detected' | 'insufficient_data';
 
@@ -31,11 +31,22 @@ export interface MuIndicators {
   central_occipital_alpha_eo: number | null;
   /** (central EO/EC alpha) ÷ (occipital EO/EC alpha); above 1 means central alpha blocks less on eye opening */
   reactivity_selectivity: number | null;
+  /** arch-shaped trains found in the waveform; null when the analysis predates the detector */
+  waveform: {
+    assessed: boolean;
+    bursts: number;
+    bursts_per_min: number;
+    /** highest site median negative/positive sharpness; > 1 = arch-shaped */
+    sharpness_ratio: number | null;
+    sites: ('C3' | 'C4')[];
+  } | null;
 }
 
 export interface MuConditionInput {
   band_power?: BandPower | null;
   psd?: PsdData | null;
+  /** waveform detector output for this condition (results.mu_morphology[cond]) */
+  morphology?: MuMorphology['eo'] | null;
 }
 
 export const MU = {
@@ -120,12 +131,13 @@ export function computeMuIndicators(input: { eo?: MuConditionInput | null; ec?: 
     occipital_peak_hz: null,
     central_occipital_alpha_eo: null,
     reactivity_selectivity: null,
+    waveform: waveformOf(eo?.morphology, ec?.morphology),
   };
 
   const peakCond = eo?.psd ? 'eo' : ec?.psd ? 'ec' : null;
   if (!peakCond) {
     out.reasons.push('no stored spectrum: Re-Analyze to get mu indicators');
-    return out;
+    return withWaveform(out);
   }
   const psd = (peakCond === 'eo' ? eo : ec)!.psd!;
   out.condition = peakCond;
@@ -135,7 +147,7 @@ export function computeMuIndicators(input: { eo?: MuConditionInput | null; ec?: 
   }
   if (!out.sites.C3 && !out.sites.C4) {
     out.reasons.push('C3/C4 not in the recording');
-    return out;
+    return withWaveform(out);
   }
   const occPsd = ec?.psd ?? eo?.psd!;
   const occ = OCCIPITAL.map((ch) => site(occPsd, ch)).filter((s): s is MuSite => !!s);
@@ -154,7 +166,7 @@ export function computeMuIndicators(input: { eo?: MuConditionInput | null; ec?: 
   if (!peaked.length) {
     out.verdict = 'not_detected';
     out.reasons.push(`no central alpha peak ≥ ${MU.PEAK_MIN_DB} dB above background`);
-    return out;
+    return withWaveform(out);
   }
   out.reasons.push(`central alpha peak at ${peaked.map(([ch, s]) => `${ch} ${s.peak_hz} Hz (${s.peak_db} dB)`).join(', ')}`);
 
@@ -172,5 +184,49 @@ export function computeMuIndicators(input: { eo?: MuConditionInput | null; ec?: 
   // Harmonic and frequency offset are supporting evidence only: on the validation set both also
   // fired on diffuse alpha and on sharp non-rhythmic transients.
   out.verdict = dominance && spared ? 'likely' : dominance || spared ? 'possible' : 'not_detected';
+  return withWaveform(out);
+}
+
+function waveformOf(...conds: (MuConditionInput['morphology'] | undefined)[]): MuIndicators['waveform'] {
+  const present = conds.filter((c): c is NonNullable<MuConditionInput['morphology']> => !!c);
+  if (!present.length) return null;
+  let bursts = 0;
+  let sec = 0;
+  let sharp: number | null = null;
+  const sites = new Set<'C3' | 'C4'>();
+  for (const c of present) {
+    sec += c.analyzed_sec;
+    for (const [site, s] of Object.entries(c.sites) as ['C3' | 'C4', NonNullable<(typeof c.sites)['C3']>][]) {
+      bursts += s.bursts;
+      if (s.bursts > 0) sites.add(site);
+      if (s.sharpness_ratio !== null && (sharp === null || s.sharpness_ratio > sharp)) sharp = s.sharpness_ratio;
+    }
+  }
+  return {
+    assessed: true,
+    bursts,
+    bursts_per_min: sec > 0 ? round((bursts / sec) * 60, 2) : 0,
+    sharpness_ratio: sharp,
+    sites: Array.from(sites).sort(),
+  };
+}
+
+/**
+ * Waveform evidence outranks the spectral screen: arch-shaped trains make mu likely; without them
+ * a spectral 'likely' drops to 'possible'. Analyses run before the detector keep the spectral verdict.
+ */
+function withWaveform(out: MuIndicators): MuIndicators {
+  const w = out.waveform;
+  if (!w) {
+    if (out.verdict !== 'insufficient_data') out.reasons.push('waveform shape not assessed: Re-Analyze to look for arch-shaped trains');
+    return out;
+  }
+  if (w.bursts > 0) {
+    out.reasons.push(`${w.bursts} arch-shaped mu trains at ${w.sites.join('/')} (${w.bursts_per_min}/min, sharpness ${w.sharpness_ratio})`);
+    out.verdict = 'likely';
+  } else {
+    out.reasons.push('no arch-shaped mu trains in the waveform');
+    if (out.verdict === 'likely') out.verdict = 'possible';
+  }
   return out;
 }

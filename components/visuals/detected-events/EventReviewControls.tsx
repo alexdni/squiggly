@@ -1,10 +1,11 @@
 'use client';
 
 import type { DetectedEventResult } from '@/lib/analysis-results';
-import { decisionFor } from './format';
+import { canDismiss, decisionFor } from './format';
 import type { EventReviewState } from './useEventReviews';
 
 export const DISMISS_TOOLTIP = 'Puts these epochs back into the metrics on the next Re-Analyze';
+export const DISMISS_LABEL_TOOLTIP = 'Marks this label as wrong; the metrics are unaffected';
 
 const DECISION_STYLE = {
   confirmed: 'bg-emerald-50 text-emerald-800 border-emerald-200',
@@ -21,9 +22,10 @@ export default function EventReviewControls({
 }) {
   const decision = decisionFor(event, review.reviews);
   const busy = review.pending.has(event.id);
-  const dismissible = event.handling === 'rejected';
+  const dismissible = canDismiss(event);
+  const rejection = event.handling === 'rejected';
   // A stored dismissal the last run did not apply yet (or an applied one since withdrawn).
-  const unapplied = dismissible && (review.reviews[event.id] === 'dismissed') !== Boolean(event.dismissed);
+  const unapplied = rejection && (review.reviews[event.id] === 'dismissed') !== Boolean(event.dismissed);
   const error = review.error?.eventId === event.id ? review.error.message : null;
 
   const toggle = (next: 'confirmed' | 'dismissed') => {
@@ -75,7 +77,7 @@ export default function EventReviewControls({
                     ? 'bg-gray-700 border-gray-700 text-white hover:bg-gray-800'
                     : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                 }`}
-                title={decision === 'dismissed' ? 'Clear the dismissal' : DISMISS_TOOLTIP}
+                title={decision === 'dismissed' ? 'Clear the dismissal' : rejection ? DISMISS_TOOLTIP : DISMISS_LABEL_TOOLTIP}
               >
                 Dismiss
               </button>

@@ -51,73 +51,85 @@ What we learned:
 - Spectra cannot separate a rhythmic arch-shaped train from sporadic sharp transients (75d022b7).
   Phase 2 is for that.
 
-## Phase 2: waveform morphology (planned)
-Goal: identify mu the way an EEGer does, by looking at the waveform, and point to where it is.
+## Phase 2: waveform detector (built)
+Goal: identify mu the way an EEGer does, by its waveform, and show where it is.
 
-### Input
-- Cleaned continuous EEG from the pipeline, before epoching, excluding the rejection timeline
-  spans. Run it per condition segment; EO is primary.
-- Spatial filter: a nearest-neighbour surface Laplacian at C3 and C4. For example
-  C3 − mean(F3, P3, T7, Cz). Use available neighbours (≥ 3); otherwise fall back to the
-  average-reference channel and mark it. O1/O2 Laplacians serve as the control. In validation, the
-  Laplacian isolated mu trains that were mixed with posterior alpha on the average reference.
+Decisions (analyst, 2026-10-25):
+- bursts are reviewable events
+- detection runs during analysis
+- mu trains are highlighted on their own channels in the viewer
 
-### Bursts
-- Narrowband: band-pass ±2 Hz around the site's phase-1 peak (fallback 8–13 Hz), zero-phase.
-- Amplitude: Hilbert envelope. A burst is where the envelope is > median + 2·(1.4826·MAD) for
-  ≥ 3 consecutive cycles (≥ ~0.3 s), merged across gaps < 1 cycle, and capped at a duration that
-  flags non-stop rhythm (> 10 s noted separately).
-- Cycle segmentation, bycycle-style (Cole & Voytek 2019): zero-crossings of the narrowband signal
-  bracket each half-cycle. Find extrema on the broadband (1–40 Hz) signal within each half-cycle.
-- Burst consistency gates (on the broadband cycles), which reject sporadic transients:
-  - period CV < 0.25
-  - amplitude CV < 0.4
-  - monotonic rise/decay fraction > 0.8
+### Algorithm (`lib/server/eeg/features/muBursts.ts`)
+1. **Input:** the cleaned, average-referenced data the features use. Samples outside kept epochs
+   and inside manual artifact spans are excluded. Each EO/EC segment of at least 10 s is
+   processed separately.
+2. **Spatial filter:** a nearest-neighbour Laplacian.
+   - C3 − mean(F3, P3, T7, Cz), and C4 likewise; at least 3 neighbours are required.
+   - Occipital control: an O1/O2 Laplacian with at least 2 neighbours, else the raw channel.
+3. **Filters:** 8–13 Hz narrowband and 1–40 Hz broadband, both zero-phase. The envelope is the
+   Hilbert magnitude of the narrowband signal. Its threshold is 1.5 × the median envelope over the
+   kept samples.
+4. **Cycles** (bycycle-style):
+   - rising zero-crossings of the narrowband signal bound each cycle;
+   - the extrema come from the broadband signal;
+   - a cycle counts when it is fully kept and its mid-point envelope is above threshold.
+5. **Trains:** runs of counted cycles, trimmed to consistent cores. A core cycle has amplitude
+   ≥ 0.5 × the run median and a period within 25% of the run median. A core is kept with
+   ≥ 5 cycles, period CV < 0.25 and amplitude CV < 0.4.
+6. **Shape:**
+   - arch sharpness = median trough sharpness ÷ median peak sharpness;
+   - sharpness = mean |V(ext) − V(ext ± 5 ms)|, on the positive-up broadband Laplacian;
+   - mu's sharp surface-negative half-wave is the trough, so arch shape gives a ratio > 1.
+7. **Mu burst:** sharpness ≥ 1.2, and O1/O2 carry their own alpha burst for ≤ 60% of it.
+8. **Site gates:** without these, short arch-like snippets turned up in non-mu recordings. A site
+   yields bursts only when both hold:
+   - its median sharpness over all regular trains is ≥ 1.2;
+   - its mu bursts recur at ≥ 2 per minute.
 
-### Shape features (per cycle, summarized per burst and per site)
-- **Sharpness ratio:** trough sharpness ÷ peak sharpness. Sharpness is the mean |V(extremum) −
-  V(extremum ± 5 ms)|. With positive-up voltage, mu's sharp surface-negative component is the
-  trough, so the ratio is > 1. Phase-1 exploration over the top-20% envelope periods gave:
-  - mu sessions: C3/C4 Laplacian 1.23/1.41 (44daeae0) and 1.33/1.22 (8923df63)
-  - non-mu: 0.93–1.08
-- **Rise/decay asymmetry:** rise time ÷ period. Arch shape gives values away from 0.5.
-- **Harmonic phase coupling:** bicoherence b(f, f) within bursts. It confirms the 2f peak comes
-  from the waveform, not separate beta.
-- **Independence from posterior alpha:** the fraction of central burst time overlapping O1/O2
-  bursts, and the envelope correlation central vs occipital. Mu bursts are largely independent.
-- **Laterality:** C3 vs C4 burst rate. Mu is often asymmetric and independent between hemispheres.
+### Output
+- `results.mu_morphology[cond].sites.{C3,C4}`: bursts, bursts/min, burst time %, median burst
+  length, site sharpness, regular trains of any shape.
+- One `variant` event per burst, with:
+  - pattern `mu-rhythm` and channels `[site]`
+  - handling `noted`, source `detector`
+  - evidence: Hz, cycles, arch sharpness, occipital overlap, amplitude
+  - a deterministic id (hash of site and span), so review decisions survive Re-Analyze
+  - confidence from sharpness and length
+- `event_detection` gets a `mu-rhythm` coverage row and adds the bursts to the variant count. Mu ids
+  the analyst dismissed are handed to the engine with the other dismissals; they are no longer
+  counted as unknown.
+- Review:
+  - **Confirm** agrees with the label.
+  - **Dismiss** says it is not mu: no metric changes, and the viewer stops highlighting it.
+- Viewer: each mu event draws its span of its own channel's trace in the variant colour, over the
+  trace, as well as the usual event band.
+- Verdict (`computeMuIndicators`): mu trains in any condition → `likely`. Detector ran with no
+  trains → a spectral `likely` becomes `possible`. Analyses from before the detector keep the
+  spectral verdict and say shape was not assessed.
 
-### Mimics and how they are excluded
+### Validation (cleaned EEG from the analyst's account; plots reviewed by eye)
+| Set | Recording | Bursts (C3/C4) | Visual |
+|---|---|---|---|
+| tuning | 44daeae0 EO | 17 / 35 | clear mu trains, 17–31 cycles |
+| tuning | 8923df63 EO | 17 / 12 | clear mu, same client |
+| tuning | c7e41cb8, ce8e063c, 75d022b7, 954e3739, dbd157c3, 6c6178cd, 8ea85db8, 1e078991 | 0 | not mu, or equivocal (ce8e063c: short arch-shaped C3 bursts, site sharpness 1.19) |
+| held out | 75920793 EC (mu client) | 30 / 31 | expected positive |
+| held out | 64d7326c EC | 23 / 29 | textbook ~12 Hz comb-shaped mu; the spectral screen missed it (no EO) |
+| held out | b3289cec EC | 0 / 10 | partly arch-shaped C4 trains; plausible (its EO pair is c7e41cb8) |
+| held out | 0552cb56, a0843d5e, 4407affe, 23155bca, 91b8ef18, 921cb445, 779f9755, 03ebe9dc, 99485430, 36c8bcc6, a79d445a | 0 | none flagged. 0552cb56 (EC of the mu client) is missed: its central trains overlap posterior alpha |
+
+The full pipeline run locally on the raw 44daeae0 and 64d7326c files reproduced the harness counts
+(52 events each, about 7 s per analysis).
+
+### Mimics
 | Mimic | Separation |
 |---|---|
-| Volume-conducted posterior alpha | Laplacian; burst overlap with O1/O2; dominance check (phase 1) |
-| Drowsy anteriorized alpha | EO-only bursts required; EC theta increase noted |
-| Wicket spikes (temporal, drowsy) | Same shape but max at T7/T8: compare temporal Laplacian |
-| Electrode pops / EMG / sporadic sharp transients | Consistency gates (period/amplitude CV); not rhythmic |
-| Epileptiform sharp waves | Isolated, with aftergoing slow wave, fail the gates. Never relabelled as mu; event detection owns them |
+| Volume-conducted posterior alpha | Laplacian; occipital-overlap cap |
+| Diffuse sinusoidal alpha | arch sharpness (site and burst) |
+| Electrode pops / EMG / sporadic sharp transients | consistent-cycle cores, period/amplitude CV |
+| Wicket spikes (temporal, drowsy) | not separated yet: same shape, max at T7/T8. Candidate follow-up: compare temporal Laplacians |
+| Epileptiform sharp waves | isolated, fail the regularity gates; event detection owns them |
 
-### Output (`results.mu_morphology`, per condition)
-```
-{ sites: { C3: { bursts_per_min, burst_time_pct, median_burst_s, sharpness_ratio,
-                 rise_decay_asym, harmonic_bicoherence, occipital_overlap_pct },
-           C4: {...} },
-  spatial_filter: 'laplacian' | 'average',
-  bursts: [{ site, start_s, end_s, freq_hz, sharpness_ratio }]   // top 20 by amplitude
-}
-```
-Phase-1 verdict upgrade: *likely* when the spectral checks pass **and** a site has
-bursts_per_min ≥ N, sharpness_ratio ≥ 1.15 and occipital_overlap_pct ≤ 50 (thresholds to be set
-in task 2.5). A spectral *likely* with no consistent bursts drops to *possible*.
-
-### Review in the UI
-Burst times link into the existing EEG viewer, so the analyst can confirm by eye. The 75d022b7
-case shows why: spectra alone flagged it, and the trace showed sharp transients worth a look for
-other reasons.
-
-### Open questions
-- Should bursts surface as `variant` events (event-review UI, confirm/dismiss)? Or as a separate
-  overlay? Events are produced by the engine today; Squiggly-side events would need a source tag.
-- Should morphology run at analysis time (needs re-analysis for old data), or on demand from the
-  cleaned file? The cleaned file is stored, so on demand avoids a re-run.
-- Polarity: the sharpness ratio sign assumes the Laplacian keeps local polarity. CSD-montage
-  uploads already are Laplacians and could use the same path.
+### Open
+- Thresholds were tuned on 10 recordings and checked on 14. Re-tune once the analyst has
+  confirmed or dismissed mu events across several sessions (task 2.8).

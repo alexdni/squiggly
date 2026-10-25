@@ -8,7 +8,7 @@ import type { AnalysisResults, Condition } from '@/lib/analysis-results';
 
 type Keyed<T> = Partial<Record<Condition, T>> | null | undefined;
 
-const PER_CONDITION = ['band_power', 'connectivity', 'lzc', 'alpha_peak', 'psd', 'spectrograms'] as const;
+const PER_CONDITION = ['band_power', 'connectivity', 'lzc', 'alpha_peak', 'psd', 'spectrograms', 'mu_morphology'] as const;
 
 const has = (v: unknown) => v != null && !(typeof v === 'object' && Object.keys(v as object).length === 0);
 

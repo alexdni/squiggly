@@ -119,4 +119,51 @@ describe('computeMuIndicators', () => {
     expect(m.verdict).toBe('insufficient_data');
     expect(m.reasons[0]).toMatch(/C3\/C4/);
   });
+
+  it('arch-shaped trains in the waveform make mu likely even without eyes-open data', () => {
+    const m = computeMuIndicators({
+      ec: {
+        band_power: bandPower({ C3: 10, C4: 10, O1: 40, O2: 40 }),
+        psd: psd({ C3: spectrum(MU_PEAK), C4: spectrum(MU_PEAK), O1: spectrum(PDR), O2: spectrum(PDR) }),
+        morphology: {
+          analyzed_sec: 300,
+          sites: {
+            C3: { bursts: 20, bursts_per_min: 4, burst_time_pct: 6, median_burst_s: 1.2, sharpness_ratio: 1.5, rhythmic_trains: 40 },
+            C4: { bursts: 0, bursts_per_min: 0, burst_time_pct: 0, median_burst_s: 0, sharpness_ratio: 1.1, rhythmic_trains: 30 },
+          },
+        },
+      },
+    });
+    expect(m.verdict).toBe('likely');
+    expect(m.waveform).toEqual({ assessed: true, bursts: 20, bursts_per_min: 4, sharpness_ratio: 1.5, sites: ['C3'] });
+    expect(m.reasons.join(' ')).toMatch(/20 arch-shaped mu trains at C3/);
+  });
+
+  it('a spectral likely without arch-shaped trains drops to possible', () => {
+    const none = { bursts: 0, bursts_per_min: 0, burst_time_pct: 0, median_burst_s: 0, sharpness_ratio: 1, rhythmic_trains: 12 };
+    const m = computeMuIndicators({
+      eo: {
+        band_power: bandPower({ C3: 8, C4: 8, O1: 10, O2: 10 }),
+        psd: psd({ C3: spectrum(MU_PEAK), C4: spectrum(MU_PEAK), O1: spectrum(PDR), O2: spectrum(PDR) }),
+        morphology: { analyzed_sec: 300, sites: { C3: none, C4: none } },
+      },
+      ec: {
+        band_power: bandPower({ C3: 10, C4: 10, O1: 40, O2: 40 }),
+        psd: psd({ C3: spectrum(MU_PEAK), C4: spectrum(MU_PEAK), O1: spectrum(PDR), O2: spectrum(PDR) }),
+      },
+    });
+    expect(m.verdict).toBe('possible');
+    expect(m.reasons.join(' ')).toMatch(/no arch-shaped mu trains/);
+  });
+
+  it('analyses from before the waveform detector say shape was not assessed', () => {
+    const m = computeMuIndicators({
+      eo: {
+        band_power: bandPower({ C3: 8, C4: 8, O1: 10, O2: 10 }),
+        psd: psd({ C3: spectrum(MU_PEAK), C4: spectrum(MU_PEAK), O1: spectrum(PDR), O2: spectrum(PDR) }),
+      },
+    });
+    expect(m.waveform).toBeNull();
+    expect(m.reasons.join(' ')).toMatch(/waveform shape not assessed/);
+  });
 });

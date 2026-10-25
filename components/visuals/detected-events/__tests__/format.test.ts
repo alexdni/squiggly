@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canDismiss,
   coveredSeconds,
   eventHandlingText,
   evidenceItems,
@@ -11,6 +12,7 @@ import {
   patternName,
   skippedReasonText,
   tierText,
+  traceHighlights,
 } from '../format';
 import { ev } from './fixtures';
 
@@ -145,5 +147,29 @@ describe('viewer bands', () => {
     expect(bands).toHaveLength(1);
     expect(bands[0].allChannels).toBe(true);
     expect(bands[0].channels).toEqual([]);
+  });
+});
+
+describe('mu rhythm events', () => {
+  const mu = (startSec: number, channels: string[]) =>
+    ev({ pattern: 'mu-rhythm', category: 'variant', source: 'detector', startSec, endSec: startSec + 1.5, channels });
+
+  it('are named and can be dismissed although they reject nothing', () => {
+    expect(patternName('mu-rhythm')).toBe('Mu rhythm');
+    expect(canDismiss(mu(0, ['C3']))).toBe(true);
+    expect(canDismiss(ev({ pattern: 'muscle' }))).toBe(false);
+    expect(canDismiss(ev({ pattern: 'muscle', handling: 'rejected' }))).toBe(true);
+  });
+
+  it('highlight their own channel inside the window, skipping dismissed ones', () => {
+    const a = mu(10, ['C3']);
+    const b = mu(12, ['C4']);
+    const outside = mu(40, ['C3']);
+    const other = ev({ pattern: 'muscle', startSec: 10, endSec: 11, channels: ['T7'] });
+    expect(traceHighlights([a, b, outside, other], {}, 9, 20)).toEqual([
+      { channel: 'C3', startSec: 10, endSec: 11.5, category: 'variant' },
+      { channel: 'C4', startSec: 12, endSec: 13.5, category: 'variant' },
+    ]);
+    expect(traceHighlights([a, b], { [b.id]: 'dismissed' }, 9, 20).map((h) => h.channel)).toEqual(['C3']);
   });
 });

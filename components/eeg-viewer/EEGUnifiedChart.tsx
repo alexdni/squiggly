@@ -94,6 +94,8 @@ interface EEGUnifiedChartProps {
    * above the bottom of the plot area (pixels)
    */
   onChartClick?: (time: number, pxAboveBottom: number) => void;
+  /** trace segments to draw in colour on top of their channel: `row` indexes selectedChannels */
+  traceHighlights?: { row: number; startSec: number; endSec: number; color: string }[];
 }
 
 const MAIN_COLOR = '#374151';
@@ -115,6 +117,7 @@ export default function EEGUnifiedChart({
   onDragEnd,
   onDragCancel,
   onChartClick,
+  traceHighlights,
 }: EEGUnifiedChartProps) {
   const chartRef = useRef<ChartJS<'line'> | null>(null);
 
@@ -164,8 +167,31 @@ export default function EEGUnifiedChart({
       });
     }
 
+    // Highlighted stretches of a channel's own trace, drawn over it (lowest `order` is on top).
+    // Appended after every other dataset, so the tooltip filter below leaves them out.
+    for (const h of traceHighlights ?? []) {
+      const signal = filteredSignals[h.row];
+      if (!signal) continue;
+      const data: { x: number; y: number }[] = [];
+      for (let j = 0; j < signal.length; j++) {
+        const t = timeLabels[j];
+        if (t >= h.startSec && t <= h.endSec) data.push({ x: t, y: signal[j] + offsets[h.row] });
+      }
+      if (data.length < 2) continue;
+      datasets.push({
+        label: `${cleanedLabels[h.row]} (highlight)`,
+        data,
+        borderColor: h.color,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0,
+        order: -1,
+      });
+    }
+
     return { datasets };
-  }, [filteredSignals, overlaySignals, timeLabels, cleanedLabels, offsets]);
+  }, [filteredSignals, overlaySignals, timeLabels, cleanedLabels, offsets, traceHighlights]);
 
   // Y-axis range
   const yMin = -(selectedChannels.length - 1) * spacing - sensitivityMicrovolts;

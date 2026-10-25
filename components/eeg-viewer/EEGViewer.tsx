@@ -14,7 +14,7 @@ import { bandsAt, visibleBandAnnotations } from './detectedBands';
 import { detectedLaneAt } from './annotationPlugin';
 import { DEFAULT_FILTER_SETTINGS, type FilterSettings, type RejectedEpoch, type EEGAnnotation } from './types';
 import type { DetectedEventResult } from '@/lib/analysis-results';
-import { mergeEventBands } from '@/components/visuals/detected-events/format';
+import { categoryColor, mergeEventBands, traceHighlights } from '@/components/visuals/detected-events/format';
 import type { EventReviewState } from '@/components/visuals/detected-events/useEventReviews';
 
 interface EEGViewerProps {
@@ -38,6 +38,16 @@ interface EEGViewerProps {
   amplitudeThresholdUv?: number;
   /** move the window to an event and open its band; a new nonce re-applies the same event */
   focusEvent?: { eventId: string; t: number; nonce: number } | null;
+}
+
+function cleanChannelLabel(label: string): string {
+  return label
+    .replace(/^EEG\s+/i, '')
+    .replace(/-LE$/i, '')
+    .replace(/-REF$/i, '')
+    .replace(/-M1$/i, '')
+    .replace(/-M2$/i, '')
+    .trim();
 }
 
 const READ_ONLY_REVIEW: EventReviewState = {
@@ -253,6 +263,22 @@ export default function EEGViewer({
     [allAnnotations, bandAnnotations]
   );
 
+  // Mu (and other waveform) events also colour the stretch of their own channel's trace.
+  const chartTraceHighlights = useMemo(() => {
+    if (!showDetectedEvents || !detectedEvents?.length || !signalData) return undefined;
+    const rows = new Map(selectedChannels.map((idx, row) => [cleanChannelLabel(signalData.channelNames[idx] ?? ''), row]));
+    const out = traceHighlights(
+      detectedEvents,
+      eventReview?.reviews ?? {},
+      timeStart,
+      timeStart + windowSeconds
+    ).flatMap((h) => {
+      const row = rows.get(h.channel);
+      return row === undefined ? [] : [{ row, startSec: h.startSec, endSec: h.endSec, color: categoryColor(h.category, 0.9) }];
+    });
+    return out.length ? out : undefined;
+  }, [showDetectedEvents, detectedEvents, eventReview?.reviews, signalData, selectedChannels, timeStart, windowSeconds]);
+
   // A click on the event track picks the band in that lane; elsewhere, the shortest band there.
   const handleChartClick = useCallback(
     (time: number, pxAboveBottom: number) => {
@@ -285,16 +311,6 @@ export default function EEGViewer({
       return [...prev, channelIndex].sort((a, b) => a - b);
     });
   }, []);
-
-  const cleanChannelLabel = (label: string): string => {
-    return label
-      .replace(/^EEG\s+/i, '')
-      .replace(/-LE$/i, '')
-      .replace(/-REF$/i, '')
-      .replace(/-M1$/i, '')
-      .replace(/-M2$/i, '')
-      .trim();
-  };
 
   if (isLoading) {
     return (
@@ -464,6 +480,7 @@ export default function EEGViewer({
             onDragEnd={endDrag}
             onDragCancel={cancelDrag}
             onChartClick={handleChartClick}
+            traceHighlights={chartTraceHighlights}
           />
 
           {/* Time slider */}

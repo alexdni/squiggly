@@ -17,10 +17,11 @@ identify it visually: arch-shaped trains with sharp negative peaks at C3/C4.
   - central peak frequency vs the posterior rhythm
 
   The MCP session summary carries it as `mu_indicators`, and the interpretation guidance explains it.
-- **Phase 2 (planned, `design.md`):** a waveform-morphology detector on the cleaned signal. It finds
-  8–13 Hz bursts at C3/C4 on a local Laplacian and measures cycle shape (peak/trough sharpness,
-  rise/decay asymmetry, cycle regularity). It reports burst times so they can be reviewed in the
-  viewer, and folds the shape evidence into the verdict.
+- **Phase 2 (built):** a waveform detector that runs during analysis on the cleaned signal. It finds
+  arch-shaped 8–13 Hz trains at C3/C4 on a local Laplacian and stores each one as a reviewable
+  `mu-rhythm` normal-variant event on its channel, which the analyst can confirm or dismiss. The EEG
+  viewer draws those trains in colour on the C3/C4 traces. Its evidence outranks the spectral screen.
+  Existing analyses need Re-Analyze to get the events.
 
 ## Impact
 - Affected specs: new capability `mu-rhythm-detection`; MCP summary gains a field (additive).
