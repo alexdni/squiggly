@@ -436,7 +436,7 @@ function eventsOut(ready: { source: Source; input: AnalysisInput; results: Analy
     }
   }
 
-  const counts = { artifact: 0, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0 } as Record<EventCategory, number>;
+  const counts = { artifact: 0, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0, slowing: 0 } as Record<EventCategory, number>;
   const kept = all.filter((e) => e.review !== 'dismissed').sort(eventOrder);
   const dismissed = all.filter((e) => e.review === 'dismissed').sort(eventOrder);
   for (const e of kept) counts[e.category] += 1;

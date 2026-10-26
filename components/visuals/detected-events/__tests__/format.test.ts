@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CATEGORY_LABELS,
   canDismiss,
   coveredSeconds,
   eventHandlingText,
@@ -171,5 +172,20 @@ describe('mu rhythm events', () => {
       { channel: 'C4', startSec: 12, endSec: 13.5, category: 'variant' },
     ]);
     expect(traceHighlights([a, b], { [b.id]: 'dismissed' }, 9, 20).map((h) => h.channel)).toEqual(['C3']);
+  });
+});
+
+describe('paroxysmal slowing events', () => {
+  const firda = ev({ pattern: 'firda', category: 'slowing', source: 'detector', startSec: 5, endSec: 7, channels: ['F3', 'Fz', 'F4'] });
+
+  it('are named, listed in their own category and can be dismissed', () => {
+    expect(patternName('firda')).toBe('Frontal intermittent rhythmic delta (FIRDA)');
+    expect(patternName('polymorphic-delta')).toBe('Polymorphic delta');
+    expect(CATEGORY_LABELS.slowing).toBe('Paroxysmal slowing');
+    expect(canDismiss(firda)).toBe(true);
+  });
+
+  it('highlight every involved channel', () => {
+    expect(traceHighlights([firda], {}, 0, 10).map((h) => h.channel)).toEqual(['F3', 'Fz', 'F4']);
   });
 });

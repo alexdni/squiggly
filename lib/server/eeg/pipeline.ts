@@ -20,6 +20,7 @@ import type {
   AnalysisResults,
   Condition,
   DetectedEventResult,
+  EventCategory,
   EventDetectionSummary,
   QcReportSummary,
   RejectedEpoch,
@@ -33,6 +34,7 @@ import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
 import { detectMuBursts, MU_DETECTOR, muEventResults } from './features/muBursts';
+import { detectSlowing, SLOWING_ARTIFACT_PATTERNS, SLOWING_DETECTOR, slowingEventResults } from './features/slowing';
 import { computePsd, computeSpectrograms, extractFeatures, type EpochSet } from './features';
 import {
   computeSourceMaps,
@@ -214,28 +216,41 @@ export function eventDetectionSummary(r: EventDetectionReport): EventDetectionSu
   };
 }
 
+/** An app-side detector's run: its coverage row and its events. */
+export interface AppDetectorRun {
+  name: string;
+  category: EventCategory;
+  events: DetectedEventResult[];
+  skippedReason?: string;
+}
+
 /**
- * The engine's detection summary plus the mu detector: its coverage row, its events in the variant
- * count, and mu ids the analyst dismissed, which the engine counted as unknown.
+ * The engine's detection summary plus the app-side detectors (mu, slowing): their coverage rows,
+ * their events in the category counts, and their ids the analyst dismissed, which the engine
+ * counted as unknown.
  */
-export function withMuDetection(
+export function withAppDetectors(
   summary: EventDetectionSummary,
-  muEvents: DetectedEventResult[],
-  dismissed: ReadonlySet<string>,
-  skippedReason?: string
+  runs: AppDetectorRun[],
+  dismissed: ReadonlySet<string>
 ): EventDetectionSummary {
-  const muDismissed = muEvents.filter((e) => dismissed.has(e.id)).length;
+  const counts = { ...summary.counts };
+  let ownDismissed = 0;
+  for (const r of runs) {
+    counts[r.category] = (counts[r.category] ?? 0) + r.events.length;
+    ownDismissed += r.events.filter((e) => dismissed.has(e.id)).length;
+  }
   return {
     ...summary,
     coverage: {
       ...summary.coverage,
       detectors: [
         ...summary.coverage.detectors,
-        { name: MU_DETECTOR, ran: !skippedReason, ...(skippedReason ? { skippedReason } : {}) },
+        ...runs.map((r) => ({ name: r.name, ran: !r.skippedReason, ...(r.skippedReason ? { skippedReason: r.skippedReason } : {}) })),
       ],
     },
-    counts: { ...summary.counts, variant: (summary.counts.variant ?? 0) + muEvents.length },
-    dismissed: { ...summary.dismissed, unknownIds: Math.max(0, summary.dismissed.unknownIds - muDismissed) },
+    counts,
+    dismissed: { ...summary.dismissed, unknownIds: Math.max(0, summary.dismissed.unknownIds - ownDismissed) },
   };
 }
 
@@ -499,15 +514,36 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   const features = extractFeatures(eo, ec);
   const psd = { eo: eo ? computePsd(eo) : null, ec: ec ? computePsd(ec) : null };
 
-  // Mu rhythm trains on the cleaned data; labels only, never changes a metric.
+  // Waveform labels on the cleaned data (mu trains, paroxysmal slowing); they never change a metric.
   progress('mu');
-  const muKeep = keep.slice();
+  const labelKeep = keep.slice();
   for (const m of manual) {
-    muKeep.fill(0, Math.max(0, Math.floor(m.start * cleaned.sampleRate)), Math.min(muKeep.length, Math.ceil(m.end * cleaned.sampleRate)));
+    labelKeep.fill(0, Math.max(0, Math.floor(m.start * cleaned.sampleRate)), Math.min(labelKeep.length, Math.ceil(m.end * cleaned.sampleRate)));
   }
-  const mu = detectMuBursts({ labels, data, sampleRate: cleaned.sampleRate, keep: muKeep, segments: input.segments });
+  const mu = detectMuBursts({ labels, data, sampleRate: cleaned.sampleRate, keep: labelKeep, segments: input.segments });
   const dismissed = new Set(input.dismissedEventIds ?? []);
   const muEvents = muEventResults(mu.bursts, dismissed);
+  const engineEvents = eventResults(result.events ?? []);
+
+  progress('slowing');
+  // each channel's own rejected epochs (e.g. an amplitude ceiling on one electrode) are left out too
+  const channelIndex = new Map(cleaned.channels.map((c, i) => [c.label, i] as const));
+  const channelKeep = labels.map((l) => {
+    const c = channelIndex.get(l);
+    const m = c === undefined ? undefined : result.masks.channelEpochMask[c];
+    return m ? epochUnionMask(result.masks, m, cleaned.nSamples) : labelKeep;
+  });
+  const slowing = detectSlowing({
+    labels,
+    data,
+    sampleRate: cleaned.sampleRate,
+    keep: labelKeep,
+    channelKeep,
+    segments: input.segments,
+    artifactSpans: engineEvents.filter((e) => SLOWING_ARTIFACT_PATTERNS.has(e.pattern)),
+  });
+  const slowingEvents = slowingEventResults(slowing.bursts, dismissed);
+  const ownEvents = [...muEvents, ...slowingEvents];
 
   progress('spectrograms');
   const spectrograms: Record<Condition, Record<string, SpectrogramData> | null> = { eo: null, ec: null };
@@ -658,11 +694,21 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     psd,
     ...(hrv ? { hrv } : {}),
     ...(sloreta ? { sloreta: sloreta.meta } : {}),
-    ...(result.events || muEvents.length ? { events: [...eventResults(result.events ?? []), ...muEvents] } : {}),
+    ...(result.events || ownEvents.length ? { events: [...engineEvents, ...ownEvents] } : {}),
     ...(report.eventDetection
-      ? { event_detection: withMuDetection(eventDetectionSummary(report.eventDetection), muEvents, dismissed, mu.skipped) }
+      ? {
+          event_detection: withAppDetectors(
+            eventDetectionSummary(report.eventDetection),
+            [
+              { name: MU_DETECTOR, category: 'variant', events: muEvents, skippedReason: mu.skipped },
+              { name: SLOWING_DETECTOR, category: 'slowing', events: slowingEvents, skippedReason: slowing.skipped },
+            ],
+            dismissed
+          ),
+        }
       : {}),
     ...(Object.keys(mu.summary).length ? { mu_morphology: mu.summary } : {}),
+    ...(Object.keys(slowing.summary).length ? { paroxysmal_slowing: slowing.summary } : {}),
     visuals: {},
     processing_metadata: {
       engine: input.engine,

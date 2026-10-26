@@ -148,6 +148,14 @@ describe('buildSessionSummary', () => {
     expect(s.clinical_flags[0]).toMatchObject({ id: ev.id, review: 'unreviewed', condition: 'eo' });
   });
 
+  it('an unreviewed slowing event is a clinical flag', () => {
+    const ev = makeEvent({ category: 'slowing', pattern: 'tirda', handling: 'noted' });
+    const { session, eo, ec } = split({ events: [ev] });
+    const s = buildSessionSummary(session, { eo, ec });
+    expect(s.clinical_flags).toEqual([expect.objectContaining({ id: ev.id, category: 'slowing', pattern: 'tirda', review: 'unreviewed' })]);
+    expect(s.events!.counts.slowing).toBe(1);
+  });
+
   it('a dismissed clinical event is not flagged', () => {
     const ev = makeEvent({ category: 'epileptiform', handling: 'noted' });
     const { session, eo, ec } = split({ events: [ev] }, {}, { eo: { config: { event_reviews: { [ev.id]: 'dismissed' } } } });
@@ -161,7 +169,7 @@ describe('buildSessionSummary', () => {
     const gone = makeEvent({ category: 'artifact', pattern: 'eye-blink', dismissed: true });
     const { session, eo, ec } = split({ events: [kept, gone] });
     const s = buildSessionSummary(session, { eo, ec });
-    expect(s.events!.counts).toEqual({ artifact: 1, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0 });
+    expect(s.events!.counts).toEqual({ artifact: 1, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0, slowing: 0 });
     expect(s.events!.items.map((e) => e.id)).toEqual([kept.id]);
     expect(s.events!.dismissed).toHaveLength(1);
     expect(s.events!.dismissed[0]).toMatchObject({ id: gone.id, review: 'dismissed' });

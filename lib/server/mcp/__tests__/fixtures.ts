@@ -365,7 +365,7 @@ export function makeResults(opts: ResultsOptions = {}): AnalysisResults {
   if (opts.sloreta) results.sloreta = makeSloreta(conditions, opts.sloretaRegion);
   if (opts.events) {
     results.events = opts.events;
-    const counts = { artifact: 0, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0 };
+    const counts = { artifact: 0, variant: 0, epileptiform: 0, 'rhythmic-periodic': 0, slowing: 0 };
     for (const e of opts.events) counts[e.category] += 1;
     results.event_detection = {
       coverage: {

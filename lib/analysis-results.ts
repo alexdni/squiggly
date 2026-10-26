@@ -262,7 +262,7 @@ export interface SloretaTimeline {
 // Detected EEG events (artifact pipeline event detection). App-side mirrors of the engine's
 // shapes, kept JSON-safe; this file is shared with the browser, so it must not import the engine.
 
-export type EventCategory = 'artifact' | 'variant' | 'epileptiform' | 'rhythmic-periodic';
+export type EventCategory = 'artifact' | 'variant' | 'epileptiform' | 'rhythmic-periodic' | 'slowing';
 
 /** What the cleaning did about the event in the numbers. */
 export type EventHandling =
@@ -305,7 +305,8 @@ export interface EventDetectionSummary {
     /** per detector: whether it ran, and why not */
     detectors: { name: string; ran: boolean; skippedReason?: string }[];
   };
-  counts: Record<EventCategory, number>;
+  /** 'slowing' is absent on analyses run before the slowing detector */
+  counts: Partial<Record<EventCategory, number>> & Record<Exclude<EventCategory, 'slowing'>, number>;
   /** epochs the cleaning stages kept that detection excluded, before dismissals */
   nRejectedEpochsAdded: number;
   /** epochs the cleaning stages kept that detection still excludes after dismissals */
@@ -338,6 +339,23 @@ export type MuMorphology = Partial<
   Record<Condition, { analyzed_sec: number; sites: Partial<Record<'C3' | 'C4', MuMorphologySite>> }>
 >;
 
+/** Paroxysmal slowing bursts over one condition (cleaned data, average reference). */
+export type SlowingSummary = Partial<
+  Record<
+    Condition,
+    {
+      analyzed_sec: number;
+      /** each one is a 'slowing' event */
+      bursts: number;
+      bursts_per_min: number;
+      /** share of the analyzed time inside a burst, 0–100 */
+      burst_time_pct: number;
+      /** bursts per pattern ('firda', 'polymorphic-delta', ...) */
+      patterns: Record<string, number>;
+    }
+  >
+>;
+
 /** An analyst's decision on one detected event, stored in `analyses.config.event_reviews`. */
 export type EventReviewDecision = 'confirmed' | 'dismissed';
 
@@ -365,6 +383,8 @@ export interface AnalysisResults {
   event_detection?: EventDetectionSummary;
   /** Mu rhythm burst summary; absent on analyses run before the mu detector */
   mu_morphology?: MuMorphology;
+  /** Paroxysmal slowing summary; absent on analyses run before the slowing detector */
+  paroxysmal_slowing?: SlowingSummary;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */
   visuals?: Record<string, string>;
   processing_metadata: ProcessingMetadata;

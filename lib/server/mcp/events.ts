@@ -25,8 +25,8 @@ export interface EventOut {
   condition: EventSource;
 }
 
-export const EVENT_CATEGORIES: EventCategory[] = ['epileptiform', 'rhythmic-periodic', 'variant', 'artifact'];
-export const CLINICAL: EventCategory[] = ['epileptiform', 'rhythmic-periodic'];
+export const EVENT_CATEGORIES: EventCategory[] = ['epileptiform', 'rhythmic-periodic', 'slowing', 'variant', 'artifact'];
+export const CLINICAL: EventCategory[] = ['epileptiform', 'rhythmic-periodic', 'slowing'];
 
 const HANDLINGS: EventHandling[] = ['rejected', 'repaired', 'removed-component', 'channel-excluded', 'interpolated', 'noted'];
 /** detector pattern names are slugs ('eye-blink', 'spike-wave') */

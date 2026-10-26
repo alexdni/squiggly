@@ -8,13 +8,14 @@ import type {
   EventReviewDecision,
 } from '@/lib/analysis-results';
 
-export const CATEGORY_ORDER: EventCategory[] = ['artifact', 'variant', 'epileptiform', 'rhythmic-periodic'];
+export const CATEGORY_ORDER: EventCategory[] = ['artifact', 'variant', 'slowing', 'epileptiform', 'rhythmic-periodic'];
 
 export const CATEGORY_LABELS: Record<EventCategory, string> = {
   artifact: 'Artifact',
   variant: 'Normal variant',
   epileptiform: 'Epileptiform pattern',
   'rhythmic-periodic': 'Rhythmic / periodic pattern',
+  slowing: 'Paroxysmal slowing',
 };
 
 /** Solid colour per category (chips, viewer band edges); bands use it at low alpha. */
@@ -23,6 +24,7 @@ export const CATEGORY_RGB: Record<EventCategory, string> = {
   variant: '13, 148, 136',
   epileptiform: '37, 99, 235',
   'rhythmic-periodic': '234, 88, 12',
+  slowing: '180, 83, 9',
 };
 
 export function categoryColor(category: EventCategory, alpha = 1): string {
@@ -48,6 +50,13 @@ const PATTERN_NAMES: Record<string, string> = {
   'pulse-artifact': 'Pulse artifact',
   'line-noise': 'Line noise',
   'mu-rhythm': 'Mu rhythm',
+  firda: 'Frontal intermittent rhythmic delta (FIRDA)',
+  oirda: 'Occipital intermittent rhythmic delta (OIRDA)',
+  tirda: 'Temporal intermittent rhythmic delta (TIRDA)',
+  irda: 'Intermittent rhythmic delta',
+  'polymorphic-delta': 'Polymorphic delta',
+  'rhythmic-theta': 'Rhythmic theta burst',
+  'intermittent-theta': 'Intermittent theta slowing',
 };
 
 export interface PatternNameOptions {
@@ -75,6 +84,7 @@ const DETECTOR_NAMES: Record<string, string> = {
   cardiac: 'Cardiac (ECG and pulse)',
   'line-noise': 'Line noise',
   'mu-rhythm': 'Mu rhythm (C3/C4)',
+  'paroxysmal-slowing': 'Paroxysmal slowing',
 };
 
 export function detectorName(name: string): string {
@@ -208,6 +218,15 @@ const EVIDENCE_LABELS: Record<string, string> = {
   archSharpness: 'arch sharpness',
   occipitalOverlap: 'occipital overlap',
   amplitudeUv: 'amplitude µV',
+  band: 'band',
+  location: 'location',
+  side: 'side',
+  peakChannel: 'peak',
+  envelopeRatio: '× background',
+  bandShare: 'band share',
+  periodCv: 'period CV',
+  posteriorAlphaRatio: 'posterior alpha ratio',
+  alphaDropout: 'alpha dropout',
 };
 
 /** Evidence keys shown elsewhere (handling text) or internal. */
@@ -321,14 +340,24 @@ export function countByCategory(events: DetectedEventResult[]): Partial<Record<E
 
 /**
  * Whether an analyst can dismiss the event: rejections (puts the epochs back on Re-Analyze), and
- * waveform labels such as mu, where dismissing says the label is wrong and changes no metric.
+ * waveform labels such as mu or slowing, where dismissing says the label is wrong and changes no
+ * metric.
  */
 export function canDismiss(e: DetectedEventResult): boolean {
   return e.handling === 'rejected' || TRACE_HIGHLIGHT_PATTERNS.has(e.pattern);
 }
 
 /** Patterns drawn as highlighted trace segments on their own channels in the viewer. */
-export const TRACE_HIGHLIGHT_PATTERNS = new Set(['mu-rhythm']);
+export const TRACE_HIGHLIGHT_PATTERNS = new Set([
+  'mu-rhythm',
+  'firda',
+  'oirda',
+  'tirda',
+  'irda',
+  'polymorphic-delta',
+  'rhythmic-theta',
+  'intermittent-theta',
+]);
 
 export interface TraceHighlight {
   channel: string;
