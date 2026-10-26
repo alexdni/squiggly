@@ -340,6 +340,38 @@ export type MuMorphology = Partial<
   Record<Condition, { analyzed_sec: number; sites: Partial<Record<'C3' | 'C4', MuMorphologySite>> }>
 >;
 
+/** Normal-variant screens over one condition (beta spindles, fast alpha variant, low-voltage fast). */
+export interface VariantScreen {
+  analyzed_sec: number;
+  beta_spindles?: {
+    /** frontal beta peak (dB above 1/f) the spindles are sought at; null when none */
+    beta_peak_hz: number | null;
+    beta_peak_db: number | null;
+    spindles: number;
+    per_min: number;
+  };
+  /** eyes closed only */
+  fast_alpha?: {
+    alpha_hz: number;
+    fast_peak_hz: number | null;
+    fast_peak_db: number | null;
+    /** fast ÷ alpha band power, posterior */
+    dominance: number | null;
+    /** posterior ÷ frontal fast-band power */
+    posterior_ratio: number | null;
+    /** EO ÷ EC posterior fast-band power; null without an eyes-open segment in the file */
+    reactivity: number | null;
+    bursts: number;
+  };
+  low_voltage?: {
+    amplitude_uv: number;
+    alpha_share: number;
+    beta_share: number;
+    alpha_peak_db: number;
+    flagged: boolean;
+  };
+}
+
 /** Paroxysmal slowing bursts over one condition (cleaned data, average reference). */
 export type SlowingSummary = Partial<
   Record<
@@ -393,6 +425,8 @@ export interface AnalysisResults {
   mu_morphology?: MuMorphology;
   /** The EO/EC segments (seconds) this analysis ran on; absent on analyses run before it was stored */
   segments?: Partial<Record<Condition, { start: number; end: number }>>;
+  /** Normal-variant screens; absent on analyses run before those detectors */
+  variant_screens?: Partial<Record<Condition, VariantScreen>>;
   /** Paroxysmal slowing summary; absent on analyses run before the slowing detector */
   paroxysmal_slowing?: SlowingSummary;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */

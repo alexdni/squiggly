@@ -9,7 +9,7 @@ import { recordingCondition } from '@/lib/eeg-condition';
 
 type Keyed<T> = Partial<Record<Condition, T>> | null | undefined;
 
-const PER_CONDITION = ['band_power', 'connectivity', 'lzc', 'alpha_peak', 'psd', 'spectrograms', 'mu_morphology', 'paroxysmal_slowing', 'segments'] as const;
+const PER_CONDITION = ['band_power', 'connectivity', 'lzc', 'alpha_peak', 'psd', 'spectrograms', 'mu_morphology', 'paroxysmal_slowing', 'variant_screens', 'segments'] as const;
 
 const has = (v: unknown) => v != null && !(typeof v === 'object' && Object.keys(v as object).length === 0);
 

@@ -189,3 +189,18 @@ describe('paroxysmal slowing events', () => {
     expect(traceHighlights([firda], {}, 0, 10).map((h) => h.channel)).toEqual(['F3', 'Fz', 'F4']);
   });
 });
+
+describe('normal-variant waveform events', () => {
+  it('are named, dismissible, and drawn where they belong', () => {
+    const spindle = ev({ pattern: 'beta-spindles', category: 'variant', source: 'detector', startSec: 3, endSec: 4, channels: ['F3', 'Fz'] });
+    const fav = ev({ pattern: 'fast-alpha-variant', category: 'variant', source: 'detector', startSec: 5, endSec: 7, channels: ['O1', 'O2'] });
+    const lvf = ev({ pattern: 'low-voltage-fast', category: 'variant', source: 'detector', startSec: 0, endSec: 300, channels: [] });
+    expect(patternName('beta-spindles')).toBe('Beta spindles');
+    expect(patternName('fast-alpha-variant')).toBe('Fast alpha variant');
+    expect(patternName('low-voltage-fast')).toBe('Low-voltage fast EEG');
+    expect([spindle, fav, lvf].every(canDismiss)).toBe(true);
+    expect(traceHighlights([spindle, fav, lvf], {}, 0, 10).map((h) => h.channel)).toEqual(['F3', 'Fz', 'O1', 'O2']);
+    // a whole-condition label is listed in the card, not painted across the viewer
+    expect(mergeEventBands([lvf, spindle]).map((b) => b.pattern)).toEqual(['beta-spindles']);
+  });
+});

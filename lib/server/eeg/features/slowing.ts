@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import type { Condition, DetectedEventResult, SlowingSummary } from '@/lib/analysis-results';
 import { butter, FiltFilt, Hilbert, median } from '../dsp';
+import { connectedTo, neighbours } from './waveform';
 
 export type SlowingBand = 'delta' | 'theta';
 export type SlowingRegion = 'frontal' | 'temporal' | 'central' | 'parietal' | 'occipital';
@@ -106,19 +107,6 @@ const REGION: Record<string, SlowingRegion> = {
 };
 /** bursts on these sites alone look like eye movements */
 const OCULAR_SITES = new Set(['Fp1', 'Fp2', 'Fpz', 'F7', 'F8']);
-/** flattened 10-20 layout; sites one step apart (diagonals included) are neighbours */
-const GRID: Record<string, [number, number]> = {
-  Fp1: [-1, 2], Fpz: [0, 2], Fp2: [1, 2],
-  F7: [-2, 1], F3: [-1, 1], Fz: [0, 1], F4: [1, 1], F8: [2, 1],
-  T7: [-2, 0], C3: [-1, 0], Cz: [0, 0], C4: [1, 0], T8: [2, 0],
-  P7: [-2, -1], P3: [-1, -1], Pz: [0, -1], P4: [1, -1], P8: [2, -1],
-  O1: [-1, -2], Oz: [0, -2], O2: [1, -2],
-};
-const neighbours = (x: string, y: string) => {
-  if ((x === 'Fp1' && y === 'Fp2') || (x === 'Fp2' && y === 'Fp1') || (x === 'O1' && y === 'O2') || (x === 'O2' && y === 'O1')) return true;
-  const [a, b] = [GRID[x], GRID[y]];
-  return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])) === 1;
-};
 const HOMOLOGOUS: Record<string, string> = { Fp1: 'Fp2', F7: 'F8', F3: 'F4', T7: 'T8', P7: 'P8' };
 for (const [l, rt] of Object.entries(HOMOLOGOUS)) HOMOLOGOUS[rt] = l;
 
@@ -206,18 +194,7 @@ function windowRms(x: Float64Array, keep: Uint8Array, fs: number): number {
 }
 /** The peak channel and the involved channels joined to it through neighbours. */
 function field<T extends { c: Channel }>(involved: T[]): T[] {
-  const out = [involved[0]];
-  const rest = involved.slice(1);
-  for (let grown = true; grown; ) {
-    grown = false;
-    for (let k = rest.length - 1; k >= 0; k--) {
-      if (out.some((x) => neighbours(x.c.label, rest[k].c.label))) {
-        out.push(...rest.splice(k, 1));
-        grown = true;
-      }
-    }
-  }
-  return out;
+  return connectedTo(involved[0], involved.slice(1), (x) => x.c.label);
 }
 const cv = (v: number[]) => {
   const m = v.reduce((a, b) => a + b, 0) / v.length;

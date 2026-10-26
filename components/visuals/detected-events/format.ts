@@ -57,6 +57,9 @@ const PATTERN_NAMES: Record<string, string> = {
   'polymorphic-delta': 'Polymorphic delta',
   'rhythmic-theta': 'Rhythmic theta burst',
   'intermittent-theta': 'Intermittent theta slowing',
+  'beta-spindles': 'Beta spindles',
+  'fast-alpha-variant': 'Fast alpha variant',
+  'low-voltage-fast': 'Low-voltage fast EEG',
 };
 
 export interface PatternNameOptions {
@@ -85,6 +88,9 @@ const DETECTOR_NAMES: Record<string, string> = {
   'line-noise': 'Line noise',
   'mu-rhythm': 'Mu rhythm (C3/C4)',
   'paroxysmal-slowing': 'Paroxysmal slowing',
+  'beta-spindles': 'Beta spindles',
+  'fast-alpha-variant': 'Fast alpha variant',
+  'low-voltage-fast': 'Low-voltage fast EEG',
 };
 
 export function detectorName(name: string): string {
@@ -227,6 +233,15 @@ const EVIDENCE_LABELS: Record<string, string> = {
   periodCv: 'period CV',
   posteriorAlphaRatio: 'posterior alpha ratio',
   alphaDropout: 'alpha dropout',
+  betaPeakHz: 'beta peak Hz',
+  betaPeakDb: 'beta peak dB',
+  alphaHz: 'alpha Hz',
+  dominance: 'fast ÷ alpha',
+  eoEcRatio: 'EO ÷ EC',
+  alphaShare: 'alpha share',
+  betaShare: 'beta share',
+  alphaPeakDb: 'alpha peak dB',
+  eyesClosed: 'eyes closed',
 };
 
 /** Evidence keys shown elsewhere (handling text) or internal. */
@@ -344,8 +359,11 @@ export function countByCategory(events: DetectedEventResult[]): Partial<Record<E
  * metric.
  */
 export function canDismiss(e: DetectedEventResult): boolean {
-  return e.handling === 'rejected' || TRACE_HIGHLIGHT_PATTERNS.has(e.pattern);
+  return e.handling === 'rejected' || TRACE_HIGHLIGHT_PATTERNS.has(e.pattern) || RECORDING_LABEL_PATTERNS.has(e.pattern);
 }
+
+/** Waveform labels that describe a whole condition rather than a stretch of channels. */
+export const RECORDING_LABEL_PATTERNS = new Set(['low-voltage-fast']);
 
 /** Patterns drawn as highlighted trace segments on their own channels in the viewer. */
 export const TRACE_HIGHLIGHT_PATTERNS = new Set([
@@ -357,6 +375,8 @@ export const TRACE_HIGHLIGHT_PATTERNS = new Set([
   'polymorphic-delta',
   'rhythmic-theta',
   'intermittent-theta',
+  'beta-spindles',
+  'fast-alpha-variant',
 ]);
 
 export interface TraceHighlight {
@@ -407,7 +427,7 @@ export function hasUnappliedDismissals(
 }
 
 /** Patterns that span the whole recording by construction; not drawn as viewer bands. */
-export const RECORDING_WIDE_PATTERNS = new Set(['bad-channel', 'ica-component']);
+export const RECORDING_WIDE_PATTERNS = new Set(['bad-channel', 'ica-component', 'low-voltage-fast']);
 
 export interface EventBand {
   id: string;

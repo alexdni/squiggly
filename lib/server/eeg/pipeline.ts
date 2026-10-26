@@ -35,6 +35,8 @@ import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
 import { detectMuBursts, MU_DETECTOR, muEventResults } from './features/muBursts';
 import { detectSlowing, SLOWING_ARTIFACT_PATTERNS, SLOWING_DETECTOR, slowingEventResults } from './features/slowing';
+import type { WaveformInput } from './features/waveform';
+import { detectVariants, VARIANT_DETECTORS, variantEventResults } from './features/variants';
 import { computePsd, computeSpectrograms, extractFeatures, type EpochSet } from './features';
 import {
   computeSourceMaps,
@@ -253,6 +255,40 @@ export function withAppDetectors(
     },
     counts,
     dismissed: { ...summary.dismissed, unknownIds: Math.max(0, summary.dismissed.unknownIds - ownDismissed) },
+  };
+}
+
+/**
+ * The waveform detectors' input: the cleaned channels with the cleaning keep mask minus manual
+ * artifacts, each channel's own kept epochs (e.g. an amplitude ceiling on one electrode), and the
+ * engine's artifact events as spans.
+ */
+export function waveformInput(
+  result: PipelineResult,
+  labels: string[],
+  data: Float64Array[],
+  segments: AnalysisJobInput['segments'],
+  manual: { start: number; end: number }[],
+  engineEvents: DetectedEventResult[]
+): WaveformInput {
+  const cleaned = result.recording;
+  const fs = cleaned.sampleRate;
+  const keep = keptSampleMask(result, cleaned.nSamples);
+  for (const m of manual) keep.fill(0, Math.max(0, Math.floor(m.start * fs)), Math.min(keep.length, Math.ceil(m.end * fs)));
+  const channelIndex = new Map(cleaned.channels.map((c, i) => [c.label, i] as const));
+  const channelKeep = labels.map((l) => {
+    const c = channelIndex.get(l);
+    const m = c === undefined ? undefined : result.masks.channelEpochMask[c];
+    return m ? epochUnionMask(result.masks, m, cleaned.nSamples) : keep;
+  });
+  return {
+    labels,
+    data,
+    sampleRate: fs,
+    keep,
+    channelKeep,
+    segments,
+    artifactSpans: engineEvents.map((e) => ({ pattern: e.pattern, startSec: e.startSec, endSec: e.endSec })),
   };
 }
 
@@ -518,34 +554,23 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   // Waveform labels on the cleaned data (mu trains, paroxysmal slowing); they never change a metric.
   progress('mu');
-  const labelKeep = keep.slice();
-  for (const m of manual) {
-    labelKeep.fill(0, Math.max(0, Math.floor(m.start * cleaned.sampleRate)), Math.min(labelKeep.length, Math.ceil(m.end * cleaned.sampleRate)));
-  }
-  const mu = detectMuBursts({ labels, data, sampleRate: cleaned.sampleRate, keep: labelKeep, segments: input.segments });
+  const engineEvents = eventResults(result.events ?? []);
+  const wave = waveformInput(result, labels, data, input.segments, manual, engineEvents);
+  const mu = detectMuBursts({ labels, data, sampleRate: cleaned.sampleRate, keep: wave.keep, segments: input.segments });
   const dismissed = new Set(input.dismissedEventIds ?? []);
   const muEvents = muEventResults(mu.bursts, dismissed);
-  const engineEvents = eventResults(result.events ?? []);
 
   progress('slowing');
-  // each channel's own rejected epochs (e.g. an amplitude ceiling on one electrode) are left out too
-  const channelIndex = new Map(cleaned.channels.map((c, i) => [c.label, i] as const));
-  const channelKeep = labels.map((l) => {
-    const c = channelIndex.get(l);
-    const m = c === undefined ? undefined : result.masks.channelEpochMask[c];
-    return m ? epochUnionMask(result.masks, m, cleaned.nSamples) : labelKeep;
-  });
   const slowing = detectSlowing({
-    labels,
-    data,
-    sampleRate: cleaned.sampleRate,
-    keep: labelKeep,
-    channelKeep,
-    segments: input.segments,
-    artifactSpans: engineEvents.filter((e) => SLOWING_ARTIFACT_PATTERNS.has(e.pattern)),
+    ...wave,
+    artifactSpans: wave.artifactSpans!.filter((e) => SLOWING_ARTIFACT_PATTERNS.has(e.pattern!)),
   });
   const slowingEvents = slowingEventResults(slowing.bursts, dismissed);
-  const ownEvents = [...muEvents, ...slowingEvents];
+
+  progress('variants');
+  const variants = detectVariants(wave);
+  const variantEvents = variantEventResults(variants, dismissed);
+  const ownEvents = [...muEvents, ...slowingEvents, ...variantEvents];
 
   // Every channel's spectrogram goes to a file the viewer reads a channel at a time; the results
   // keep the first channel inline for the default view.
@@ -717,6 +742,12 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
             [
               { name: MU_DETECTOR, category: 'variant', events: muEvents, skippedReason: mu.skipped },
               { name: SLOWING_DETECTOR, category: 'slowing', events: slowingEvents, skippedReason: slowing.skipped },
+              ...VARIANT_DETECTORS.map((name) => ({
+                name,
+                category: 'variant' as const,
+                events: variantEvents.filter((e) => e.pattern === name),
+                skippedReason: variants.skipped,
+              })),
             ],
             dismissed
           ),
@@ -724,6 +755,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
       : {}),
     ...(Object.keys(mu.summary).length ? { mu_morphology: mu.summary } : {}),
     ...(Object.keys(slowing.summary).length ? { paroxysmal_slowing: slowing.summary } : {}),
+    ...(Object.keys(variants.summary).length ? { variant_screens: variants.summary } : {}),
     visuals: {},
     processing_metadata: {
       engine: input.engine,
