@@ -6,6 +6,7 @@ import { runInBackground } from '@/lib/server/background';
 import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
 import { runAnalysisJob } from '@/lib/server/eeg/runAnalysisJob';
 import { dismissedEventIds } from '@/lib/server/eventReviews';
+import { analyzedSegments, labelsOf } from '@/lib/eeg-condition';
 
 // The analysis itself runs after the response (see runInBackground); this budget covers it.
 export const maxDuration = 300;
@@ -59,16 +60,10 @@ export async function POST(_request: Request, { params }: { params: { id: string
   }
 
   // Segments; with no labels the whole recording is analyzed as EO (baseline).
+  const labels = analyzedSegments(labelsOf(rec), Number(rec.duration_seconds) || null);
   const segments: { eo?: { start: number; end: number }; ec?: { start: number; end: number } } = {};
-  if (rec.eo_start != null && rec.eo_end != null) {
-    segments.eo = { start: Number(rec.eo_start), end: Number(rec.eo_end) };
-  }
-  if (rec.ec_start != null && rec.ec_end != null) {
-    segments.ec = { start: Number(rec.ec_start), end: Number(rec.ec_end) };
-  }
-  if (!segments.eo && !segments.ec) {
-    segments.eo = { start: 0, end: Number(rec.duration_seconds) || Number.MAX_SAFE_INTEGER };
-  }
+  if (labels.eo) segments.eo = labels.eo;
+  if (labels.ec) segments.ec = labels.ec;
 
   const preprocessing = analysisData.config?.preprocessing ?? {};
   let manualArtifacts: { start: number; end: number }[] = [];

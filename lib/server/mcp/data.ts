@@ -10,7 +10,7 @@ import type { AnalysisResults } from '@/lib/analysis-results';
 import { McpUserError } from './errors';
 import { UUID_RE, decodeSessionId, parseRef } from './ids';
 import { conditionOf, pairSessions, type RecordingRow, type Session } from './sessions';
-import { relabelToCondition } from './relabel';
+import { relabelToCondition } from '@/lib/server/relabel';
 import { buildSessionSummary, recordingMetaOf, type AnalysisInput, type RecordingMeta, type SessionSummary } from './summary';
 
 type Source = 'eo' | 'ec' | 'both';

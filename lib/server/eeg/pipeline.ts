@@ -688,6 +688,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   const results: AnalysisJobOutput['results'] = {
     qc_report: qc,
+    segments: Object.fromEntries(conditions.map((c) => [c, { ...input.segments[c]! }])),
     ...features,
     rejected_epochs: conditions.flatMap((c) => segs[c]?.rejected ?? []),
     spectrograms,

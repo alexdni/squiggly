@@ -5,6 +5,7 @@ import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
 import { THERAQ_PHASES } from '@/lib/theraq';
 import { getServiceDatabaseClient } from '@/lib/server/serviceDb';
+import { labelColumns, labelsProblem, type Segment } from '@/lib/eeg-condition';
 
 interface RecordingData {
   id: string;
@@ -16,7 +17,18 @@ interface AnalysisData {
   id: string;
 }
 
-// PATCH /api/recordings/[id] - Update editable recording fields (currently: TheraQ phase role)
+/** `{ start, end }` in seconds, or null. */
+function parseSegment(v: unknown): Segment | null | undefined {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object') return undefined;
+  const { start, end } = v as { start?: unknown; end?: unknown };
+  if (typeof start !== 'number' || typeof end !== 'number') return undefined;
+  return { start, end };
+}
+
+// PATCH /api/recordings/[id] - Update editable recording fields: the TheraQ phase role and the
+// EO/EC labels ({ labels: { eo: { start, end } | null, ec: { start, end } | null } }). New labels
+// leave the existing analysis stale; the caller re-runs it.
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const user = await getCurrentUser();
@@ -25,24 +37,28 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
 
     const body = await request.json().catch(() => null);
-    if (!body || typeof body !== 'object' || !('phase' in body)) {
-      return NextResponse.json({ error: 'Request body must include "phase"' }, { status: 400 });
+    if (!body || typeof body !== 'object' || (!('phase' in body) && !('labels' in body))) {
+      return NextResponse.json({ error: 'Request body must include "phase" or "labels"' }, { status: 400 });
     }
-    const phase = (body as { phase: unknown }).phase;
-    if (phase !== null && !(THERAQ_PHASES as readonly unknown[]).includes(phase)) {
-      return NextResponse.json(
-        { error: `phase must be one of ${THERAQ_PHASES.join(', ')} or null` },
-        { status: 400 }
-      );
+    const updates: Record<string, unknown> = {};
+    if ('phase' in body) {
+      const phase = (body as { phase: unknown }).phase;
+      if (phase !== null && !(THERAQ_PHASES as readonly unknown[]).includes(phase)) {
+        return NextResponse.json(
+          { error: `phase must be one of ${THERAQ_PHASES.join(', ')} or null` },
+          { status: 400 }
+        );
+      }
+      updates.phase = phase;
     }
 
     const db = getDatabaseClient();
     const { data: recording, error: fetchError } = await db
       .from('recordings')
-      .select('id, project_id')
+      .select('id, project_id, duration_seconds')
       .eq('id', params.id)
       .single();
-    const typed = recording as { id: string; project_id: string } | null;
+    const typed = recording as { id: string; project_id: string; duration_seconds: number | null } | null;
     if (fetchError || !typed) {
       return NextResponse.json({ error: 'Recording not found' }, { status: 404 });
     }
@@ -50,16 +66,33 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    if ('labels' in body) {
+      const raw = (body as { labels: unknown }).labels;
+      const eo = raw && typeof raw === 'object' ? parseSegment((raw as { eo?: unknown }).eo ?? null) : undefined;
+      const ec = raw && typeof raw === 'object' ? parseSegment((raw as { ec?: unknown }).ec ?? null) : undefined;
+      if (eo === undefined || ec === undefined) {
+        return NextResponse.json(
+          { error: 'labels must be { eo: { start, end } | null, ec: { start, end } | null } in seconds' },
+          { status: 400 }
+        );
+      }
+      const labels = { eo, ec };
+      const duration = typed.duration_seconds !== null ? Number(typed.duration_seconds) : null;
+      const problem = labelsProblem(labels, duration);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+      Object.assign(updates, labelColumns(labels));
+    }
+
     // recordings has no UPDATE policy for end users; write with the service role now that the
     // caller's recording:create permission on this project has been checked.
     const { data: updated, error } = await getServiceDatabaseClient()
       .from('recordings')
-      .update({ phase })
+      .update(updates)
       .eq('id', params.id)
       .select('*')
       .single();
     if (error) {
-      console.error('Error updating recording phase:', error);
+      console.error('Error updating recording:', error);
       return NextResponse.json({ error: 'Failed to update recording' }, { status: 500 });
     }
     return NextResponse.json({ recording: updated });

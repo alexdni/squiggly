@@ -383,6 +383,8 @@ export interface AnalysisResults {
   event_detection?: EventDetectionSummary;
   /** Mu rhythm burst summary; absent on analyses run before the mu detector */
   mu_morphology?: MuMorphology;
+  /** The EO/EC segments (seconds) this analysis ran on; absent on analyses run before it was stored */
+  segments?: Partial<Record<Condition, { start: number; end: number }>>;
   /** Paroxysmal slowing summary; absent on analyses run before the slowing detector */
   paroxysmal_slowing?: SlowingSummary;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */

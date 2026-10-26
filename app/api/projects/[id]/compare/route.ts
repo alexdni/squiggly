@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
 import { checkProjectPermission } from '@/lib/rbac';
 import type { ComparisonResult, Analysis } from '@/types/database';
+import { withRecordingCondition } from '@/lib/server/relabel';
 
 /**
  * Compare any two recordings within a project
@@ -58,7 +59,7 @@ export async function GET(
     // Verify recording A belongs to this project
     const { data: recordingA } = await db
       .from('recordings')
-      .select('id, project_id, condition_type')
+      .select('id, project_id, condition_type, filename, eo_start, eo_end, ec_start, ec_end')
       .eq('id', recordingAId)
       .eq('project_id', projectId)
       .single();
@@ -73,7 +74,7 @@ export async function GET(
     // Verify recording B belongs to this project
     const { data: recordingB } = await db
       .from('recordings')
-      .select('id, project_id, condition_type')
+      .select('id, project_id, condition_type, filename, eo_start, eo_end, ec_start, ec_end')
       .eq('id', recordingBId)
       .eq('project_id', projectId)
       .single();
@@ -121,16 +122,18 @@ export async function GET(
       );
     }
 
-    // Add recording info to analyses for computeComparison
-    (analysisA as any).recording = recordingA;
-    (analysisB as any).recording = recordingB;
+    // Results of unlabelled runs filed under the other condition are read under the recording's own
+    const relabelledA = withRecordingCondition(analysisA, recordingA as never);
+    const relabelledB = withRecordingCondition(analysisB, recordingB as never);
+    (relabelledA as any).recording = recordingA;
+    (relabelledB as any).recording = recordingB;
 
     // Compute comparison (B - A)
-    const comparison = computeComparison(analysisA, analysisB);
+    const comparison = computeComparison(relabelledA, relabelledB);
 
     // Extract visual URLs from both analyses for side-by-side display
-    const visualsA = (analysisA.results as any)?.visuals || {};
-    const visualsB = (analysisB.results as any)?.visuals || {};
+    const visualsA = (relabelledA.results as any)?.visuals || {};
+    const visualsB = (relabelledB.results as any)?.visuals || {};
 
     return NextResponse.json({
       success: true,
@@ -141,8 +144,8 @@ export async function GET(
         b: visualsB,
       },
       results: {
-        a: analysisA.results ?? null,
-        b: analysisB.results ?? null,
+        a: relabelledA.results ?? null,
+        b: relabelledB.results ?? null,
       },
     });
   } catch (error: any) {
@@ -152,6 +155,17 @@ export async function GET(
       { status: 500 }
     );
   }
+}
+
+/**
+ * The condition each side is compared under: the same one when both have it (EO first), else
+ * each side's own.
+ */
+function comparisonConditions(resultsA: any, resultsB: any): { a: 'eo' | 'ec' | null; b: 'eo' | 'ec' | null } {
+  const has = (r: any, c: 'eo' | 'ec') => Boolean(r?.band_power?.[c] && Object.keys(r.band_power[c]).length);
+  for (const c of ['eo', 'ec'] as const) if (has(resultsA, c) && has(resultsB, c)) return { a: c, b: c };
+  const own = (r: any) => (has(r, 'eo') ? 'eo' : has(r, 'ec') ? 'ec' : null);
+  return { a: own(resultsA), b: own(resultsB) };
 }
 
 /**
@@ -176,10 +190,10 @@ function computeComparison(
 
   const bands = ['delta', 'theta', 'alpha1', 'alpha2', 'smr', 'beta2', 'hibeta', 'lowgamma'];
 
-  // Get band_power from the actual Python worker structure
-  // Try to use the primary condition data (eo or ec) from each analysis
-  const bandPowerA = (resultsA as any).band_power?.eo || (resultsA as any).band_power?.ec || {};
-  const bandPowerB = (resultsB as any).band_power?.eo || (resultsB as any).band_power?.ec || {};
+  // Like with like: the same condition on both sides when both have it
+  const conditions = comparisonConditions(resultsA, resultsB);
+  const bandPowerA = (conditions.a && (resultsA as any).band_power?.[conditions.a]) || {};
+  const bandPowerB = (conditions.b && (resultsB as any).band_power?.[conditions.b]) || {};
 
   // For each channel, compute power changes (B - A)
   const channelsA = Object.keys(bandPowerA);
@@ -205,16 +219,12 @@ function computeComparison(
   // Compute coherence deltas
   const coherenceDeltas: Record<string, Record<string, number>> = {};
 
-  // wPLI per channel pair, preferring EO like the band-power deltas above. `coherence` is the
-  // pre-wPLI field some early analyses carried.
-  const pairsOf = (r: any): any[] =>
-    r?.connectivity?.eo?.pair_data ||
-    r?.connectivity?.ec?.pair_data ||
-    r?.coherence?.eo ||
-    r?.coherence?.ec ||
-    [];
-  const coherenceA = pairsOf(resultsA);
-  const coherenceB = pairsOf(resultsB);
+  // wPLI per channel pair, under the same condition as the band-power deltas above. `coherence` is
+  // the pre-wPLI field some early analyses carried.
+  const pairsOf = (r: any, c: 'eo' | 'ec' | null): any[] =>
+    (c && (r?.connectivity?.[c]?.pair_data || r?.coherence?.[c])) || [];
+  const coherenceA = pairsOf(resultsA, conditions.a);
+  const coherenceB = pairsOf(resultsB, conditions.b);
 
   // Build a map for easy lookup
   const coherenceMap: Record<string, any> = {};
@@ -295,6 +305,7 @@ function computeComparison(
   return {
     recording_a_id: analysisA.recording_id,
     recording_b_id: analysisB.recording_id,
+    conditions,
     power_deltas: powerDeltas,
     coherence_deltas: coherenceDeltas,
     asymmetry_deltas: asymmetryDeltas,

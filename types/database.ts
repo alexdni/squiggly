@@ -117,6 +117,8 @@ export interface ExportLog {
 export interface ComparisonResult {
   recording_a_id: string;
   recording_b_id: string;
+  /** the condition each side's deltas use; they differ only when the two share none */
+  conditions?: { a: 'eo' | 'ec' | null; b: 'eo' | 'ec' | null };
   power_deltas: {
     absolute: Record<string, Record<string, number>>;  // channel -> band -> delta (B - A)
     percent: Record<string, Record<string, number>>;   // channel -> band -> percent change (B - A)

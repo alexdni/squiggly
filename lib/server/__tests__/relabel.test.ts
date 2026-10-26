@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { relabelToCondition } from '@/lib/server/mcp/relabel';
+import { relabelToCondition } from '@/lib/server/relabel';
 import type { AnalysisResults } from '@/lib/analysis-results';
-import { makeResults } from './fixtures';
+import { makeResults } from '@/lib/server/mcp/__tests__/fixtures';
 
 const withSloreta = (r: AnalysisResults): AnalysisResults =>
   ({
@@ -29,6 +29,18 @@ describe('relabelToCondition', () => {
     expect(Object.keys(out.sloreta!.stats)).toEqual(['ec']);
     // input untouched
     expect(r.band_power.eo).not.toBeNull();
+  });
+
+  it('moves the analyzed segments and the sLORETA time-lapse segments too', () => {
+    const base = withSloreta(makeResults({ conditions: ['eo'] }));
+    const r = {
+      ...base,
+      segments: { eo: { start: 0, end: 300 } },
+      sloreta: { ...base.sloreta!, timeline: { window_sec: 2, hop_sec: 1, n_windows: 299, rejected: [], segments: { eo: { start: 0, end: 300 } } } },
+    } as AnalysisResults;
+    const out = relabelToCondition(r, 'EC')!;
+    expect(out.segments).toEqual({ ec: { start: 0, end: 300 } });
+    expect(out.sloreta!.timeline!.segments).toEqual({ ec: { start: 0, end: 300 } });
   });
 
   it('leaves results alone when they already match, for BOTH, and when both conditions exist', () => {

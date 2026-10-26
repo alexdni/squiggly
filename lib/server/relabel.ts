@@ -1,14 +1,15 @@
 import 'server-only';
-// A split EO or EC upload stored with condition_type BOTH and no segment markers is analyzed as one
-// whole-recording segment, which the engine files under `eo`. When the recording's own condition
-// (from condition_type or its filename token) is the other one, the results are relabelled here so
-// every tool reads them under the right condition.
+// A recording with no EO/EC labels is analyzed as one whole-recording segment, which the engine
+// files under `eo`. When the recording's own condition (its labels, or its filename token) is EC,
+// the results are relabelled here on read, so the analysis view, comparisons and the MCP tools all
+// show them under the right condition until the analysis is re-run with the label.
 
 import type { AnalysisResults, Condition } from '@/lib/analysis-results';
+import { recordingCondition } from '@/lib/eeg-condition';
 
 type Keyed<T> = Partial<Record<Condition, T>> | null | undefined;
 
-const PER_CONDITION = ['band_power', 'connectivity', 'lzc', 'alpha_peak', 'psd', 'spectrograms', 'mu_morphology', 'paroxysmal_slowing'] as const;
+const PER_CONDITION = ['band_power', 'connectivity', 'lzc', 'alpha_peak', 'psd', 'spectrograms', 'mu_morphology', 'paroxysmal_slowing', 'segments'] as const;
 
 const has = (v: unknown) => v != null && !(typeof v === 'object' && Object.keys(v as object).length === 0);
 
@@ -32,6 +33,7 @@ export function relabelToCondition(results: AnalysisResults | null, condition: s
   for (const k of PER_CONDITION) {
     if (out[k]) (out as Record<string, unknown>)[k] = swapKeys(out[k] as Keyed<unknown>, from, to);
   }
+  if (out.segments) delete (out.segments as Record<string, unknown>)[from];
 
   const qc = results.qc_report as (AnalysisResults['qc_report'] & Record<string, unknown>) | undefined;
   if (qc) {
@@ -52,11 +54,23 @@ export function relabelToCondition(results: AnalysisResults | null, condition: s
       conditions: (sl.conditions ?? []).map((c) => (c === from ? to : c)),
       epochs_used: swapKeys(sl.epochs_used, from, to) ?? {},
       stats: swapKeys(sl.stats, from, to) ?? {},
+      ...(sl.timeline ? { timeline: { ...sl.timeline, segments: swapKeys(sl.timeline.segments, from, to) ?? {} } } : {}),
     } as typeof sl;
     // swapKeys leaves an explicit null under `from`; these two maps are Partial, so drop it
     delete (out.sloreta.epochs_used as Record<string, unknown>)[from];
     delete (out.sloreta.stats as Record<string, unknown>)[from];
+    if (out.sloreta.timeline) delete (out.sloreta.timeline.segments as Record<string, unknown>)[from];
   }
 
   return out;
+}
+
+/** An analysis row with its results relabelled to its recording's condition (see above). */
+export function withRecordingCondition<A extends { results?: unknown }>(
+  analysis: A,
+  recording: Parameters<typeof recordingCondition>[0] | null | undefined
+): A {
+  if (!recording || !analysis.results) return analysis;
+  const results = relabelToCondition(analysis.results as AnalysisResults, recordingCondition(recording));
+  return results === analysis.results ? analysis : { ...analysis, results };
 }

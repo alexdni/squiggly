@@ -5,6 +5,7 @@ import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission } from '@/lib/rbac';
 import { projectIdForRecording } from '@/lib/server/analysisProject';
 import { updateWithStoredConfig } from '@/lib/server/eventReviews';
+import { withRecordingCondition } from '@/lib/server/relabel';
 
 /** A run in progress owns the row until it finishes or goes stale (instance recycled). */
 const STALE_MS = 10 * 60 * 1000;
@@ -56,7 +57,7 @@ export async function GET(
 
     // Combine the data
     const result = {
-      ...analysisData,
+      ...withRecordingCondition(analysisData, recording as never),
       recording: recording || null,
     };
 

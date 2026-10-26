@@ -208,10 +208,10 @@ describe('data loaders', () => {
     expect(out.sessions[0].recordings.every((r) => r.analysis === null)).toBe(true);
   });
 
-  it('split BOTH uploads named …45EO / …45EC pair, and the EC file\'s whole-recording results read as EC', async () => {
-    const eo = makeRecording({ condition_type: 'BOTH', filename: 'Client 2026 pre 45EO.edf', created_at: '2026-10-01T10:00:00Z' });
-    const ec = makeRecording({ condition_type: 'BOTH', filename: 'Client 2026 pre 45EC.edf', created_at: '2026-10-01T10:12:00Z' });
-    // with no segment markers the engine files the whole recording under eo, for both files
+  it('split uploads named …45EO / …45EC pair, and the EC file\'s results from before it was labelled read as EC', async () => {
+    const eo = makeRecording({ condition_type: 'EO', filename: 'Client 2026 pre 45EO.edf', created_at: '2026-10-01T10:00:00Z' });
+    const ec = makeRecording({ condition_type: 'EC', filename: 'Client 2026 pre 45EC.edf', created_at: '2026-10-01T10:12:00Z' });
+    // analyzed while unlabelled, the engine filed the whole recording under eo, for both files
     const eoA = makeAnalysisRow(eo, makeResults({ conditions: ['eo'] }));
     const ecA = makeAnalysisRow(ec, makeResults({ conditions: ['eo'] }));
     const { db } = fakeDb({ projects: [makeProject()], project_members: [], recordings: [eo, ec], analyses: [eoA, ecA] });

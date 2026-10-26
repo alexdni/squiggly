@@ -30,6 +30,8 @@ describe('runAnalysis', () => {
     expect(qc.artifact_rejection_rate).toBeLessThan(100);
     expect(qc.artifact_rejection_rate).toBe(Math.round(qc.artifact_rejection_rate * 100) / 100);
     expect(results.cleaned_file_format).toBe('.edf');
+    // the segments it ran on, so the view can tell when the labels change afterwards
+    expect(results.segments).toEqual(segments);
 
     // QC timeline: whole-recording + per-channel rejected spans, burst at 30 s rejected
     const tl = qc.timeline!;

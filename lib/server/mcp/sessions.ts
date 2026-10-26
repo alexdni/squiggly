@@ -1,6 +1,7 @@
 import 'server-only';
 // Server-side EO/EC session pairing. Filenames are used for pairing only
 // and are never carried on a Session.
+import { recordingCondition } from '@/lib/eeg-condition';
 import { sessionId } from './ids';
 
 export type Condition = 'EO' | 'EC' | 'BOTH';
@@ -29,7 +30,7 @@ export interface Session {
   pairing: 'filename' | 'time' | 'single';
 }
 
-// Any non-letter may precede the token (e.g. '…45EO.edf'); a digit after it is a TheraQ phase file ('EO1'), not a token.
+// For pairing names: any non-letter may precede the token (e.g. '…45EO.edf'); a digit after it is a TheraQ phase file ('EO1').
 const TOKEN_RE = /(^|[^a-z])(EO|EC|eyes[\s_-]?open|eyes[\s_-]?closed)(?=$|[^a-z0-9])/i;
 const THERAQ_RE = /(^|[\s_.-])E[OC]\d(?=$|[\s_.-])/i;
 const MAX_GAP_MS = 24 * 3600 * 1000;
@@ -38,13 +39,9 @@ export function isTheraqPhaseFile(filename: string): boolean {
   return THERAQ_RE.test(filename);
 }
 
+/** The stored labels, else (rows uploaded before filename detection caught it) the filename's. */
 export function conditionOf(r: RecordingRow): Condition {
-  if (r.condition_type === 'EO' || r.condition_type === 'EC') return r.condition_type;
-  const m = TOKEN_RE.exec(r.filename);
-  if (!m) return 'BOTH';
-  return m[2].toLowerCase().startsWith('eyes')
-    ? m[2].toLowerCase().includes('open') ? 'EO' : 'EC'
-    : (m[2].toUpperCase() as 'EO' | 'EC');
+  return recordingCondition(r);
 }
 
 /** Lowercased filename without extension and condition token, separators collapsed to '_'. */

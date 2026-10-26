@@ -28,6 +28,8 @@ import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
 import PsdHeadMap from './visuals/PsdHeadMap';
+import ConditionLabelEditor from './ConditionLabelEditor';
+import { labelSummary, labelsOf, resultsMatchLabels } from '@/lib/eeg-condition';
 import DetectedEvents, { amplitudeThresholdOf } from './visuals/DetectedEvents';
 import { useEventReviews } from './visuals/detected-events/useEventReviews';
 import { exportPdfReport, exportVisualizationsZip, type ReportMeta } from './export/analysisExport';
@@ -307,6 +309,25 @@ export default function AnalysisDetailsClient({
     }
   };
 
+  // New EO/EC labels: store them (the editor does) and re-run with the current settings, so every
+  // graph is filed under the right condition. A pending analysis just picks them up when started.
+  const [editingLabels, setEditingLabels] = useState(false);
+  const [relabelError, setRelabelError] = useState<string | null>(null);
+  const rerunForLabels = async (recordingUpdate?: Record<string, unknown>) => {
+    setRelabelError(null);
+    if (recordingUpdate) setAnalysis((prev) => ({ ...prev, recording: { ...prev.recording, ...recordingUpdate } }));
+    if (analysis.status !== 'completed' && analysis.status !== 'failed') return;
+    const res = await fetch(`/api/analyses/${analysis.id}/process`, { method: 'POST' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setRelabelError(body.error || 'The labels are saved, but the re-analysis did not start. Use Re-Analyze.');
+      return;
+    }
+    setPollTimedOut(false);
+    setNow(Date.now());
+    setAnalysis((prev) => ({ ...prev, status: 'processing', error_log: null, started_at: new Date().toISOString(), completed_at: null }));
+  };
+
   const handleReanalyze = async () => {
     setIsReanalyzing(true);
     setReanalyzeError(null);
@@ -346,6 +367,9 @@ export default function AnalysisDetailsClient({
   };
 
   const results = analysis.results as Partial<AnalysisResults> | null;
+  const labelsStale = analysis.status === 'completed' && Boolean(results) && !resultsMatchLabels(results as never, analysis.recording);
+  const labelText = (start: number | null, end: number | null) =>
+    start !== null && end !== null ? `${formatDuration(Number(start))} - ${formatDuration(Number(end))}` : 'Not labeled';
 
   return (
     <main className="min-h-screen bg-neuro-light">
@@ -462,9 +486,50 @@ export default function AnalysisDetailsClient({
 
         {/* Recording Information */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-            Recording Details
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-neuro-dark">Recording Details</h2>
+            {canEdit && (
+              <button
+                onClick={() => setEditingLabels(true)}
+                disabled={analysis.status === 'processing'}
+                className="text-sm font-medium text-neuro-primary hover:text-neuro-accent disabled:opacity-50"
+              >
+                Edit EO/EC labels
+              </button>
+            )}
+          </div>
+          {editingLabels && (
+            <ConditionLabelEditor
+              recording={analysis.recording}
+              onSaved={async (updated) => {
+                setEditingLabels(false);
+                await rerunForLabels(updated);
+              }}
+              onCancel={() => setEditingLabels(false)}
+            />
+          )}
+          {labelsStale && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4" role="alert">
+              <p className="text-sm text-amber-900">
+                <strong>Labels changed since this analysis ran.</strong> The recording is now labelled{' '}
+                {labelSummary(labelsOf(analysis.recording)) ?? 'unlabelled (analyzed as eyes open)'}, so the graphs
+                below may sit under the wrong condition.
+              </p>
+              {canEdit && (
+                <button
+                  onClick={() => rerunForLabels()}
+                  className="mt-2 rounded-md bg-neuro-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-neuro-accent"
+                >
+                  Re-run with the current labels
+                </button>
+              )}
+            </div>
+          )}
+          {relabelError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-red-800 text-sm">{relabelError}</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <div className="text-sm text-gray-700">Duration</div>
@@ -505,23 +570,13 @@ export default function AnalysisDetailsClient({
             <div>
               <div className="text-sm text-gray-700">EO Segment</div>
               <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.eo_start !== null &&
-                analysis.recording.eo_end !== null
-                  ? `${formatDuration(
-                      analysis.recording.eo_start
-                    )} - ${formatDuration(analysis.recording.eo_end)}`
-                  : 'Not labeled'}
+                {labelText(analysis.recording.eo_start, analysis.recording.eo_end)}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-700">EC Segment</div>
               <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.ec_start !== null &&
-                analysis.recording.ec_end !== null
-                  ? `${formatDuration(
-                      analysis.recording.ec_start
-                    )} - ${formatDuration(analysis.recording.ec_end)}`
-                  : 'Not labeled'}
+                {labelText(analysis.recording.ec_start, analysis.recording.ec_end)}
               </div>
             </div>
           </div>

@@ -3,6 +3,7 @@ import AnalysisDetailsClient from '@/components/AnalysisDetailsClient';
 import { getCurrentUser } from '@/lib/auth';
 import { getDatabaseClient } from '@/lib/db';
 import { checkProjectPermission } from '@/lib/rbac';
+import { withRecordingCondition } from '@/lib/server/relabel';
 
 interface AnalysisPageProps {
   params: {
@@ -44,8 +45,9 @@ export default async function AnalysisPage({ params }: AnalysisPageProps) {
   const canEdit = projectId ? await checkProjectPermission(projectId, user.id, 'analysis:create') : false;
 
   // Combine the data in the format expected by the client component
+  // Results of an unlabelled run filed under the other condition are shown under the recording's own
   const analysisWithRecording = {
-    ...(analysis as Record<string, unknown>),
+    ...withRecordingCondition(analysis as Record<string, unknown>, recording as never),
     recording: recording || null,
   } as any;
 

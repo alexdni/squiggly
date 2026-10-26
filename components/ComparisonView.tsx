@@ -34,6 +34,8 @@ interface Analysis {
 interface ComparisonResult {
   recording_a_id: string;
   recording_b_id: string;
+  /** the condition each side's deltas use; they differ only when the two share none */
+  conditions?: { a: 'eo' | 'ec' | null; b: 'eo' | 'ec' | null };
   power_deltas: {
     absolute: Record<string, Record<string, number>>;
     percent: Record<string, Record<string, number>>;
@@ -153,6 +155,12 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const engineB = comparisonSides?.b?.processing_metadata?.engine ?? null;
   const engineMismatch =
     Boolean(comparisonSides?.hasResults) && engineFamily(engineA) !== engineFamily(engineB);
+
+  const conditionMismatch =
+    Boolean(comparisonResult?.conditions?.a && comparisonResult?.conditions?.b) &&
+    comparisonResult!.conditions!.a !== comparisonResult!.conditions!.b;
+  const conditionName = (c: 'eo' | 'ec' | null | undefined) =>
+    c === 'eo' ? 'eyes open' : c === 'ec' ? 'eyes closed' : 'unlabelled';
 
   // Get recording label with condition type
   const getRecordingLabel = (rec: Recording): string => {
@@ -597,6 +605,18 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                 <p className="text-sm text-gray-800 mb-4">
                   Side-by-side visualizations comparing the selected recordings. Live maps of the same band share one colour scale across both recordings.
                 </p>
+
+                {conditionMismatch && (
+                  <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4" role="alert">
+                    <p className="text-sm text-amber-900">
+                      <strong>Different conditions:</strong> Recording A is{' '}
+                      {conditionName(comparisonResult?.conditions?.a)} and Recording B is{' '}
+                      {conditionName(comparisonResult?.conditions?.b)}, so the change values compare eyes open with
+                      eyes closed. Check the EO/EC labels on the Recordings tab, or pick two recordings of the same
+                      condition.
+                    </p>
+                  </div>
+                )}
 
                 {engineMismatch && (
                   <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4" role="alert">

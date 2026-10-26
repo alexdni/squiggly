@@ -6,6 +6,8 @@ import ComparisonView from './ComparisonView';
 import TheraQReportClient from './TheraQReportClient';
 import type { TheraqPhase } from '@/lib/theraq';
 import SquigglyLogo from '@/components/SquigglyLogo';
+import ConditionLabelEditor, { reanalyzeAfterRelabel } from '@/components/ConditionLabelEditor';
+import { labelSummary, labelsOf } from '@/lib/eeg-condition';
 
 interface Project {
   id: string;
@@ -43,6 +45,8 @@ export default function ProjectDetailsClient({
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('recordings');
+  const [editingLabels, setEditingLabels] = useState<Recording | null>(null);
+  const [labelNotice, setLabelNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     fetchRecordings();
@@ -58,6 +62,22 @@ export default function ProjectDetailsClient({
       console.error('Error fetching recordings:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleLabelsSaved = async (updated: Recording) => {
+    setRecordings((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+    setEditingLabels(null);
+    try {
+      const started = await reanalyzeAfterRelabel(updated.id);
+      setLabelNotice({
+        kind: 'ok',
+        text: started
+          ? `Labels saved for ${updated.filename}; re-analyzing so every graph uses them.`
+          : `Labels saved for ${updated.filename}. They apply when its analysis runs.`,
+      });
+    } catch (e: any) {
+      setLabelNotice({ kind: 'error', text: e.message });
     }
   };
 
@@ -293,6 +313,23 @@ export default function ProjectDetailsClient({
             </div>
           ) : (
             <div className="overflow-x-auto">
+              {labelNotice && (
+                <div
+                  role="status"
+                  className={`mb-3 rounded-md border px-4 py-2 text-sm ${
+                    labelNotice.kind === 'ok' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-800'
+                  }`}
+                >
+                  {labelNotice.text}
+                </div>
+              )}
+              {editingLabels && (
+                <ConditionLabelEditor
+                  recording={editingLabels}
+                  onSaved={(updated) => handleLabelsSaved(updated as unknown as Recording)}
+                  onCancel={() => setEditingLabels(null)}
+                />
+              )}
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -335,15 +372,17 @@ export default function ProjectDetailsClient({
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-800">
-                          {recording.eo_start !== null &&
-                          recording.ec_start !== null ? (
-                            <span className="text-green-600">✓ Labeled</span>
-                          ) : (
-                            <span className="text-yellow-600">
-                              ⚠ Not labeled
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2 text-sm">
+                          <ConditionBadge summary={labelSummary(labelsOf(recording))} />
+                          <button
+                            className="text-xs text-neuro-primary hover:text-neuro-accent font-medium"
+                            onClick={() => {
+                              setLabelNotice(null);
+                              setEditingLabels(recording);
+                            }}
+                          >
+                            Edit
+                          </button>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -458,5 +497,16 @@ export default function ProjectDetailsClient({
         </div>
       </div>
     </main>
+  );
+}
+
+function ConditionBadge({ summary }: { summary: 'EO' | 'EC' | 'EO+EC' | null }) {
+  if (!summary) return <span className="text-yellow-600">⚠ Not labeled</span>;
+  const title = summary === 'EO' ? 'Eyes open' : summary === 'EC' ? 'Eyes closed' : 'Eyes open and eyes closed segments';
+  const tone = summary === 'EC' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' : summary === 'EO' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-green-50 text-green-800 border-green-200';
+  return (
+    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${tone}`} title={title}>
+      {summary}
+    </span>
   );
 }

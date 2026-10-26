@@ -6,6 +6,7 @@ import { checkProjectPermission, canAccessRecording } from '@/lib/rbac';
 import { validateEDFMontage, validateBDFMontage } from '@/lib/edf-validator';
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
 import { detectTheraqPhase } from '@/lib/theraq';
+import { conditionFromFilename } from '@/lib/eeg-condition';
 
 interface RecordingMetadata {
   duration_seconds: number;
@@ -165,16 +166,15 @@ export async function POST(request: Request) {
     if (!useManual) {
       console.log(`[Auto-detect] Attempting auto-detection for file: ${filename}`);
 
-      // First, try to detect from filename
-      const isEOFile = /\beo\b/i.test(filename);
-      const isECFile = /\bec\b/i.test(filename);
+      // First, try to detect from filename ('… EO.edf', '…AGE47EC.edf', 'Eyes_Closed_…')
+      const fromName = conditionFromFilename(filename);
 
-      if (isEOFile && !isECFile) {
+      if (fromName === 'EO') {
         finalEoStart = 0;
         finalEoEnd = metadata.duration_seconds;
         finalEoLabel = 'EO';
         console.log(`[Auto-detect] ✓ Auto-detected EO file from filename`);
-      } else if (isECFile && !isEOFile) {
+      } else if (fromName === 'EC') {
         finalEcStart = 0;
         finalEcEnd = metadata.duration_seconds;
         finalEcLabel = 'EC';
