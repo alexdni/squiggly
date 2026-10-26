@@ -106,11 +106,13 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
 
     if (spectrogramFile) {
       const specPath = `${params.analysisId}/spectrograms.json`;
-      const res = await storage.upload('visuals', specPath, spectrogramFile, { contentType: 'application/json', upsert: true });
+      // the visuals bucket accepts octet-stream (as for the sLORETA files), not application/json
+      const res = await storage.upload('visuals', specPath, spectrogramFile, { contentType: 'application/octet-stream', upsert: true });
       if (res.error) {
         // the inline first channel still shows; no others to add
         console.error(`[analysis ${params.analysisId}] spectrogram upload failed`, res.error);
         delete results.spectrogram_channels;
+        results.qc_report.warnings = [...(results.qc_report.warnings ?? []), 'Per-channel spectrograms could not be stored; only the first channel is shown.'];
       } else {
         results.spectrograms_path = specPath;
       }
