@@ -7,6 +7,7 @@ import SquigglyLogo from '@/components/SquigglyLogo';
 
 interface DashboardClientProps {
   user: { id: string; email: string };
+  isAdmin?: boolean;
 }
 
 interface Project {
@@ -17,7 +18,7 @@ interface Project {
   owner_id: string;
 }
 
-export default function DashboardClient({ user }: DashboardClientProps) {
+export default function DashboardClient({ user, isAdmin }: DashboardClientProps) {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +60,11 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               <div className="text-sm text-gray-800">
                 {user.email}
               </div>
+              {isAdmin && (
+                <Link href="/admin" className="text-sm text-neuro-primary hover:underline">
+                  Usage
+                </Link>
+              )}
               {process.env.NEXT_PUBLIC_AUTH_MODE !== 'local' && (
                 <Link
                   href="/settings/connected-apps"

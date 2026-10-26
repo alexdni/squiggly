@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import DashboardClient from '@/components/DashboardClient';
 import { getCurrentUser } from '@/lib/auth';
+import { isAdminEmail } from '@/lib/server/admin';
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -10,5 +11,5 @@ export default async function DashboardPage() {
     redirect('/login?expired=1');
   }
 
-  return <DashboardClient user={user as any} />;
+  return <DashboardClient user={user as any} isAdmin={isAdminEmail(user.email)} />;
 }
