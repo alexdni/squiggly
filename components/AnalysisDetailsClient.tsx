@@ -484,125 +484,7 @@ export default function AnalysisDetailsClient({
           )}
         </div>
 
-        {/* Recording Information */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-neuro-dark">Recording Details</h2>
-            {canEdit && (
-              <button
-                onClick={() => setEditingLabels(true)}
-                disabled={analysis.status === 'processing'}
-                className="text-sm font-medium text-neuro-primary hover:text-neuro-accent disabled:opacity-50"
-              >
-                Edit EO/EC labels
-              </button>
-            )}
-          </div>
-          {editingLabels && (
-            <ConditionLabelEditor
-              recording={analysis.recording}
-              onSaved={async (updated) => {
-                setEditingLabels(false);
-                await rerunForLabels(updated);
-              }}
-              onCancel={() => setEditingLabels(false)}
-            />
-          )}
-          {labelsStale && (
-            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4" role="alert">
-              <p className="text-sm text-amber-900">
-                <strong>Labels changed since this analysis ran.</strong> The recording is now labelled{' '}
-                {labelSummary(labelsOf(analysis.recording)) ?? 'unlabelled (analyzed as eyes open)'}, so the graphs
-                below may sit under the wrong condition.
-              </p>
-              {canEdit && (
-                <button
-                  onClick={() => rerunForLabels()}
-                  className="mt-2 rounded-md bg-neuro-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-neuro-accent"
-                >
-                  Re-run with the current labels
-                </button>
-              )}
-            </div>
-          )}
-          {relabelError && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-red-800 text-sm">{relabelError}</p>
-            </div>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <div className="text-sm text-gray-700">Duration</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {formatDuration(analysis.recording.duration_seconds)}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">File Size</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {formatFileSize(analysis.recording.file_size)}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">Channels</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.n_channels}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">Sampling Rate</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.sampling_rate} Hz
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">Montage</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.montage}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">Reference</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.reference}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">EO Segment</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {labelText(analysis.recording.eo_start, analysis.recording.eo_end)}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-700">EC Segment</div>
-              <div className="text-lg font-semibold text-gray-900">
-                {labelText(analysis.recording.ec_start, analysis.recording.ec_end)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Raw EEG Visualization */}
-        <div ref={viewerRef} className="scroll-mt-4">
-        <RawEEGViewer
-          recordingId={analysis.recording.id}
-          filePath={analysis.recording.file_path}
-          rejectedEpochs={analysis.results?.rejected_epochs}
-          cleanedFileUrl={analysis.results?.cleaned_file_url}
-          cleanedFileFormat={analysis.results?.cleaned_file_format}
-          pipelineFilters={{
-            highpassHz: analysis.results?.processing_metadata?.config?.high_pass_hz as number | undefined,
-            lowpassHz: analysis.results?.processing_metadata?.config?.low_pass_hz as number | undefined,
-            notchHz: analysis.results?.processing_metadata?.config?.line_freq as number | undefined,
-          }}
-          detectedEvents={results?.events}
-          eventReview={eventReview}
-          amplitudeThresholdUv={amplitudeThresholdOf(results)}
-          focusEvent={focusEvent}
-        />
-        </div>
-
-        {/* Analysis Results or Status Message */}
+        {/* Analysis status and start settings, next to the header */}
         {analysis.status === 'pending' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
             <div className="flex items-center mb-4">
@@ -664,7 +546,7 @@ export default function AnalysisDetailsClient({
                     <div>
                       <div className="font-medium text-gray-900">Manual</div>
                       <div className="text-sm text-gray-600">
-                        Mark artifact epochs by hand in the EEG viewer above, then analyze
+                        Mark artifact epochs by hand in the EEG viewer below, then analyze
                       </div>
                     </div>
                   </label>
@@ -673,7 +555,7 @@ export default function AnalysisDetailsClient({
               {settings.artifact_mode === 'manual' && (
                 <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-3">
                   <p className="text-sm text-blue-800">
-                    Use the annotation tool in the EEG viewer above to mark artifact regions before starting analysis. Select &ldquo;Annotate&rdquo; mode, then drag across artifact regions.
+                    Use the annotation tool in the EEG viewer below to mark artifact regions before starting analysis. Select &ldquo;Annotate&rdquo; mode, then drag across artifact regions.
                   </p>
                 </div>
               )}
@@ -888,6 +770,124 @@ export default function AnalysisDetailsClient({
             </div>
           </div>
         )}
+
+        {/* Recording Information */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-neuro-dark">Recording Details</h2>
+            {canEdit && (
+              <button
+                onClick={() => setEditingLabels(true)}
+                disabled={analysis.status === 'processing'}
+                className="text-sm font-medium text-neuro-primary hover:text-neuro-accent disabled:opacity-50"
+              >
+                Edit EO/EC labels
+              </button>
+            )}
+          </div>
+          {editingLabels && (
+            <ConditionLabelEditor
+              recording={analysis.recording}
+              onSaved={async (updated) => {
+                setEditingLabels(false);
+                await rerunForLabels(updated);
+              }}
+              onCancel={() => setEditingLabels(false)}
+            />
+          )}
+          {labelsStale && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4" role="alert">
+              <p className="text-sm text-amber-900">
+                <strong>Labels changed since this analysis ran.</strong> The recording is now labelled{' '}
+                {labelSummary(labelsOf(analysis.recording)) ?? 'unlabelled (analyzed as eyes open)'}, so the graphs
+                below may sit under the wrong condition.
+              </p>
+              {canEdit && (
+                <button
+                  onClick={() => rerunForLabels()}
+                  className="mt-2 rounded-md bg-neuro-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-neuro-accent"
+                >
+                  Re-run with the current labels
+                </button>
+              )}
+            </div>
+          )}
+          {relabelError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-red-800 text-sm">{relabelError}</p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="text-sm text-gray-700">Duration</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {formatDuration(analysis.recording.duration_seconds)}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">File Size</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {formatFileSize(analysis.recording.file_size)}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">Channels</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {analysis.recording.n_channels}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">Sampling Rate</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {analysis.recording.sampling_rate} Hz
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">Montage</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {analysis.recording.montage}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">Reference</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {analysis.recording.reference}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">EO Segment</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {labelText(analysis.recording.eo_start, analysis.recording.eo_end)}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-700">EC Segment</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {labelText(analysis.recording.ec_start, analysis.recording.ec_end)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Raw EEG Visualization */}
+        <div ref={viewerRef} className="scroll-mt-4">
+        <RawEEGViewer
+          recordingId={analysis.recording.id}
+          filePath={analysis.recording.file_path}
+          rejectedEpochs={analysis.results?.rejected_epochs}
+          cleanedFileUrl={analysis.results?.cleaned_file_url}
+          cleanedFileFormat={analysis.results?.cleaned_file_format}
+          pipelineFilters={{
+            highpassHz: analysis.results?.processing_metadata?.config?.high_pass_hz as number | undefined,
+            lowpassHz: analysis.results?.processing_metadata?.config?.low_pass_hz as number | undefined,
+            notchHz: analysis.results?.processing_metadata?.config?.line_freq as number | undefined,
+          }}
+          detectedEvents={results?.events}
+          eventReview={eventReview}
+          amplitudeThresholdUv={amplitudeThresholdOf(results)}
+          focusEvent={focusEvent}
+        />
+        </div>
 
         {analysis.status === 'completed' && analysis.results && (
           <div ref={resultsRef}>
@@ -1318,7 +1318,7 @@ export default function AnalysisDetailsClient({
                   Spectrograms
                 </h2>
                 <p className="text-sm text-gray-800 mb-4">
-                  Time-frequency analysis showing how signal power changes over time for key electrode sites
+                  How signal power changes over time and frequency. Starts with the first channel; add more one at a time.
                 </p>
                 <LegacyOrLive
                   results={results}
@@ -1327,7 +1327,11 @@ export default function AnalysisDetailsClient({
                     { key: 'spectrogram_EC', title: 'Eyes Closed', alt: 'Spectrogram Eyes Closed' },
                   ]}
                 >
-                  <SpectrogramGrid spectrograms={results?.spectrograms} />
+                  <SpectrogramGrid
+                    spectrograms={results?.spectrograms}
+                    channels={results?.spectrograms_path ? results?.spectrogram_channels : undefined}
+                    analysisId={analysis.id}
+                  />
                 </LegacyOrLive>
               </div>
             )}

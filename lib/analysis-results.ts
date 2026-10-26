@@ -38,6 +38,7 @@ export const CONNECTIVITY_BANDS: Record<ConnectivityBandName, [number, number]> 
   beta: [13, 30],
 };
 
+/** The channels analyses stored spectrograms for before every channel was kept (display order). */
 export const SPECTROGRAM_CHANNELS = ['Fp1', 'Fz', 'Cz', 'Pz', 'O1'] as const;
 
 /** µV² (absolute) and fraction of 1–45 Hz total (relative) */
@@ -369,8 +370,15 @@ export interface AnalysisResults {
   asymmetry: Asymmetry;
   risk_patterns: RiskPatterns;
   rejected_epochs: RejectedEpoch[];
-  /** keyed by channel label, per condition */
+  /**
+   * keyed by channel label, per condition. Newer analyses keep only the first channel here and
+   * every channel in the spectrograms file (spectrograms_path); older ones have five channels.
+   */
   spectrograms?: Record<Condition, Record<string, SpectrogramData> | null>;
+  /** channels with a spectrogram in the spectrograms file, in recording order */
+  spectrogram_channels?: string[];
+  /** storage path (visuals bucket) of every channel's spectrogram, { [condition]: { [channel]: data } } */
+  spectrograms_path?: string;
   /** Per-channel PSD per condition; absent on analyses run before it was added */
   psd?: Record<Condition, PsdData | null>;
   /** Present when the recording has an ECG channel */

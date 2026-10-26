@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPECTROGRAM_CHANNELS, type Condition, type SpectrogramData } from '@/lib/analysis-results';
 import { drawColorbar, formatTick, jet, type Scale } from './topo';
 import { useElementWidth } from './Topomap';
@@ -133,35 +133,120 @@ export interface SpectrogramGridProps {
   spectrograms: Partial<Record<Condition, Record<string, SpectrogramData> | null>> | null | undefined;
   /** Only render this condition (otherwise every available one, each in its own block). */
   condition?: Condition;
+  /**
+   * Analyses with a spectrograms file: its channels (recording order) and the analysis to fetch
+   * them from. Without it, only the channels stored inline (five on older analyses) are offered.
+   */
+  channels?: string[];
+  analysisId?: string;
 }
 
-/** One spectrogram per available channel (Fp1/Fz/Cz/Pz/O1 first) for each condition. */
-export default function SpectrogramGrid({ spectrograms, condition }: SpectrogramGridProps) {
+type PerCondition = Partial<Record<Condition, SpectrogramData | null>>;
+
+/**
+ * Spectrograms for the first channel, plus any the user adds one at a time. Channels outside the
+ * inline results are fetched from /api/analyses/[id]/spectrograms.
+ */
+export default function SpectrogramGrid({ spectrograms, condition, channels, analysisId }: SpectrogramGridProps) {
   const conditions = (condition ? [condition] : CONDITIONS).filter(
     (c) => spectrograms?.[c] && Object.keys(spectrograms[c]!).length > 0
   );
+  const inlineChannels = useMemo(
+    () => orderChannels([...new Set(CONDITIONS.flatMap((c) => Object.keys(spectrograms?.[c] ?? {})))], SPECTROGRAM_CHANNELS),
+    [spectrograms]
+  );
+  const available = channels?.length && analysisId ? channels : inlineChannels;
+  const [selected, setSelected] = useState<string[]>(() => (available[0] ? [available[0]] : []));
+  const [fetched, setFetched] = useState<Record<string, PerCondition | 'loading' | { error: string }>>({});
+
+  const dataFor = (ch: string, c: Condition): SpectrogramData | null | undefined => {
+    const inline = spectrograms?.[c]?.[ch];
+    if (inline) return inline;
+    const f = fetched[ch];
+    return f && f !== 'loading' && !('error' in f) ? (f as PerCondition)[c] ?? null : undefined;
+  };
+
+  const add = async (ch: string) => {
+    if (!ch || selected.includes(ch)) return;
+    setSelected((prev) => [...prev, ch]);
+    if (inlineChannels.includes(ch) || !analysisId || fetched[ch]) return;
+    setFetched((prev) => ({ ...prev, [ch]: 'loading' }));
+    try {
+      const res = await fetch(`/api/analyses/${analysisId}/spectrograms?channel=${encodeURIComponent(ch)}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Could not load this channel');
+      setFetched((prev) => ({ ...prev, [ch]: body as PerCondition }));
+    } catch (e) {
+      setFetched((prev) => ({ ...prev, [ch]: { error: (e as Error).message } }));
+    }
+  };
+
   if (conditions.length === 0) {
     return <p className="text-sm text-gray-600">No spectrogram data available.</p>;
   }
+  const addable = available.filter((ch) => !selected.includes(ch));
+
   return (
-    <div className="grid grid-cols-1 gap-6">
-      {conditions.map((c) => {
-        const byChannel = spectrograms![c]!;
-        const channels = orderChannels(Object.keys(byChannel), SPECTROGRAM_CHANNELS);
-        return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {selected.map((ch) => (
+          <span key={ch} className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-900">
+            {ch}
+            {selected.length > 1 && (
+              <button
+                onClick={() => setSelected((prev) => prev.filter((x) => x !== ch))}
+                className="ml-1 text-gray-500 hover:text-gray-900"
+                aria-label={`Remove ${ch}`}
+                title={`Remove ${ch}`}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        {addable.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => add(e.target.value)}
+            aria-label="Add a channel"
+            className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+          >
+            <option value="">+ Add channel</option>
+            {addable.map((ch) => (
+              <option key={ch} value={ch}>
+                {ch}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-6">
+        {conditions.map((c) => (
           <section key={c} className="border border-gray-200 rounded-lg p-4" aria-label={`Spectrograms, ${CONDITION_LABELS[c]}`}>
             <h3 className="text-lg font-semibold text-gray-900 mb-3">{CONDITION_LABELS[c]}</h3>
             <div className="space-y-4">
-              {channels.map((ch) => (
-                <div key={ch}>
-                  <div className="text-sm font-medium text-gray-900 mb-1">{ch}</div>
-                  <Spectrogram data={byChannel[ch]} label={`${ch} spectrogram, ${CONDITION_LABELS[c]}`} />
-                </div>
-              ))}
+              {selected.map((ch) => {
+                const d = dataFor(ch, c);
+                const f = fetched[ch];
+                return (
+                  <div key={ch}>
+                    <div className="text-sm font-medium text-gray-900 mb-1">{ch}</div>
+                    {d ? (
+                      <Spectrogram data={d} label={`${ch} spectrogram, ${CONDITION_LABELS[c]}`} />
+                    ) : f === 'loading' ? (
+                      <p className="text-sm text-gray-600">Loading…</p>
+                    ) : f && typeof f === 'object' && 'error' in f ? (
+                      <p className="text-sm text-red-700">{(f as { error: string }).error}</p>
+                    ) : (
+                      <p className="text-sm text-gray-600">No spectrogram for {ch} in this condition.</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </section>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }

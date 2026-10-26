@@ -74,6 +74,8 @@ export interface AnalysisJobOutput {
   sloretaValues?: Float32Array;
   /** per-window cross-spectra for the time lapse; described by results.sloreta.timeline */
   sloretaSpectra?: Float32Array;
+  /** every channel's spectrogram as JSON, { [condition]: { [channel]: SpectrogramData } } */
+  spectrogramFile?: Uint8Array;
 }
 
 export class AnalysisJobError extends Error {
@@ -545,20 +547,31 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   const slowingEvents = slowingEventResults(slowing.bursts, dismissed);
   const ownEvents = [...muEvents, ...slowingEvents];
 
+  // Every channel's spectrogram goes to a file the viewer reads a channel at a time; the results
+  // keep the first channel inline for the default view.
   progress('spectrograms');
-  const spectrograms: Record<Condition, Record<string, SpectrogramData> | null> = { eo: null, ec: null };
+  const allSpectrograms: Record<Condition, Record<string, SpectrogramData> | null> = { eo: null, ec: null };
   for (const c of conditions) {
     const seg = input.segments[c]!;
     const s = Math.max(0, Math.round(seg.start * cleaned.sampleRate));
     const e = Math.min(cleaned.nSamples, Math.round(seg.end * cleaned.sampleRate));
     if (e - s >= cleaned.sampleRate * 2) {
-      spectrograms[c] = computeSpectrograms(
+      allSpectrograms[c] = computeSpectrograms(
         data.map((d) => d.subarray(s, e)),
         labels,
         cleaned.sampleRate
       );
     }
   }
+  const spectrogramChannels = labels.filter((l) => conditions.some((c) => allSpectrograms[c]?.[l]));
+  const spectrograms: Record<Condition, Record<string, SpectrogramData> | null> = { eo: null, ec: null };
+  for (const c of conditions) {
+    const first = spectrogramChannels.find((l) => allSpectrograms[c]?.[l]);
+    if (first) spectrograms[c] = { [first]: allSpectrograms[c]![first] };
+  }
+  const spectrogramFile = spectrogramChannels.length
+    ? new TextEncoder().encode(JSON.stringify(allSpectrograms))
+    : undefined;
 
   // Heart-rate variability when the file has an ECG lead; never fails the EEG analysis.
   let hrv: HrvResults | undefined;
@@ -692,6 +705,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     ...features,
     rejected_epochs: conditions.flatMap((c) => segs[c]?.rejected ?? []),
     spectrograms,
+    ...(spectrogramChannels.length ? { spectrogram_channels: spectrogramChannels } : {}),
     psd,
     ...(hrv ? { hrv } : {}),
     ...(sloreta ? { sloreta: sloreta.meta } : {}),
@@ -725,5 +739,6 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     cleaned: { bytes: cleanedBytes, format: input.format },
     ...(sloreta ? { sloretaValues: sloreta.values } : {}),
     ...(sloretaSpectra ? { sloretaSpectra } : {}),
+    ...(spectrogramFile ? { spectrogramFile } : {}),
   };
 }

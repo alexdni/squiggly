@@ -1,4 +1,4 @@
-import { SPECTROGRAM_CHANNELS, type SpectrogramData } from '@/lib/analysis-results';
+import type { SpectrogramData } from '@/lib/analysis-results';
 import { spectrogram } from '../dsp';
 
 export const SPECTROGRAM_FMIN = 0.5;
@@ -87,9 +87,9 @@ export function downsampleSpectrogram(full: FullSpectrogram): SpectrogramData {
 }
 
 /**
- * Downsampled spectrograms for the SPECTROGRAM_CHANNELS present in `channels`.
- * `data[i]` is the continuous µV signal of `channels[i]` (e.g. the condition's kept epochs
- * concatenated, as the Python worker did). Channels shorter than one 2 s window are omitted.
+ * Downsampled spectrograms for every channel, in `channels` order.
+ * `data[i]` is the continuous µV signal of `channels[i]` (e.g. the condition's segment). Channels
+ * shorter than one 2 s window are omitted.
  */
 export function computeSpectrograms(
   data: Float64Array[],
@@ -97,9 +97,8 @@ export function computeSpectrograms(
   sfreq: number
 ): Record<string, SpectrogramData> {
   const out: Record<string, SpectrogramData> = {};
-  for (const ch of SPECTROGRAM_CHANNELS) {
-    const i = channels.indexOf(ch);
-    if (i < 0) continue;
+  for (let i = 0; i < channels.length; i++) {
+    const ch = channels[i];
     const full = fullSpectrogram(data[i], sfreq);
     if (full) out[ch] = downsampleSpectrogram(full);
   }

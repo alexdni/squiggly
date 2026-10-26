@@ -12,7 +12,7 @@ describe('runAnalysis', () => {
 
   it('cleans, epochs and extracts features end to end', () => {
     const stages: string[] = [];
-    const { results, cleaned } = runAnalysis(
+    const { results, cleaned, spectrogramFile } = runAnalysis(
       { bytes: bytes.slice(), format: 'edf', segments, preprocessing: { profile: 'full' }, engine: 'test' },
       (s) => stages.push(s)
     );
@@ -55,7 +55,12 @@ describe('runAnalysis', () => {
     expect(ec.O1.alpha2.absolute).toBeGreaterThan(3 * eo.O1.alpha2.absolute);
     expect(results.alpha_peak.ec!.O1.peak_frequency).toBeCloseTo(10, 0);
 
-    expect(Object.keys(results.spectrograms!.eo!)).toEqual(expect.arrayContaining(['Fp1', 'Cz', 'O1']));
+    // first channel inline; every channel in the spectrograms file
+    expect(Object.keys(results.spectrograms!.eo!)).toEqual(['Fp1']);
+    expect(results.spectrogram_channels).toEqual(LABELS);
+    const file = JSON.parse(new TextDecoder().decode(spectrogramFile!));
+    expect(Object.keys(file.eo)).toEqual(LABELS);
+    expect(Object.keys(file.ec)).toEqual(LABELS);
 
     const header = readEdfHeader(cleaned.bytes);
     expect(cleaned.format).toBe('edf');

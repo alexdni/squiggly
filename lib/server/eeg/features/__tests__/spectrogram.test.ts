@@ -41,7 +41,7 @@ describe.each(['eo', 'ec'] as Cond[])('spectrogram %s', (cond) => {
 
   it('downsamples to ~1 Hz x 1 s blocks of averaged power', () => {
     const out = computeSpectrograms(data, set.channels, set.sfreq);
-    expect(Object.keys(out)).toEqual([...SPECTROGRAM_CHANNELS]);
+    expect(Object.keys(out)).toEqual(set.channels);
     for (const ch of py.channels) {
       const r = ref[ch];
       const s = out[ch];

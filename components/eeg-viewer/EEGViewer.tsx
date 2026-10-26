@@ -63,6 +63,8 @@ type SignalSource = 'raw' | 'cleaned';
 
 /** The cleaned file is already filtered by the pipeline; display filters would filter it twice. */
 const NO_FILTERS = { highpassHz: 0, lowpassHz: 0, notchHz: 0 };
+/** Annotations listed before "Expand to see all annotations". */
+const ANNOTATIONS_SHOWN = 5;
 
 export default function EEGViewer({
   recordingId,
@@ -241,6 +243,7 @@ export default function EEGViewer({
   }, [rejectedEpochs, showRejectedEpochs]);
 
   // Merge manual annotations with rejected epoch annotations
+  const [showAllAnnotations, setShowAllAnnotations] = useState(false);
   const allAnnotations = useMemo<EEGAnnotation[]>(
     () => [...annotations, ...rejectedAnnotations],
     [annotations, rejectedAnnotations]
@@ -526,7 +529,7 @@ export default function EEGViewer({
             Annotations ({allAnnotations.length})
           </h4>
           <div className="space-y-1">
-            {allAnnotations.map((a) => (
+            {(showAllAnnotations ? allAnnotations : allAnnotations.slice(0, ANNOTATIONS_SHOWN)).map((a) => (
               <div
                 key={a.id}
                 className={`flex items-center justify-between text-xs rounded px-2 py-1 ${
@@ -552,6 +555,17 @@ export default function EEGViewer({
               </div>
             ))}
           </div>
+          {allAnnotations.length > ANNOTATIONS_SHOWN && (
+            <button
+              onClick={() => setShowAllAnnotations((v) => !v)}
+              aria-expanded={showAllAnnotations}
+              className="mt-2 text-xs font-medium text-neuro-primary hover:text-neuro-accent"
+            >
+              {showAllAnnotations
+                ? 'Show fewer annotations'
+                : `Expand to see all annotations (${allAnnotations.length - ANNOTATIONS_SHOWN} more)`}
+            </button>
+          )}
         </div>
       )}
     </div>

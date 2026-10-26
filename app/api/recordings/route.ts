@@ -349,6 +349,8 @@ export async function GET(request: Request) {
     const projectId = searchParams.get('projectId') || searchParams.get('project_id');
     const recordingId = searchParams.get('recordingId') || searchParams.get('recording_id');
     const includeAnalyses = searchParams.get('include_analyses') === 'true';
+    // Project lists: just the latest analysis's id and status, not its (large) results
+    const includeStatus = searchParams.get('include_analysis_status') === 'true';
 
     const db = getDatabaseClient();
 
@@ -424,6 +426,20 @@ export async function GET(request: Request) {
 
     // Optionally include analyses for each recording
     let recordingsWithAnalyses = recordings || [];
+    if (includeStatus && !includeAnalyses && recordingsWithAnalyses.length > 0) {
+      recordingsWithAnalyses = await Promise.all(
+        recordingsWithAnalyses.map(async (rec: any) => {
+          const { data: latest } = await db
+            .from('analyses')
+            .select('id, status, started_at, completed_at')
+            .eq('recording_id', rec.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .execute();
+          return { ...rec, latest_analysis: (latest as any[] | null)?.[0] ?? null };
+        })
+      );
+    }
     if (includeAnalyses && recordingsWithAnalyses.length > 0) {
       recordingsWithAnalyses = await Promise.all(
         recordingsWithAnalyses.map(async (rec: any) => {

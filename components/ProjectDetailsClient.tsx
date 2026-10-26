@@ -28,6 +28,7 @@ interface Recording {
   ec_start: number | null;
   ec_end: number | null;
   phase?: TheraqPhase | null;
+  latest_analysis?: { id: string; status: string; started_at: string | null; completed_at: string | null } | null;
 }
 
 interface ProjectDetailsClientProps {
@@ -47,6 +48,8 @@ export default function ProjectDetailsClient({
   const [activeTab, setActiveTab] = useState<TabType>('recordings');
   const [editingLabels, setEditingLabels] = useState<Recording | null>(null);
   const [labelNotice, setLabelNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   useEffect(() => {
     fetchRecordings();
@@ -54,7 +57,7 @@ export default function ProjectDetailsClient({
 
   const fetchRecordings = async () => {
     try {
-      const response = await fetch(`/api/recordings?project_id=${project.id}`);
+      const response = await fetch(`/api/recordings?project_id=${project.id}&include_analysis_status=true`);
       if (!response.ok) throw new Error('Failed to fetch recordings');
       const data = await response.json();
       setRecordings(data.recordings || []);
@@ -65,11 +68,74 @@ export default function ProjectDetailsClient({
     }
   };
 
+  // While any analysis runs, refresh the statuses every few seconds (at most ~10 minutes).
+  const anyProcessing = recordings.some((r) => r.latest_analysis?.status === 'processing');
+  useEffect(() => {
+    if (!anyProcessing) return;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+      if (ticks > 120) clearInterval(timer);
+      else fetchRecordings();
+    }, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyProcessing]);
+
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allSelected = recordings.length > 0 && recordings.every((r) => selectedIds.has(r.id));
+
+  // Re-runs each selected recording's latest analysis with its saved settings (creating one when
+  // the recording has none). Running analyses are left alone.
+  const handleBulkReanalyze = async () => {
+    const chosen = recordings.filter((r) => selectedIds.has(r.id));
+    if (!chosen.length) return;
+    setBulkRunning(true);
+    setLabelNotice(null);
+    let started = 0;
+    let running = 0;
+    const failed: string[] = [];
+    for (const rec of chosen) {
+      try {
+        let analysisId = rec.latest_analysis?.id;
+        if (!analysisId) {
+          const created = await fetch('/api/recordings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recordingId: rec.id, createAnalysis: true }),
+          });
+          analysisId = (await created.json().catch(() => null))?.analysis?.id;
+          if (!created.ok || !analysisId) throw new Error('could not create an analysis');
+        }
+        const res = await fetch(`/api/analyses/${analysisId}/process`, { method: 'POST' });
+        if (res.status === 409) running += 1;
+        else if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+        else started += 1;
+      } catch (e: any) {
+        failed.push(`${rec.filename} (${e.message})`);
+      }
+    }
+    setBulkRunning(false);
+    setSelectedIds(new Set());
+    const parts = [`Re-analysis started for ${started} file${started === 1 ? '' : 's'}`];
+    if (running) parts.push(`${running} already running`);
+    if (failed.length) parts.push(`failed: ${failed.join('; ')}`);
+    setLabelNotice({ kind: failed.length ? 'error' : 'ok', text: `${parts.join(', ')}.` });
+    fetchRecordings();
+  };
+
   const handleLabelsSaved = async (updated: Recording) => {
     setRecordings((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
     setEditingLabels(null);
     try {
       const started = await reanalyzeAfterRelabel(updated.id);
+      fetchRecordings();
       setLabelNotice({
         kind: 'ok',
         text: started
@@ -323,6 +389,16 @@ export default function ProjectDetailsClient({
                   {labelNotice.text}
                 </div>
               )}
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleBulkReanalyze}
+                  disabled={selectedIds.size === 0 || bulkRunning}
+                  className="rounded-md bg-neuro-primary px-4 py-2 text-sm font-medium text-white hover:bg-neuro-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkRunning ? 'Starting…' : `Re-analyze selected${selectedIds.size ? ` (${selectedIds.size})` : ''}`}
+                </button>
+                <span className="text-xs text-gray-600">Each file re-runs with its own saved settings.</span>
+              </div>
               {editingLabels && (
                 <ConditionLabelEditor
                   recording={editingLabels}
@@ -333,6 +409,14 @@ export default function ProjectDetailsClient({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="pl-6 py-3 text-left">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all recordings"
+                        checked={allSelected}
+                        onChange={() => setSelectedIds(allSelected ? new Set() : new Set(recordings.map((r) => r.id)))}
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Filename
                     </th>
@@ -346,6 +430,9 @@ export default function ProjectDetailsClient({
                       EO/EC Labels
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                      Analysis
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Uploaded
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
@@ -356,6 +443,14 @@ export default function ProjectDetailsClient({
                 <tbody className="bg-white divide-y divide-gray-200">
                   {recordings.map((recording) => (
                     <tr key={recording.id} className="hover:bg-gray-50">
+                      <td className="pl-6 py-4">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${recording.filename}`}
+                          checked={selectedIds.has(recording.id)}
+                          onChange={() => toggleSelected(recording.id)}
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {recording.filename}
@@ -384,6 +479,9 @@ export default function ProjectDetailsClient({
                             Edit
                           </button>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <AnalysisStatus status={recording.latest_analysis?.status} />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-800">
@@ -509,4 +607,16 @@ function ConditionBadge({ summary }: { summary: 'EO' | 'EC' | 'EO+EC' | null }) 
       {summary}
     </span>
   );
+}
+
+function AnalysisStatus({ status }: { status: string | undefined }) {
+  if (!status) return <span className="text-gray-500">Not started</span>;
+  const look: Record<string, [string, string]> = {
+    completed: ['Completed', 'text-green-700'],
+    processing: ['Processing…', 'text-blue-700'],
+    pending: ['Not started', 'text-gray-600'],
+    failed: ['Failed', 'text-red-700'],
+  };
+  const [text, tone] = look[status] ?? [status, 'text-gray-700'];
+  return <span className={tone}>{text}</span>;
 }

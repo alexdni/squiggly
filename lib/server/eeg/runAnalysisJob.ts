@@ -44,7 +44,7 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
     const file = await storage.download('recordings', params.filePath);
     const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength).slice();
 
-    const { results, cleaned, sloretaValues, sloretaSpectra } = await runEegJob(
+    const { results, cleaned, sloretaValues, sloretaSpectra, spectrogramFile } = await runEegJob(
       {
         kind: 'analysis',
         sloretaKernel: await sloretaKernelForJob(),
@@ -101,6 +101,18 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
         delete results.sloreta.timeline;
       } else {
         results.sloreta.timeline.spectra_path = spectraPath;
+      }
+    }
+
+    if (spectrogramFile) {
+      const specPath = `${params.analysisId}/spectrograms.json`;
+      const res = await storage.upload('visuals', specPath, spectrogramFile, { contentType: 'application/json', upsert: true });
+      if (res.error) {
+        // the inline first channel still shows; no others to add
+        console.error(`[analysis ${params.analysisId}] spectrogram upload failed`, res.error);
+        delete results.spectrogram_channels;
+      } else {
+        results.spectrograms_path = specPath;
       }
     }
 
