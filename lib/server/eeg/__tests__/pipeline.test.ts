@@ -152,6 +152,21 @@ describe('runAnalysis', () => {
     ]);
   }, 60_000);
 
+  it('pipeline mode also rejects epochs a marked artifact overlaps', () => {
+    const { results } = runAnalysis({
+      bytes: bytes.slice(),
+      format: 'edf',
+      segments,
+      preprocessing: { profile: 'full' },
+      manualArtifacts: [{ start: 29.5, end: 31.5 }],
+      engine: 'test',
+    });
+    expect(results.qc_report.artifact_mode).toBe('pipeline');
+    expect(results.qc_report.manual_artifact_epochs_count).toBe(1);
+    const manual = results.rejected_epochs.filter((r) => r.reason === 'manual').map((r) => r.start);
+    expect(manual).toEqual([28, 30]);
+  }, 120_000);
+
   it('fails with a clear error when every epoch is rejected', () => {
     expect(() =>
       runAnalysis({

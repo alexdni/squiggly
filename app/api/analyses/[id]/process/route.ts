@@ -66,20 +66,23 @@ export async function POST(_request: Request, { params }: { params: { id: string
   if (labels.ec) segments.ec = labels.ec;
 
   const preprocessing = analysisData.config?.preprocessing ?? {};
-  let manualArtifacts: { start: number; end: number }[] = [];
-  if (preprocessing.artifact_mode === 'manual') {
-    const { data: annotations } = await db
-      .from('eeg_annotations')
-      .select('start_time, end_time')
-      .eq('recording_id', analysisData.recording_id)
-      .eq('type', 'artifact')
-      .order('start_time')
-      .execute();
-    manualArtifacts = ((annotations as any[]) ?? []).map((a) => ({
-      start: Number(a.start_time),
-      end: Number(a.end_time),
-    }));
+  // Marked artifacts are excluded in every artifact mode. Fail rather than analyze with them
+  // silently left in.
+  const { data: annotations, error: annotationsError } = await db
+    .from('eeg_annotations')
+    .select('start_time, end_time')
+    .eq('recording_id', analysisData.recording_id)
+    .eq('type', 'artifact')
+    .order('start_time')
+    .execute();
+  if (annotationsError) {
+    console.error('Error fetching artifact annotations:', annotationsError);
+    return NextResponse.json({ error: 'Could not read the marked artifacts' }, { status: 500 });
   }
+  const manualArtifacts = ((annotations as any[]) ?? []).map((a) => ({
+    start: Number(a.start_time),
+    end: Number(a.end_time),
+  }));
 
   // The job writes its outcome with the service role; fail now rather than leave the row stuck.
   try {

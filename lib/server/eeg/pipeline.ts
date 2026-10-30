@@ -61,6 +61,7 @@ export interface AnalysisJobInput {
   /** seconds from recording start; a missing condition is skipped */
   segments: Partial<Record<Condition, { start: number; end: number }>>;
   preprocessing: Partial<PreprocessingConfig> & { artifact_mode?: string };
+  /** the user's marked artifact regions, in seconds; excluded in every artifact mode */
   manualArtifacts?: { start: number; end: number }[];
   engine: string;
   /** registered sLORETA kernel (see jobs.ts), or why none could be loaded */
@@ -503,7 +504,8 @@ export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig, eventInp
 export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () => {}): AnalysisJobOutput {
   const t0 = Date.now();
   const cfg = resolvePreprocessing(input.preprocessing);
-  const manual = cfg.artifact_mode === 'manual' ? input.manualArtifacts ?? [] : [];
+  // Marked artifacts are excluded on top of the pipeline's own rejection, as a second epoch mask
+  const manual = input.manualArtifacts ?? [];
 
   progress('loading');
   const eeg = loadRecording(input.bytes, input.format);
@@ -706,7 +708,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     final_sfreq: cleaned.sampleRate,
     n_channels: labels.length,
     ignored_channels: eeg.ignored,
-    manual_artifact_epochs_count: cfg.artifact_mode === 'manual' ? manual.length : undefined,
+    manual_artifact_epochs_count: cfg.artifact_mode === 'manual' || manual.length > 0 ? manual.length : undefined,
     timeline: rejectionTimeline(result),
     warnings: [
       ...report.warnings,
