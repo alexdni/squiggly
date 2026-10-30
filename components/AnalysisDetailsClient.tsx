@@ -27,7 +27,7 @@ import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
-import PsdHeadMap from './visuals/PsdHeadMap';
+import PsdSection from './visuals/PsdSection';
 import ConditionLabelEditor from './ConditionLabelEditor';
 import { labelSummary, labelsOf, resultsMatchLabels } from '@/lib/eeg-condition';
 import DetectedEvents, { amplitudeThresholdOf } from './visuals/DetectedEvents';
@@ -530,7 +530,8 @@ export default function AnalysisDetailsClient({
                     <div>
                       <div className="font-medium text-gray-900">Automatic pipeline</div>
                       <div className="text-sm text-gray-600">
-                        Channel quality checks, artifact subspace reconstruction, ICA and adaptive epoch rejection
+                        Channel quality checks, artifact subspace reconstruction, ICA and adaptive epoch rejection.
+                        Artifacts you mark in the EEG viewer are excluded too.
                       </div>
                     </div>
                   </label>
@@ -1159,14 +1160,19 @@ export default function AnalysisDetailsClient({
 
             {/* Power spectral density per channel on the head */}
             {(results?.psd?.eo || results?.psd?.ec) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Power Spectral Density Map" data-visual>
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Power Spectral Density" data-visual>
                 <h2 className="text-2xl font-bold text-neuro-dark mb-4">
-                  Power Spectral Density Map
+                  Power Spectral Density
                 </h2>
                 <p className="text-sm text-gray-800 mb-4">
-                  Power spectrum (1–45 Hz) of each channel at its scalp position, averaged over the kept epochs
+                  Power spectrum (1–45 Hz) of each channel, averaged over the kept epochs: laid out at each
+                  channel&apos;s scalp position, or on one chart with the channels you select
                 </p>
-                <PsdHeadMap psd={results.psd} alphaPeak={results.alpha_peak} />
+                <PsdSection
+                  psd={results.psd}
+                  alphaPeak={results.alpha_peak}
+                  fileStem={analysis.recording.filename.replace(/\.[^.]+$/, '')}
+                />
               </div>
             )}
 

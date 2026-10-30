@@ -6,14 +6,14 @@ import { topoPosition } from './topoRender';
 
 export type PlacedChannel = { channel: string; cx: number; cy: number };
 
-/** Head geometry in SVG user units. */
-export const HEAD = { width: 1160, height: 1000, cx: 640, cy: 530, r: 420 };
+/** Scalp geometry in SVG user units: positions are spread over a circle of radius r around (cx, cy). */
+export const HEAD = { cx: 640, cy: 530, r: 420 };
 
-// Electrodes sit slightly inside the rim so their plots do not spill past the head outline
 const ELECTRODE_SPREAD = 0.9;
 const MIN_CELL = 70;
 const MAX_CELL = 180;
-const CELL_FILL = 0.94;
+// Fraction of the closest spacing a plot fills; the rest is the gap between neighbours
+const CELL_FILL = 0.97;
 
 // The 10-20 montage reads best as a regular grid (Fp1 above F3, O1 below P3, T3 in the F7 column)
 const GRID_COLUMNS = [-0.73, -0.37, 0, 0.37, 0.73];
@@ -29,7 +29,8 @@ const snapToGrid = (positions: { x: number; y: number }[]) => {
 
 /**
  * Places each channel at its scalp position and sizes the mini plots so the closest pair never
- * overlaps. Channels without a known position are returned in `unmapped`.
+ * overlaps. `bounds` is the box the plots cover, for a viewBox cropped to them. Channels without a
+ * known position are returned in `unmapped`.
  */
 export function layoutPsdHeadMap(channels: string[]) {
   const unmapped = channels.filter((channel) => !topoPosition(channel));
@@ -51,7 +52,18 @@ export function layoutPsdHeadMap(channels: string[]) {
   );
   const cell = Math.min(MAX_CELL, Math.max(MIN_CELL, minDistance * CELL_FILL));
 
-  return { placed, unmapped, cell };
+  const xs = placed.map((p) => p.cx);
+  const ys = placed.map((p) => p.cy);
+  const bounds = placed.length
+    ? {
+        x: Math.min(...xs) - cell / 2,
+        y: Math.min(...ys) - cell / 2,
+        width: Math.max(...xs) - Math.min(...xs) + cell,
+        height: Math.max(...ys) - Math.min(...ys) + cell,
+      }
+    : null;
+
+  return { placed, unmapped, cell, bounds };
 }
 
 const niceStep = (span: number, targetTicks: number) => {
@@ -101,6 +113,27 @@ const niceCeil = (v: number) => {
 
 /** One channel's spectrum: power[k] at freqs[k]. */
 export type Spectra = { freqs: number[]; channels: Record<string, number[]> };
+
+const PEAK_SNAP_HZ = 0.75;
+
+/**
+ * Where to draw a channel's alpha peak on its trace. The reported peak comes from a coarser (1 Hz)
+ * spectrum, so the marker goes on the highest bin within PEAK_SNAP_HZ of it.
+ */
+export function snapAlphaPeak(
+  freqs: number[],
+  power: number[],
+  peakHz: number | undefined
+): { freq: number; power: number } | null {
+  if (peakHz === undefined || !Number.isFinite(peakHz)) return null;
+  let peakBin = -1;
+  freqs.forEach((f, k) => {
+    if (Math.abs(f - peakHz) <= PEAK_SNAP_HZ && Number.isFinite(power[k]) && (peakBin < 0 || power[k] > power[peakBin])) {
+      peakBin = k;
+    }
+  });
+  return peakBin >= 0 ? { freq: freqs[peakBin], power: power[peakBin] } : null;
+}
 
 const scalingValues = ({ freqs, channels }: Spectra, channel: string) => {
   const power = channels[channel] ?? [];

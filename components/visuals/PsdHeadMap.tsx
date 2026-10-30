@@ -1,34 +1,27 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  BAND_NAMES,
-  BANDS,
-  type AlphaPeak,
-  type Condition,
-  type PsdData,
-} from '@/lib/analysis-results';
+import { BAND_NAMES, BANDS, type AlphaPeak, type Condition, type PsdData } from '@/lib/analysis-results';
 import { BAND_LABELS, CONDITIONS, CONDITION_LABELS } from './data';
+import SegmentedToggle from './SegmentedToggle';
 import {
-  HEAD,
   SCALE_FLOOR_HZ,
   layoutPsdHeadMap,
   makePowerScale,
   niceTicks,
+  snapAlphaPeak,
   type PowerScale,
   type PsdYScale,
   type Spectra,
 } from './psdHeadMapLayout';
 
 // Ported from DivergenceWebapp's LiveSession/Widgets/PsdHeadMap: one mini spectrum per electrode,
-// placed at its scalp position on a head outline.
+// placed at its scalp position. No head outline: the view is cropped to the plots so they read large.
 
 const RANGE: [number, number] = [1, 45];
 const INK = '#111827';
 const MUTED = '#6b7280';
-const HEAD_STROKE = '#9ca3af';
 const PEAK = '#773DFF';
-const PEAK_SNAP_HZ = 0.75;
 
 // Label the start frequency too, unless a round tick already sits right next to it
 const frequencyTicks = ([start, end]: [number, number]) => {
@@ -65,24 +58,13 @@ function MiniPsd({ channel, spectra, peakHz, x, y, cell, scale }: MiniPsdProps) 
     .map(([f, v]) => `${toX(f).toFixed(1)},${toY(v).toFixed(1)}`)
     .join(' ');
   const clippedAt = spectra.freqs.find((_, k) => scale.isClipped(power[k]));
-
-  // The reported peak comes from a coarser (1 Hz) spectrum, so the marker goes on the highest bin
-  // of this trace within PEAK_SNAP_HZ of it
-  let peakBin = -1;
-  if (peakHz !== undefined && Number.isFinite(peakHz)) {
-    spectra.freqs.forEach((f, k) => {
-      if (Math.abs(f - peakHz) <= PEAK_SNAP_HZ && Number.isFinite(power[k]) && (peakBin < 0 || power[k] > power[peakBin])) {
-        peakBin = k;
-      }
-    });
-  }
-  const peak = peakBin >= 0 ? { freq: spectra.freqs[peakBin], power: power[peakBin] } : null;
+  const peak = snapAlphaPeak(spectra.freqs, power, peakHz);
 
   return (
     <g transform={`translate(${x - cell / 2}, ${y - cell / 2})`}>
       <title>{peak ? `${channel} — peak alpha ${peakHz!.toFixed(1)} Hz` : channel}</title>
       <rect x={left} y={pad} width={width} height={height} fill="#fff" stroke={INK} strokeWidth={1.2} />
-      {points && <polyline points={points} fill="none" stroke={INK} strokeWidth={1.2} strokeLinejoin="round" />}
+      {points && <polyline points={points} fill="none" stroke={INK} strokeWidth={1.6} strokeLinejoin="round" />}
       {clippedAt !== undefined && (
         <path
           d={`M ${toX(clippedAt) - font * 0.45} ${pad + font * 0.75} l ${font * 0.45} ${-font * 0.7} l ${
@@ -105,47 +87,30 @@ function MiniPsd({ channel, spectra, peakHz, x, y, cell, scale }: MiniPsdProps) 
         {channel}
       </text>
       {scale.ticks.map((tick) => (
-        <text key={`y${tick}`} x={left - font * 0.4} y={toY(tick) + font * 0.35} fontSize={font} textAnchor="end" fill={MUTED}>
+        <text
+          key={`y${tick}`}
+          x={left - font * 0.4}
+          y={toY(tick) + font * 0.35}
+          fontSize={font}
+          textAnchor="end"
+          fill={MUTED}
+        >
           {formatPower(tick)}
         </text>
       ))}
       {frequencyTicks(RANGE).map((tick) => (
-        <text key={`x${tick}`} x={toX(tick)} y={pad + height + font * 1.2} fontSize={font} textAnchor="middle" fill={MUTED}>
+        <text
+          key={`x${tick}`}
+          x={toX(tick)}
+          y={pad + height + font * 1.2}
+          fontSize={font}
+          textAnchor="middle"
+          fill={MUTED}
+        >
           {tick}
         </text>
       ))}
     </g>
-  );
-}
-
-function SegmentedToggle<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: [T, string][];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
-      {options.map(([v, text]) => (
-        <button
-          key={v}
-          type="button"
-          role="radio"
-          aria-checked={value === v}
-          onClick={() => onChange(v)}
-          className={`px-3 py-1.5 font-medium transition-colors ${
-            value === v ? 'bg-neuro-primary text-white' : 'bg-white text-gray-800 hover:bg-gray-50'
-          }`}
-        >
-          {text}
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -166,76 +131,34 @@ function ConditionHeadMap({
   yScale: PsdYScale;
 }) {
   const channels = useMemo(() => Object.keys(spectra.channels), [spectra]);
-  const { placed, unmapped, cell } = useMemo(() => layoutPsdHeadMap(channels), [channels]);
+  const { placed, unmapped, cell, bounds } = useMemo(() => layoutPsdHeadMap(channels), [channels]);
   const scaleFor = useMemo(() => makePowerScale(spectra, channels, yScale), [spectra, channels, yScale]);
-  const { cx, cy, r } = HEAD;
-  const legendFont = 17;
+  const pad = cell * 0.04;
 
   return (
     <figure className="flex flex-col items-center w-full border border-gray-200 rounded-lg p-3">
-      <svg
-        viewBox={`0 0 ${HEAD.width} ${HEAD.height}`}
-        className="w-full h-auto max-w-[900px]"
-        role="img"
-        aria-label={`Power spectral density per channel on a head map, ${CONDITION_LABELS[condition]}`}
-      >
-        <g fill="none" stroke={HEAD_STROKE} strokeWidth={5} strokeLinejoin="round">
-          <path d={`M ${cx - r * 0.14} ${cy - r * 0.99} L ${cx} ${cy - r * 1.14} L ${cx + r * 0.14} ${cy - r * 0.99}`} />
-          {[-1, 1].map((side) => (
-            <path
-              key={side}
-              d={`M ${cx + side * r * 0.99} ${cy - r * 0.18} C ${cx + side * r * 1.13} ${cy - r * 0.24}, ${
-                cx + side * r * 1.13
-              } ${cy + r * 0.3}, ${cx + side * r * 0.99} ${cy + r * 0.24}`}
+      <figcaption className="w-full text-base font-bold text-neuro-dark mb-1">{CONDITION_LABELS[condition]}</figcaption>
+      {bounds && (
+        <svg
+          viewBox={`${bounds.x - pad} ${bounds.y - pad} ${bounds.width + 2 * pad} ${bounds.height + 2 * pad}`}
+          className="w-full h-auto"
+          role="img"
+          aria-label={`Power spectral density per channel at its scalp position, ${CONDITION_LABELS[condition]}`}
+        >
+          {placed.map(({ channel, cx: x, cy: y }) => (
+            <MiniPsd
+              key={channel}
+              channel={channel}
+              spectra={spectra}
+              peakHz={peaks?.[channel]?.peak_frequency}
+              x={x}
+              y={y}
+              cell={cell}
+              scale={scaleFor(channel)}
             />
           ))}
-          <circle cx={cx} cy={cy} r={r} />
-        </g>
-
-        <g transform="translate(20, 40)">
-          <text fontSize={legendFont * 1.4} fill={INK} fontWeight={700}>
-            {CONDITION_LABELS[condition]}
-          </text>
-          <text y={legendFont * 1.45 * 1.4} fontSize={legendFont} fill={INK} fontWeight={600}>
-            Band range
-          </text>
-          {BAND_NAMES.map((band, i) => (
-            <text key={band} y={(i + 2.4) * legendFont * 1.45} fontSize={legendFont} fill={MUTED}>
-              {`${BAND_LABELS[band]}: ${BANDS[band][0]} ~ ${BANDS[band][1]} Hz`}
-            </text>
-          ))}
-        </g>
-
-        <g transform={`translate(20, ${HEAD.height - 50})`}>
-          <text fontSize={legendFont} fill={MUTED}>
-            x: Frequency (Hz)
-          </text>
-          <text y={legendFont * 1.45} fontSize={legendFont} fill={MUTED}>
-            {`y: Power (µV²/Hz)${yScale === 'perChannel' ? ', per-channel scale' : yScale === 'log' ? ', log scale' : ''}`}
-          </text>
-        </g>
-        {peaks && (
-          <g transform={`translate(${HEAD.width - 230}, ${HEAD.height - 50 + legendFont * 1.45})`}>
-            <circle cx={6} cy={-legendFont * 0.35} r={6} fill={PEAK} />
-            <text x={18} fontSize={legendFont} fill={MUTED}>
-              Individual alpha peak
-            </text>
-          </g>
-        )}
-
-        {placed.map(({ channel, cx: x, cy: y }) => (
-          <MiniPsd
-            key={channel}
-            channel={channel}
-            spectra={spectra}
-            peakHz={peaks?.[channel]?.peak_frequency}
-            x={x}
-            y={y}
-            cell={cell}
-            scale={scaleFor(channel)}
-          />
-        ))}
-      </svg>
+        </svg>
+      )}
 
       {unmapped.length > 0 && (
         <div className="w-full flex flex-col items-center">
@@ -260,11 +183,26 @@ function ConditionHeadMap({
           </svg>
         </div>
       )}
+
+      <div className="w-full mt-2 text-xs text-gray-600 space-y-0.5">
+        <p>
+          {`x: Frequency (Hz) · y: Power (µV²/Hz)${
+            yScale === 'perChannel' ? ', per-channel scale' : yScale === 'log' ? ', log scale' : ''
+          }`}
+          {peaks && (
+            <span className="inline-flex items-center gap-1 ml-3">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: PEAK }} />
+              Individual alpha peak
+            </span>
+          )}
+        </p>
+        <p>{BAND_NAMES.map((band) => `${BAND_LABELS[band]} ${BANDS[band][0]}–${BANDS[band][1]} Hz`).join(' · ')}</p>
+      </div>
     </figure>
   );
 }
 
-/** Per-channel power spectra on a head map, Eyes Open and Eyes Closed side by side. */
+/** Per-channel power spectra at their scalp positions, Eyes Open and Eyes Closed side by side. */
 export default function PsdHeadMap({ psd, alphaPeak }: PsdHeadMapProps) {
   const [yScale, setYScale] = useState<PsdYScale>('perChannel');
   const conditions = CONDITIONS.filter((c) => psd?.[c]);
@@ -290,13 +228,7 @@ export default function PsdHeadMap({ psd, alphaPeak }: PsdHeadMapProps) {
       </div>
       <div className={`grid grid-cols-1 gap-4 ${conditions.length > 1 ? 'xl:grid-cols-2' : ''}`}>
         {conditions.map((c) => (
-          <ConditionHeadMap
-            key={c}
-            condition={c}
-            spectra={psd![c]!}
-            peaks={alphaPeak?.[c] ?? null}
-            yScale={yScale}
-          />
+          <ConditionHeadMap key={c} condition={c} spectra={psd![c]!} peaks={alphaPeak?.[c] ?? null} yScale={yScale} />
         ))}
       </div>
     </div>
