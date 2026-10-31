@@ -43,9 +43,9 @@ interface MiniPsdProps {
 
 function MiniPsd({ channel, spectra, peakHz, x, y, cell, scale }: MiniPsdProps) {
   const font = cell * 0.075;
-  const left = cell * 0.2;
-  const bottom = cell * 0.13;
-  const pad = cell * 0.04;
+  const left = cell * 0.17;
+  const bottom = cell * 0.11;
+  const pad = cell * 0.025;
   const width = cell - left - pad;
   const height = cell - bottom - pad;
   const toX = (freq: number) => left + ((freq - RANGE[0]) / (RANGE[1] - RANGE[0])) * width;
@@ -133,15 +133,16 @@ function ConditionHeadMap({
   const channels = useMemo(() => Object.keys(spectra.channels), [spectra]);
   const { placed, unmapped, cell, bounds } = useMemo(() => layoutPsdHeadMap(channels), [channels]);
   const scaleFor = useMemo(() => makePowerScale(spectra, channels, yScale), [spectra, channels, yScale]);
-  const pad = cell * 0.04;
+  const pad = cell * 0.025;
 
   return (
-    <figure className="flex flex-col items-center w-full border border-gray-200 rounded-lg p-3">
-      <figcaption className="w-full text-base font-bold text-neuro-dark mb-1">{CONDITION_LABELS[condition]}</figcaption>
+    <figure className="flex flex-col items-center w-full border border-gray-200 rounded-lg p-2">
+      <figcaption className="w-full text-sm font-bold text-neuro-dark mb-1">{CONDITION_LABELS[condition]}</figcaption>
       {bounds && (
         <svg
           viewBox={`${bounds.x - pad} ${bounds.y - pad} ${bounds.width + 2 * pad} ${bounds.height + 2 * pad}`}
-          className="w-full h-auto"
+          // Capped to the viewport, so the controls and both conditions fit on one screen
+          className="w-full h-auto max-h-[calc(100vh-17rem)]"
           role="img"
           aria-label={`Power spectral density per channel at its scalp position, ${CONDITION_LABELS[condition]}`}
         >
@@ -184,7 +185,7 @@ function ConditionHeadMap({
         </div>
       )}
 
-      <div className="w-full mt-2 text-xs text-gray-600 space-y-0.5">
+      <div className="w-full mt-1 text-xs text-gray-600 space-y-0.5">
         <p>
           {`x: Frequency (Hz) · y: Power (µV²/Hz)${
             yScale === 'perChannel' ? ', per-channel scale' : yScale === 'log' ? ', log scale' : ''
@@ -213,7 +214,7 @@ export default function PsdHeadMap({ psd, alphaPeak }: PsdHeadMapProps) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-center gap-3 mb-3" data-export-ignore>
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-2" data-export-ignore>
         <span className="text-sm text-gray-700">Y scale</span>
         <SegmentedToggle
           label="Y-axis scale"
@@ -226,7 +227,7 @@ export default function PsdHeadMap({ psd, alphaPeak }: PsdHeadMapProps) {
           onChange={setYScale}
         />
       </div>
-      <div className={`grid grid-cols-1 gap-4 ${conditions.length > 1 ? 'xl:grid-cols-2' : ''}`}>
+      <div className={`grid grid-cols-1 gap-3 ${conditions.length > 1 ? 'lg:grid-cols-2' : ''}`}>
         {conditions.map((c) => (
           <ConditionHeadMap key={c} condition={c} spectra={psd![c]!} peaks={alphaPeak?.[c] ?? null} yScale={yScale} />
         ))}

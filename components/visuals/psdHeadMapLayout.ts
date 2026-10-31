@@ -12,8 +12,8 @@ export const HEAD = { cx: 640, cy: 530, r: 420 };
 const ELECTRODE_SPREAD = 0.9;
 const MIN_CELL = 70;
 const MAX_CELL = 180;
-// Fraction of the closest spacing a plot fills; the rest is the gap between neighbours
-const CELL_FILL = 0.97;
+// Fraction of the closest spacing a plot fills; the axis labels inside each cell keep neighbours apart
+const CELL_FILL = 1;
 
 // The 10-20 montage reads best as a regular grid (Fp1 above F3, O1 below P3, T3 in the F7 column)
 const GRID_COLUMNS = [-0.73, -0.37, 0, 0.37, 0.73];
