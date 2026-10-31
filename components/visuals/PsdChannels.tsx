@@ -16,8 +16,9 @@ import {
   Tooltip,
   type ChartDataset,
   type ChartOptions,
+  type Plugin,
 } from 'chart.js';
-import type { AlphaPeak, Condition, PsdData } from '@/lib/analysis-results';
+import type { AlphaPeak, Condition, PeriodicArtifacts, PsdData } from '@/lib/analysis-results';
 import { CONDITIONS, CONDITION_LABELS } from './data';
 import {
   BAND_PRESETS,
@@ -40,15 +41,39 @@ type Points = { x: number; y: number }[];
 type YScale = 'log' | 'linear';
 
 const PEAK_LABEL = ' alpha peak';
+const PERIODIC_COLOR = '#D97706';
+
+/** Dashed verticals at a periodic artifact's lines, inside the plot area. */
+const periodicLines = (frequencies: number[]): Plugin<'line'> => ({
+  id: 'periodicLines',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    ctx.save();
+    ctx.strokeStyle = PERIODIC_COLOR;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    frequencies.forEach((f) => {
+      const x = scales.x.getPixelForValue(f);
+      if (x < chartArea.left || x > chartArea.right) return;
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+    });
+    ctx.restore();
+  },
+});
 
 export interface PsdChannelsProps {
   psd: Partial<Record<Condition, PsdData | null>> | null | undefined;
   alphaPeak?: Partial<Record<Condition, AlphaPeak | null>> | null;
+  /** periodic artifacts found in the recording; their lines are marked */
+  periodic?: PeriodicArtifacts;
   /** names the CSV download */
   fileStem?: string;
 }
 
-export default function PsdChannels({ psd, alphaPeak, fileStem = 'psd' }: PsdChannelsProps) {
+export default function PsdChannels({ psd, alphaPeak, periodic, fileStem = 'psd' }: PsdChannelsProps) {
   const conditions = CONDITIONS.filter((c) => psd?.[c]);
   const [condition, setCondition] = useState<Condition | undefined>(conditions[0]);
   const spectra = condition ? psd?.[condition] ?? null : null;
@@ -144,6 +169,12 @@ export default function PsdChannels({ psd, alphaPeak, fileStem = 'psd' }: PsdCha
     [range, yScale]
   );
 
+  const periodicFrequencies = useMemo(
+    () => (periodic?.artifacts ?? []).flatMap((a) => a.frequencies).filter((f) => f <= PSD_RANGE[1]),
+    [periodic]
+  );
+  const plugins = useMemo(() => [periodicLines(periodicFrequencies)], [periodicFrequencies]);
+
   if (!condition || !spectra) {
     return <p className="text-sm text-gray-600">No spectra available.</p>;
   }
@@ -236,7 +267,7 @@ export default function PsdChannels({ psd, alphaPeak, fileStem = 'psd' }: PsdCha
         className="relative w-full h-[420px]"
         aria-label={`Power spectral density, ${CONDITION_LABELS[condition]}, ${range[0]} to ${range[1]} Hz`}
       >
-        <Line data={{ datasets }} options={options} />
+        <Line data={{ datasets }} options={options} plugins={plugins} />
         {shown.length === 0 && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-gray-500">
             Select a channel to show its spectrum.
@@ -245,6 +276,14 @@ export default function PsdChannels({ psd, alphaPeak, fileStem = 'psd' }: PsdCha
       </figure>
       {shown.some((t) => t !== GLOBAL) && (
         <p className="text-xs text-gray-500 text-center mt-1">Dots mark each channel&apos;s individual alpha peak.</p>
+      )}
+      {periodicFrequencies.length > 0 && (
+        <p className="text-xs text-gray-500 text-center mt-1">
+          <span className="inline-block w-4 border-t border-dashed align-middle mr-1" style={{ borderColor: PERIODIC_COLOR }} />
+          {`Periodic artifact at ${periodic!.artifacts
+            .map((a) => `${a.fundamental.toFixed(2)} Hz`)
+            .join(', ')} and its harmonics${periodic!.removed ? ' (removed before cleaning)' : ''}`}
+        </p>
       )}
 
       <div className="flex flex-wrap items-end justify-center gap-6 mt-4" data-export-ignore>

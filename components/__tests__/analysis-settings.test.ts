@@ -15,7 +15,13 @@ describe('settingsFromConfig', () => {
       rejection_threshold_uv: 160,
       asr_k: null,
       line_freq: 60,
+      remove_periodic_artifacts: false,
     });
+  });
+
+  it('reads periodic artifact removal only when it is explicitly on', () => {
+    expect(settingsFromConfig({ remove_periodic_artifacts: true }).remove_periodic_artifacts).toBe(true);
+    expect(settingsFromConfig({ remove_periodic_artifacts: 'yes' }).remove_periodic_artifacts).toBe(false);
   });
 
   it('maps legacy ICA mode to the pipeline and keeps manual', () => {
@@ -43,7 +49,14 @@ describe('buildPreprocessingConfig', () => {
   it('drops legacy ICA/SOBI keys, keeps unrelated keys and applies settings', () => {
     const out = buildPreprocessingConfig(
       { artifact_mode: 'ica', ica_method: 'sobi', sobi_delta_threshold: 0.7, sobi_hf_threshold: 0.4, sobi_frontal_corr: 0.6, high_pass_hz: 0.5 },
-      { artifact_mode: 'pipeline', profile: 'conservative', rejection_threshold_uv: 1000, asr_k: null, line_freq: 50 }
+      {
+        artifact_mode: 'pipeline',
+        profile: 'conservative',
+        rejection_threshold_uv: 1000,
+        asr_k: null,
+        line_freq: 50,
+        remove_periodic_artifacts: true,
+      }
     );
     expect(out).not.toHaveProperty('ica_method');
     expect(out).not.toHaveProperty('sobi_delta_threshold');
@@ -53,6 +66,7 @@ describe('buildPreprocessingConfig', () => {
       rejection_threshold_uv: 500,
       asr_k: null,
       line_freq: 50,
+      remove_periodic_artifacts: true,
       high_pass_hz: 0.5,
       epoch_duration: 2,
     });

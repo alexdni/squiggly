@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@divergentneuro/biofeedback-core": "0.34.0-beta.0",
+    "@divergentneuro/biofeedback-core": "0.34.0-beta.2",
     "@modelcontextprotocol/server": "2.3.1",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",

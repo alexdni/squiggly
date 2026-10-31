@@ -34,6 +34,8 @@ export interface ArtifactSettings {
   /** null = the profile's own ASR cutoff */
   asr_k: number | null;
   line_freq: 50 | 60;
+  /** subtract detected periodic artifacts before cleaning */
+  remove_periodic_artifacts: boolean;
 }
 
 /** Python-era keys dropped when a config is re-saved with the new settings. */
@@ -64,6 +66,7 @@ export function settingsFromConfig(pre: Record<string, unknown> | null | undefin
     ),
     asr_k: clampSetting('asr_k', typeof p.asr_k === 'number' ? p.asr_k : null),
     line_freq: p.line_freq === 50 || p.line_freq === 60 ? p.line_freq : DEFAULT_PREPROCESSING_CONFIG.line_freq,
+    remove_periodic_artifacts: p.remove_periodic_artifacts === true,
   };
 }
 
@@ -81,6 +84,7 @@ export function buildPreprocessingConfig(
     rejection_threshold_uv: clampSetting('rejection_threshold_uv', settings.rejection_threshold_uv),
     asr_k: clampSetting('asr_k', settings.asr_k),
     line_freq: settings.line_freq,
+    remove_periodic_artifacts: settings.remove_periodic_artifacts,
   };
 }
 

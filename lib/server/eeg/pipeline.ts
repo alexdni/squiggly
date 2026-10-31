@@ -2,7 +2,8 @@
 // file out. Runs inside the analysis worker thread (see worker.ts); storage and database access stay
 // on the main thread in runAnalysisJob.ts.
 //
-// Flow: load + channel selection → biofeedback-core artifact pipeline (profile or manual) →
+// Flow: load + channel selection → periodic artifacts found (and subtracted if asked) →
+// biofeedback-core artifact pipeline (profile or manual) →
 // average reference over channels that survived QC → 2 s feature epochs per EO/EC segment, kept
 // only where the pipeline kept the data and no manual artifact overlaps → features + spectrograms.
 
@@ -34,6 +35,11 @@ import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
 import { detectMuBursts, MU_DETECTOR, muEventResults } from './features/muBursts';
+import {
+  detectPeriodicArtifacts,
+  removePeriodicArtifacts,
+  summarizePeriodicArtifacts,
+} from './features/periodicArtifacts';
 import { detectSlowing, SLOWING_ARTIFACT_PATTERNS, SLOWING_DETECTOR, slowingEventResults } from './features/slowing';
 import type { WaveformInput } from './features/waveform';
 import { detectVariants, VARIANT_DETECTORS, variantEventResults } from './features/variants';
@@ -117,6 +123,7 @@ export function resolvePreprocessing(stored: AnalysisJobInput['preprocessing']):
     high_pass_hz: highPass,
     low_pass_hz: num(s.low_pass_hz, highPass + 1, ANALYSIS_MAX_HZ, d.low_pass_hz),
     epoch_duration: num(s.epoch_duration, 1, 10, d.epoch_duration),
+    remove_periodic_artifacts: s.remove_periodic_artifacts === true,
   };
 }
 
@@ -508,7 +515,18 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   const manual = input.manualArtifacts ?? [];
 
   progress('loading');
-  const eeg = loadRecording(input.bytes, input.format);
+  let eeg = loadRecording(input.bytes, input.format);
+
+  // Found on every run, so the results show them; subtracted only when the analyst asked
+  progress('periodic');
+  const periodicFound = detectPeriodicArtifacts(
+    removeMains(eeg.data, eeg.sampleRate, cfg.line_freq),
+    eeg.sampleRate,
+    cfg.line_freq
+  );
+  const periodicArtifacts = summarizePeriodicArtifacts(eeg.labels, periodicFound);
+  const periodicRemoved = cfg.remove_periodic_artifacts && periodicArtifacts.length > 0;
+  if (periodicRemoved) eeg = { ...eeg, data: removePeriodicArtifacts(eeg, periodicFound, periodicArtifacts) };
 
   progress('cleaning');
   const pipelineConfig = buildPipelineConfig(cfg, eeg.sampleRate);
@@ -757,6 +775,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
       : {}),
     ...(Object.keys(mu.summary).length ? { mu_morphology: mu.summary } : {}),
     ...(Object.keys(slowing.summary).length ? { paroxysmal_slowing: slowing.summary } : {}),
+    periodic_artifacts: { removed: periodicRemoved, artifacts: periodicArtifacts },
     ...(Object.keys(variants.summary).length ? { variant_screens: variants.summary } : {}),
     visuals: {},
     processing_metadata: {

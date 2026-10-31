@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AlphaPeak, Condition, PsdData } from '@/lib/analysis-results';
+import type { AlphaPeak, Condition, PeriodicArtifacts, PsdData } from '@/lib/analysis-results';
 import PsdChannels from './PsdChannels';
 import PsdHeadMap from './PsdHeadMap';
 import SegmentedToggle from './SegmentedToggle';
@@ -12,10 +12,12 @@ type PsdView = 'headMap' | 'channels';
 export default function PsdSection({
   psd,
   alphaPeak,
+  periodic,
   fileStem,
 }: {
   psd: Partial<Record<Condition, PsdData | null>> | null | undefined;
   alphaPeak?: Partial<Record<Condition, AlphaPeak | null>> | null;
+  periodic?: PeriodicArtifacts;
   fileStem?: string;
 }) {
   const [view, setView] = useState<PsdView>('headMap');
@@ -38,7 +40,7 @@ export default function PsdSection({
         <PsdHeadMap psd={psd} alphaPeak={alphaPeak} />
       </div>
       <div hidden={view !== 'channels'}>
-        <PsdChannels psd={psd} alphaPeak={alphaPeak} fileStem={fileStem} />
+        <PsdChannels psd={psd} alphaPeak={alphaPeak} periodic={periodic} fileStem={fileStem} />
       </div>
     </div>
   );

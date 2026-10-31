@@ -28,6 +28,7 @@ import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
 import PsdSection from './visuals/PsdSection';
+import PeriodicArtifactsCard from './visuals/PeriodicArtifacts';
 import ConditionLabelEditor from './ConditionLabelEditor';
 import { labelSummary, labelsOf, resultsMatchLabels } from '@/lib/eeg-condition';
 import DetectedEvents, { amplitudeThresholdOf } from './visuals/DetectedEvents';
@@ -326,6 +327,50 @@ export default function AnalysisDetailsClient({
     setPollTimedOut(false);
     setNow(Date.now());
     setAnalysis((prev) => ({ ...prev, status: 'processing', error_log: null, started_at: new Date().toISOString(), completed_at: null }));
+  };
+
+  // Periodic artifacts: turn their removal on or off in the stored settings and re-run
+  const [periodicBusy, setPeriodicBusy] = useState(false);
+  const [periodicError, setPeriodicError] = useState<string | null>(null);
+  const setPeriodicRemoval = async (remove: boolean) => {
+    setPeriodicBusy(true);
+    setPeriodicError(null);
+    try {
+      const nextSettings = { ...settingsFromConfig(analysis.config?.preprocessing), remove_periodic_artifacts: remove };
+      const updatedConfig = {
+        ...analysis.config,
+        preprocessing: buildPreprocessingConfig(analysis.config?.preprocessing, nextSettings),
+      };
+      const patch = await fetch(`/api/analyses/${analysis.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: updatedConfig }),
+      });
+      if (!patch.ok) {
+        const body = await patch.json().catch(() => null);
+        throw new Error(body?.error || 'Could not save the setting');
+      }
+      setSettings(nextSettings);
+      const res = await fetch(`/api/analyses/${analysis.id}/process`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || 'The setting is saved, but the re-analysis did not start. Use Re-Analyze.');
+      }
+      setPollTimedOut(false);
+      setNow(Date.now());
+      setAnalysis((prev) => ({
+        ...prev,
+        config: updatedConfig,
+        status: 'processing',
+        error_log: null,
+        started_at: new Date().toISOString(),
+        completed_at: null,
+      }));
+    } catch (error: any) {
+      setPeriodicError(error.message || 'Could not start the re-analysis');
+    } finally {
+      setPeriodicBusy(false);
+    }
   };
 
   const handleReanalyze = async () => {
@@ -659,6 +704,21 @@ export default function AnalysisDetailsClient({
                     </p>
                   </div>
                 </div>
+                <label className="mt-3 flex items-start gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={settings.remove_periodic_artifacts}
+                    onChange={(e) => updateSetting('remove_periodic_artifacts', e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Remove periodic artifacts
+                    <span className="block text-[11px] text-gray-500">
+                      A device or environment source with a fundamental and harmonics (e.g. 8.3, 16.6, 33.3 Hz). They
+                      are always detected and reported; this subtracts their lines before cleaning.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
 
@@ -1062,6 +1122,17 @@ export default function AnalysisDetailsClient({
               );
             })()}
 
+            {/* Periodic artifacts (harmonic combs) found in the raw EEG */}
+            {results?.periodic_artifacts && (
+              <PeriodicArtifactsCard
+                periodic={results.periodic_artifacts}
+                alphaPeak={results.alpha_peak}
+                onSetRemoval={canEdit ? setPeriodicRemoval : undefined}
+                busy={periodicBusy}
+                error={periodicError}
+              />
+            )}
+
             {/* Detected events (labels only), next to the QC report */}
             <DetectedEvents results={results} review={eventReview} onSelectEvent={handleSelectEvent} />
 
@@ -1171,6 +1242,7 @@ export default function AnalysisDetailsClient({
                 <PsdSection
                   psd={results.psd}
                   alphaPeak={results.alpha_peak}
+                  periodic={results.periodic_artifacts}
                   fileStem={analysis.recording.filename.replace(/\.[^.]+$/, '')}
                 />
               </div>

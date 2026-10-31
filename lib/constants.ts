@@ -176,6 +176,8 @@ export const DEFAULT_PREPROCESSING_CONFIG = {
   low_pass_hz: ANALYSIS_MAX_HZ,
   /** feature epoch length, seconds */
   epoch_duration: 2,
+  /** subtract detected periodic artifacts (harmonic combs) from the raw EEG before cleaning */
+  remove_periodic_artifacts: false,
 };
 
 // Feature Extraction Defaults

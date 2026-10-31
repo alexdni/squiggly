@@ -392,6 +392,32 @@ export type SlowingSummary = Partial<
 /** An analyst's decision on one detected event, stored in `analyses.config.event_reviews`. */
 export type EventReviewDecision = 'confirmed' | 'dismissed';
 
+/**
+ * A periodic artifact: a device or environment source (a stimulator, a pump, a display,
+ * packetization) with sharp lines at a fundamental and its harmonics.
+ */
+export interface PeriodicArtifact {
+  /** Hz, median over the channels it was found on */
+  fundamental: number;
+  /** harmonic numbers found on any channel, ascending */
+  harmonics: number[];
+  /** each harmonic's usual frequency, Hz; lines often sit a little off the exact multiple */
+  frequencies: number[];
+  channels: {
+    label: string;
+    harmonics: number[];
+    prominence_db: number[];
+    /** share of the recording it was found in, 0-1 */
+    coverage: number;
+  }[];
+}
+
+export interface PeriodicArtifacts {
+  /** true when the lines were subtracted from the EEG before cleaning */
+  removed: boolean;
+  artifacts: PeriodicArtifact[];
+}
+
 export interface AnalysisResults {
   qc_report: QcReportSummary;
   band_power: Record<Condition, BandPower | null>;
@@ -427,6 +453,8 @@ export interface AnalysisResults {
   segments?: Partial<Record<Condition, { start: number; end: number }>>;
   /** Normal-variant screens; absent on analyses run before those detectors */
   variant_screens?: Partial<Record<Condition, VariantScreen>>;
+  /** Periodic artifacts found in the raw EEG; absent on analyses run before the detector */
+  periodic_artifacts?: PeriodicArtifacts;
   /** Paroxysmal slowing summary; absent on analyses run before the slowing detector */
   paroxysmal_slowing?: SlowingSummary;
   /** Legacy PNG URLs from the Python worker. New analyses leave this empty. */
