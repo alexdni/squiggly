@@ -10,6 +10,7 @@ import {
   connectivityScale,
   networkMetricSeries,
   orderChannels,
+  orderFrontToBack,
   spectrogramPixels,
   spectrogramScale,
 } from '../data';
@@ -131,6 +132,34 @@ describe('spectrogram', () => {
     // top-right = t2, f=2 Hz, value 20 → red
     const tr = (0 * width + 2) * 4;
     expect(Array.from(pixels.slice(tr, tr + 4))).toEqual([255, 0, 0, 255]);
+  });
+});
+
+describe('orderFrontToBack', () => {
+  const montage = 'Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2'.split(' ');
+
+  it('orders the 10-20 montage by row, front to back, left to right within a row', () => {
+    expect(orderFrontToBack([...montage].sort())).toEqual(montage);
+  });
+
+  it('keeps legacy temporal names in their rows', () => {
+    expect(orderFrontToBack(['T6', 'O1', 'T4', 'T3', 'P3', 'T5', 'Cz'])).toEqual(['T3', 'Cz', 'T4', 'T5', 'P3', 'T6', 'O1']);
+  });
+
+  it('places 10-10 rows between the 10-20 rows', () => {
+    expect(orderFrontToBack(['Oz', 'POz', 'CP1', 'C3', 'FC1', 'F3', 'AF3', 'Fpz'])).toEqual([
+      'Fpz', 'AF3', 'F3', 'FC1', 'C3', 'CP1', 'POz', 'Oz',
+    ]);
+  });
+
+  it('resolves prefixed labels and puts channels with no scalp position last', () => {
+    expect(orderFrontToBack(['ECG', 'EEG O1-REF', 'A1', 'EEG FP1-REF'])).toEqual(['EEG FP1-REF', 'EEG O1-REF', 'A1', 'ECG']);
+  });
+
+  it('leaves its input unchanged', () => {
+    const input = ['O1', 'Fp1'];
+    orderFrontToBack(input);
+    expect(input).toEqual(['O1', 'Fp1']);
   });
 });
 

@@ -14,11 +14,14 @@ export default function PsdSection({
   alphaPeak,
   periodic,
   fileStem,
+  compact = false,
 }: {
   psd: Partial<Record<Condition, PsdData | null>> | null | undefined;
   alphaPeak?: Partial<Record<Condition, AlphaPeak | null>> | null;
   periodic?: PeriodicArtifacts;
   fileStem?: string;
+  /** for a narrow column such as one side of a comparison */
+  compact?: boolean;
 }) {
   const [view, setView] = useState<PsdView>('headMap');
 
@@ -37,7 +40,7 @@ export default function PsdSection({
       </div>
       {/* Both stay mounted, so switching back keeps the chosen channels, range and scale */}
       <div hidden={view !== 'headMap'}>
-        <PsdHeadMap psd={psd} alphaPeak={alphaPeak} />
+        <PsdHeadMap psd={psd} alphaPeak={alphaPeak} compact={compact} />
       </div>
       <div hidden={view !== 'channels'}>
         <PsdChannels psd={psd} alphaPeak={alphaPeak} periodic={periodic} fileStem={fileStem} />

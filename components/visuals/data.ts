@@ -215,6 +215,24 @@ export function spectrogramPixels(
   return { width, height, pixels };
 }
 
+// Rows of the montage differ by about this much in y; sites in a row vary by less (F7 0.38, F3 0.34)
+const SCALP_ROW_HEIGHT = 0.2;
+
+/**
+ * Front of the head to the back, each row left to right (Fp1, Fp2, F7, F3, Fz, ... O1, O2).
+ * Channels without a scalp position (A1, ECG) come last, alphabetically.
+ */
+export function orderFrontToBack(channels: string[]): string[] {
+  const row = (y: number) => Math.round(y / SCALP_ROW_HEIGHT);
+  return [...channels].sort((a, b) => {
+    const pa = topoPosition(a);
+    const pb = topoPosition(b);
+    if (pa && pb) return row(pb.y) - row(pa.y) || pa.x - pb.x || a.localeCompare(b);
+    if (pa || pb) return pa ? -1 : 1;
+    return a.localeCompare(b);
+  });
+}
+
 /** Preferred channels first (Fp1/Fz/Cz/Pz/O1), then any others alphabetically. */
 export function orderChannels(available: string[], preferred: readonly string[]): string[] {
   const pref = preferred.filter((c) => available.includes(c));

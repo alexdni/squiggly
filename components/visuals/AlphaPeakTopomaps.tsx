@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { AlphaPeak, Condition } from '@/lib/analysis-results';
 import Topomap from './Topomap';
 import { qeegSequential } from './topoRender';
-import { ALPHA_PEAK_SCALE, CONDITIONS, CONDITION_LABELS, alphaPeakValues } from './data';
+import { ALPHA_PEAK_SCALE, CONDITIONS, CONDITION_LABELS, alphaPeakValues, orderFrontToBack } from './data';
 
 export interface AlphaPeakTopomapsProps {
   alphaPeak: Partial<Record<Condition, AlphaPeak | null>> | null | undefined;
@@ -33,7 +33,8 @@ export default function AlphaPeakTopomaps({ alphaPeak }: AlphaPeakTopomapsProps)
   return (
     <div className="grid grid-cols-1 gap-6">
       {conditions.map((c) => {
-        const rows = Object.entries(alphaPeak?.[c] ?? {}).sort(([a], [b]) => a.localeCompare(b));
+        const peaks = alphaPeak?.[c] ?? {};
+        const rows = orderFrontToBack(Object.keys(peaks)).map((ch) => [ch, peaks[ch]] as const);
         const freqs = Object.values(values[c]);
         const mean = freqs.length ? freqs.reduce((s, v) => s + v, 0) / freqs.length : NaN;
         return (

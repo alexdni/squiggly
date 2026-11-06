@@ -117,6 +117,8 @@ function MiniPsd({ channel, spectra, peakHz, x, y, cell, scale }: MiniPsdProps) 
 export interface PsdHeadMapProps {
   psd: Partial<Record<Condition, PsdData | null>> | null | undefined;
   alphaPeak?: Partial<Record<Condition, AlphaPeak | null>> | null;
+  /** stack the conditions, for a narrow column such as one side of a comparison */
+  compact?: boolean;
 }
 
 function ConditionHeadMap({
@@ -204,7 +206,7 @@ function ConditionHeadMap({
 }
 
 /** Per-channel power spectra at their scalp positions, Eyes Open and Eyes Closed side by side. */
-export default function PsdHeadMap({ psd, alphaPeak }: PsdHeadMapProps) {
+export default function PsdHeadMap({ psd, alphaPeak, compact = false }: PsdHeadMapProps) {
   const [yScale, setYScale] = useState<PsdYScale>('perChannel');
   const conditions = CONDITIONS.filter((c) => psd?.[c]);
 
@@ -227,7 +229,7 @@ export default function PsdHeadMap({ psd, alphaPeak }: PsdHeadMapProps) {
           onChange={setYScale}
         />
       </div>
-      <div className={`grid grid-cols-1 gap-3 ${conditions.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+      <div className={`grid grid-cols-1 gap-3 ${conditions.length > 1 && !compact ? 'lg:grid-cols-2' : ''}`}>
         {conditions.map((c) => (
           <ConditionHeadMap key={c} condition={c} spectra={psd![c]!} peaks={alphaPeak?.[c] ?? null} yScale={yScale} />
         ))}

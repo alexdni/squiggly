@@ -8,6 +8,7 @@ import LegacyOrLive from './visuals/LegacyOrLive';
 import TopomapGrid, { PowerModeToggle } from './visuals/TopomapGrid';
 import LzcTopomaps from './visuals/LzcTopomaps';
 import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
+import PsdSection from './visuals/PsdSection';
 import ConnectivityHead, { DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
 import { CONDITIONS, computeBandScales, computeLzcScale, connectivityScale, type PowerMode } from './visuals/data';
 import { baseName, exportPdfReport, type ReportMeta } from './export/analysisExport';
@@ -64,7 +65,7 @@ interface ComparisonSides {
   hasResults: boolean;
 }
 
-type LiveSection = 'band_power' | 'lzc' | 'connectivity' | 'alpha_peak';
+type LiveSection = 'band_power' | 'psd' | 'lzc' | 'connectivity' | 'alpha_peak';
 
 function hasLiveSection(r: SideResults, section: LiveSection): boolean {
   const byCondition = r?.[section] as Record<string, unknown> | null | undefined;
@@ -146,6 +147,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     );
   const hasAnyVisual =
     sectionVisible('band_power', ['topomap_grid']) ||
+    sectionVisible('psd', []) ||
     sectionVisible('lzc', ['lzc_topomap_EO', 'lzc_topomap_EC']) ||
     sectionVisible('connectivity', ['connectivity_grid', 'network_metrics']) ||
     sectionVisible('alpha_peak', ['alpha_peak_topomap_EO', 'alpha_peak_topomap_EC']);
@@ -648,6 +650,37 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                       </LegacyOrLive>
                     )}
                     sides={comparisonSides}
+                  />
+                </div>
+              )}
+
+              {/* Power Spectral Density Comparison */}
+              {sectionVisible('psd', []) && (
+                <div className="mb-8" data-report-section="Power Spectral Density" data-visual>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Power Spectral Density
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Power spectrum (1–45 Hz) of each channel, averaged over the kept epochs. Each recording has its
+                    own axes and channel selection.
+                  </p>
+                  <ComparisonColumns
+                    sides={comparisonSides}
+                    render={(side, r) => {
+                      const recordingId = side === 'A' ? comparisonResult.recording_a_id : comparisonResult.recording_b_id;
+                      const filename = analyzedRecordings.find((rec) => rec.id === recordingId)?.filename;
+                      return (
+                        <PsdSection
+                          // Its condition and channel selection belong to one recording
+                          key={recordingId}
+                          psd={r?.psd}
+                          alphaPeak={r?.alpha_peak}
+                          periodic={r?.periodic_artifacts}
+                          fileStem={filename ? baseName(filename) : `recording-${side.toLowerCase()}`}
+                          compact
+                        />
+                      );
+                    }}
                   />
                 </div>
               )}

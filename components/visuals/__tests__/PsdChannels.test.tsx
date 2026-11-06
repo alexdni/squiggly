@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import AlphaPeakTopomaps from '../AlphaPeakTopomaps';
 import PsdChannels from '../PsdChannels';
 import PsdSection from '../PsdSection';
 
@@ -38,5 +39,23 @@ describe('PsdSection', () => {
     expect(hidden).toBeGreaterThan(headMap);
     expect(hidden).toBeLessThan(channels);
     expect(html.indexOf('hidden=""', hidden + 1)).toBe(-1);
+  });
+
+  it('puts the conditions side by side, or stacked when compact for a comparison column', () => {
+    expect(renderToStaticMarkup(<PsdSection psd={psd} />)).toContain('lg:grid-cols-2');
+    const compact = renderToStaticMarkup(<PsdSection psd={psd} compact />);
+    expect(compact).not.toContain('lg:grid-cols-2');
+    expect(compact).toContain('at its scalp position, Eyes Closed');
+  });
+});
+
+describe('AlphaPeakTopomaps', () => {
+  it('lists channels from the front of the head to the back', () => {
+    const peak = { peak_frequency: 10, peak_power: 5 };
+    const html = renderToStaticMarkup(
+      <AlphaPeakTopomaps alphaPeak={{ eo: { C3: peak, F3: peak, O1: peak, P3: peak, Fp1: peak } }} />
+    );
+    const rows = [...html.matchAll(/<td class="[^"]*font-medium[^"]*">([^<]+)<\/td>/g)].map((m) => m[1]);
+    expect(rows).toEqual(['Fp1', 'F3', 'C3', 'P3', 'O1']);
   });
 });
