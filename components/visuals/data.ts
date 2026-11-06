@@ -136,18 +136,30 @@ export function connectivityEdges(
   return edges.sort((x, y) => x.value - y.value);
 }
 
+export type ConnectivityMeasure = 'wpli' | 'coherence';
+
+/** One band's matrix of the chosen measure. */
+export function measureMatrix(
+  conn: Connectivity | null | undefined,
+  band: ConnectivityBandName,
+  measure: ConnectivityMeasure
+) {
+  return measure === 'coherence' ? conn?.coherence?.matrices?.[band] : conn?.connectivity_matrices?.[band];
+}
+
 /**
  * Colour range for edges, as the Python grid: [max(threshold, min − 0.02), min(1, max + 0.05)],
  * pooled over every band/condition matrix given.
  */
 export function connectivityScale(
   connectivities: Array<Connectivity | null | undefined>,
-  threshold: number
+  threshold: number,
+  measure: ConnectivityMeasure = 'wpli'
 ): Scale {
   const vals: number[] = [];
   for (const c of connectivities) {
     for (const band of CONNECTIVITY_BAND_NAMES) {
-      for (const e of connectivityEdges(c?.connectivity_matrices?.[band], threshold)) vals.push(e.value);
+      for (const e of connectivityEdges(measureMatrix(c, band, measure), threshold)) vals.push(e.value);
     }
   }
   if (vals.length === 0) return { vmin: threshold, vmax: 1 };

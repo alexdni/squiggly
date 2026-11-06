@@ -58,9 +58,18 @@ export interface NetworkMetrics {
   regional_connectivity: Record<string, number>;
 }
 
+/** Magnitude-squared coherence per band. Keeps zero-lag coupling, which wPLI discards. */
+export interface Coherence {
+  /** epochs it was computed over; independent channels read about 1 / n_epochs */
+  n_epochs: number;
+  matrices: Record<ConnectivityBandName, { matrix: number[][]; channels: string[] }>;
+}
+
 export interface Connectivity {
   connectivity_matrices: Record<ConnectivityBandName, { matrix: number[][]; channels: string[] }>;
   network_metrics: Record<ConnectivityBandName, NetworkMetrics>;
+  /** absent on analyses from before it was added, and below two epochs */
+  coherence?: Coherence;
   pair_data: Array<
     { ch1: string; ch2: string; type: string; region: string } & Partial<
       Record<ConnectivityBandName, number>

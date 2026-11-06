@@ -6,6 +6,7 @@ import {
   type NetworkMetrics,
 } from '@/lib/analysis-results';
 import { butter, FiltFilt, Hilbert, onesidedWeights, planSegments, segmentCount, segmentSpectra } from '../dsp';
+import { computeCoherence } from './coherence';
 import { computeNetworkMetrics } from './network';
 import {
   CHANNEL_GROUPS,
@@ -209,10 +210,12 @@ export function computeConnectivity(set: EpochSet): Connectivity {
   const connectivity_matrices = {} as Connectivity['connectivity_matrices'];
   for (const band of CONNECTIVITY_BAND_NAMES) connectivity_matrices[band] = { matrix: matrices[band], channels: [...ch] };
 
+  const coherence = computeCoherence(set);
   return {
     connectivity_matrices,
     network_metrics,
     pair_data: generatePairData(matrices, ch),
+    ...(coherence ? { coherence } : {}),
   };
 }
 

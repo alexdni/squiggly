@@ -1286,6 +1286,19 @@ export default function AnalysisDetailsClient({
               </div>
             )}
 
+            {/* Magnitude-squared coherence */}
+            {(results?.connectivity?.eo || results?.connectivity?.ec) && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Coherence (Magnitude-Squared)" data-visual>
+                <h2 className="text-2xl font-bold text-neuro-dark mb-4">
+                  Coherence (Magnitude-Squared)
+                </h2>
+                <p className="text-sm text-gray-800 mb-4">
+                  Magnitude-squared coherence, the classical clinical measure: |Σ X·Y*|² / (Σ|X|²·Σ|Y|²) per frequency over the kept epochs, averaged across each band. Unlike wPLI it includes zero-lag coupling, so it also reflects volume conduction and depends on the reference (average reference here). Nearby electrodes tend to read higher, and interpolated channels read artificially high.
+                </p>
+                <ConnectivityHead connectivity={results.connectivity} measure="coherence" />
+              </div>
+            )}
+
             {/* Network Metrics Summary */}
             {(hasAnyLegacyVisual(results, ['network_metrics']) || results?.connectivity?.eo || results?.connectivity?.ec) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6" data-report-section="Network Metrics Comparison" data-visual>

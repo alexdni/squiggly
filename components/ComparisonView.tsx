@@ -9,7 +9,7 @@ import TopomapGrid, { PowerModeToggle } from './visuals/TopomapGrid';
 import LzcTopomaps from './visuals/LzcTopomaps';
 import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import PsdSection from './visuals/PsdSection';
-import ConnectivityHead, { DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
+import ConnectivityHead, { DEFAULT_COHERENCE_THRESHOLD, DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
 import { CONDITIONS, computeBandScales, computeLzcScale, connectivityScale, type PowerMode } from './visuals/data';
 import { baseName, exportPdfReport, type ReportMeta } from './export/analysisExport';
 
@@ -112,6 +112,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const [comparisonSides, setComparisonSides] = useState<ComparisonSides | null>(null);
   const [powerMode, setPowerMode] = useState<PowerMode>('absolute');
   const [wpliThreshold, setWpliThreshold] = useState(DEFAULT_WPLI_THRESHOLD);
+  const [coherenceThreshold, setCoherenceThreshold] = useState(DEFAULT_COHERENCE_THRESHOLD);
 
   // PDF export of the comparison results as shown
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -138,6 +139,15 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
         wpliThreshold
       ),
     [comparisonSides, wpliThreshold]
+  );
+  const sharedCoherenceScale = useMemo(
+    () =>
+      connectivityScale(
+        [comparisonSides?.a, comparisonSides?.b].flatMap((r) => CONDITIONS.map((c) => r?.connectivity?.[c])),
+        coherenceThreshold,
+        'coherence'
+      ),
+    [comparisonSides, coherenceThreshold]
   );
 
   const sectionVisible = (section: LiveSection, legacyKeys: string[]) =>
@@ -735,6 +745,34 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                           compact
                         />
                       </LegacyOrLive>
+                    )}
+                  />
+                </div>
+              )}
+
+              {/* Magnitude-Squared Coherence Comparison */}
+              {sectionVisible('connectivity', []) && (
+                <div className="mb-8" data-report-section="Coherence (Magnitude-Squared)" data-visual>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b pb-2">
+                    Coherence (Magnitude-Squared)
+                  </h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <p className="text-sm text-gray-600">
+                      Magnitude-squared coherence, the classical clinical measure: |Σ X·Y*|² / (Σ|X|²·Σ|Y|²) per frequency over the kept epochs, averaged across each band. Unlike wPLI it includes zero-lag coupling, so it also reflects volume conduction and depends on the reference (average reference here). Nearby electrodes tend to read higher, and interpolated channels read artificially high.
+                    </p>
+                    <ThresholdSlider value={coherenceThreshold} onChange={setCoherenceThreshold} measure="coherence" />
+                  </div>
+                  <ComparisonColumns
+                    sides={comparisonSides}
+                    render={(_, r) => (
+                      <ConnectivityHead
+                        connectivity={r?.connectivity}
+                        threshold={coherenceThreshold}
+                        scale={sharedCoherenceScale}
+                        measure="coherence"
+                        hideSlider
+                        compact
+                      />
                     )}
                   />
                 </div>
