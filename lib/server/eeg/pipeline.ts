@@ -44,6 +44,8 @@ import { detectSlowing, SLOWING_ARTIFACT_PATTERNS, SLOWING_DETECTOR, slowingEven
 import type { WaveformInput } from './features/waveform';
 import { detectVariants, VARIANT_DETECTORS, variantEventResults } from './features/variants';
 import { computePsd, computeSpectrograms, extractFeatures, type EpochSet } from './features';
+import { computeCoherence } from './features/coherence';
+import { laplacianEpochs } from './features/reference';
 import {
   computeSourceMaps,
   computeWindowSpectra,
@@ -449,6 +451,8 @@ export interface CleanedEeg {
   /** channels that survived QC (good or interpolated), average-referenced */
   labels: string[];
   data: Float64Array[];
+  /** what the average reference subtracted, kept for linked-ears recordings to restore their reference */
+  commonMode?: Float64Array;
 }
 
 /**
@@ -500,11 +504,15 @@ export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig, eventInp
     .map((c, i) => ({ ...c, i }))
     .filter((c) => !c.bad || c.interpolated)
     .map((c) => c.i);
+  const commonMode = eeg.linkedEars
+    ? Float64Array.from(cleaned.data[0], (_, t) => usable.reduce((sum, c) => sum + cleaned.data[c][t], 0) / usable.length)
+    : undefined;
   averageReference(cleaned.data, usable);
   return {
     result,
     labels: usable.map((i) => cleaned.channels[i].label),
     data: usable.map((i) => cleaned.data[i]),
+    commonMode,
   };
 }
 
@@ -530,7 +538,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   progress('cleaning');
   const pipelineConfig = buildPipelineConfig(cfg, eeg.sampleRate);
-  const { result, labels, data } = cleanEeg(
+  const { result, labels, data, commonMode } = cleanEeg(
     eeg,
     pipelineConfig,
     eventInputsFor(eeg, input.dismissedEventIds)
@@ -571,6 +579,25 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   progress('features');
   const features = extractFeatures(eo, ec);
   const psd = { eo: eo ? computePsd(eo) : null, ec: ec ? computePsd(ec) : null };
+  const interpolated = report.channels.filter((c) => c.interpolated).map((c) => c.label);
+  const linkedEarsData = commonMode && data.map((d) => d.map((v, t) => v + commonMode[t]));
+  for (const c of conditions) {
+    const set = segs[c]?.set;
+    const connectivity = features.connectivity[c];
+    if (!set || !connectivity) continue;
+    const lap = laplacianEpochs(set, interpolated);
+    const laplacian = lap && computeCoherence(lap);
+    // Same arguments as the epochs above, so the same epochs are kept
+    const linkedEars =
+      linkedEarsData &&
+      computeCoherence(
+        buildEpochs(c, input.segments[c]!, linkedEarsData, labels, cleaned.sampleRate, cfg.epoch_duration, keep, result.annotations, manual).set!
+      );
+    connectivity.coherence_refs = {
+      ...(linkedEars ? { linked_ears: linkedEars } : {}),
+      ...(laplacian ? { laplacian } : {}),
+    };
+  }
 
   // Waveform labels on the cleaned data (mu trains, paroxysmal slowing); they never change a metric.
   progress('mu');

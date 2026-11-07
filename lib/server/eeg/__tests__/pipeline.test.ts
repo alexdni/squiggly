@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { writeEdf } from '../export/writers';
 import { readEdfHeader } from '../io/edf';
 import { AnalysisJobError, buildPipelineConfig, removeMains, resolvePreprocessing, runAnalysis, spansFromKeep } from '../pipeline';
 import { ensureKernel } from '../sloreta/compute';
@@ -9,6 +10,24 @@ describe('runAnalysis', () => {
   const seconds = 120;
   const bytes = edfBytes(synthetic(seconds, { burstAt: 30 }));
   const segments = { eo: { start: 0, end: 60 }, ec: { start: 60, end: 120 } };
+
+  it('computes coherence on linked ears only for recordings labelled that way', () => {
+    const analyse = (input: Uint8Array) =>
+      runAnalysis({ bytes: input, format: 'edf', segments, preprocessing: { profile: 'full' }, engine: 'test' }).results
+        .connectivity.ec!;
+    const labelled = analyse(bytes.slice());
+    const linkedEars = labelled.coherence_refs!.linked_ears!;
+    expect(linkedEars.n_epochs).toBe(labelled.coherence!.n_epochs);
+    expect(linkedEars.matrices.alpha.channels).toEqual(labelled.coherence!.matrices.alpha.channels);
+    expect(linkedEars.matrices.alpha.matrix).not.toEqual(labelled.coherence!.matrices.alpha.matrix);
+    expect(labelled.coherence_refs!.laplacian).toBeDefined();
+
+    const plain = writeEdf({ labels: [...LABELS], data: synthetic(seconds, { burstAt: 30 }), sampleRate: FS }, { bdf: false });
+    const unlabelled = analyse(plain);
+    expect(unlabelled.coherence_refs!.linked_ears).toBeUndefined();
+    expect(unlabelled.coherence_refs!.laplacian).toBeDefined();
+    expect(unlabelled.coherence).toBeDefined();
+  });
 
   it('cleans, epochs and extracts features end to end', () => {
     const stages: string[] = [];

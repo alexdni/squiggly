@@ -14,16 +14,31 @@ import {
   CONDITIONS,
   CONDITION_LABELS,
   connectivityEdges,
+  coherenceOf,
   connectivityScale,
   measureMatrix,
+  type CoherenceMeasure,
   type ConnectivityMeasure,
 } from './data';
 
 export const DEFAULT_WPLI_THRESHOLD = 0.1;
-// On real 19-channel recordings this keeps roughly 10-45% of the pairs per band, so graphs stay readable
-export const DEFAULT_COHERENCE_THRESHOLD = 0.3;
+// Chosen on real 19-channel recordings so graphs stay readable: Laplacian values read much lower
+export const DEFAULT_COHERENCE_THRESHOLDS: Record<CoherenceMeasure, number> = {
+  coherence: 0.3,
+  coherence_linked_ears: 0.3,
+  coherence_laplacian: 0.1,
+};
 
-const MEASURE_LABELS: Record<ConnectivityMeasure, string> = { wpli: 'wPLI', coherence: 'Coherence' };
+const measureLabel = (measure: ConnectivityMeasure) => (measure === 'wpli' ? 'wPLI' : 'Coherence');
+
+const MISSING: Record<ConnectivityMeasure, string> = {
+  wpli: 'No connectivity data available.',
+  coherence: 'No coherence for this analysis. Analyses made before coherence was added need a re-analysis.',
+  coherence_linked_ears:
+    "No linked-ears coherence for this analysis. It needs a recording whose channels are labelled as linked ears, such as F3-LE; other recordings aren't assumed to be. Analyses made before this option was added need a re-analysis.",
+  coherence_laplacian:
+    'No Laplacian coherence for this analysis. It needs 10-20 channels with at least two neighbours each. Analyses made before this option was added need a re-analysis.',
+};
 
 const VIEW = 220;
 const R = 90; // head radius in SVG units
@@ -52,7 +67,7 @@ export function ConnectivityGraph({
 
   return (
     <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full h-auto max-w-[240px] mx-auto block" role="img" aria-labelledby={titleId}>
-      <title id={titleId}>{`${label}: ${edges.length} connections with ${MEASURE_LABELS[measure]} ≥ ${threshold.toFixed(2)}`}</title>
+      <title id={titleId}>{`${label}: ${edges.length} connections with ${measureLabel(measure)} ≥ ${threshold.toFixed(2)}`}</title>
       <circle cx={C} cy={C + 4} r={R} fill="#f9fafb" stroke="#1f2937" strokeWidth={1.5} />
       <path d={`M ${C - 9} ${C + 4 - R + 1} L ${C} ${C + 4 - R - 11} L ${C + 9} ${C + 4 - R + 1}`} fill="none" stroke="#1f2937" strokeWidth={1.5} strokeLinejoin="round" />
       <ellipse cx={C - R - 4} cy={C + 4} rx={4.5} ry={15} fill="none" stroke="#1f2937" strokeWidth={1.5} />
@@ -106,7 +121,7 @@ export function ThresholdSlider({
   return (
     <div className="flex flex-wrap items-center gap-3">
       <label htmlFor={id} className="text-sm font-medium text-gray-900">
-        {MEASURE_LABELS[measure]} threshold
+        {measureLabel(measure)} threshold
       </label>
       <input
         id={id}
@@ -146,7 +161,7 @@ export default function ConnectivityHead({
   compact = false,
   measure = 'wpli',
 }: ConnectivityHeadProps) {
-  const [local, setLocal] = useState(measure === 'coherence' ? DEFAULT_COHERENCE_THRESHOLD : DEFAULT_WPLI_THRESHOLD);
+  const [local, setLocal] = useState(measure === 'wpli' ? DEFAULT_WPLI_THRESHOLD : DEFAULT_COHERENCE_THRESHOLDS[measure]);
   const threshold = controlled ?? local;
   const setThreshold = (v: number) => {
     setLocal(v);
@@ -160,22 +175,16 @@ export default function ConnectivityHead({
   const scale = scaleOverride ?? ownScale;
 
   if (conditions.length === 0) {
-    return (
-      <p className="text-sm text-gray-600">
-        {measure === 'coherence'
-          ? 'No coherence for this analysis. Analyses made before coherence was added need a re-analysis.'
-          : 'No connectivity data available.'}
-      </p>
-    );
+    return <p className="text-sm text-gray-600">{MISSING[measure]}</p>;
   }
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
         {!hideSlider && <ThresholdSlider value={threshold} onChange={setThreshold} measure={measure} />}
-        <ColorLegend className="w-full max-w-[14rem]" scale={scale} colormap={coolwarm} label={MEASURE_LABELS[measure]} />
+        <ColorLegend className="w-full max-w-[14rem]" scale={scale} colormap={coolwarm} label={measureLabel(measure)} />
       </div>
       {conditions.map((c) => {
-        const nEpochs = measure === 'coherence' ? connectivity?.[c]?.coherence?.n_epochs : undefined;
+        const nEpochs = measure === 'wpli' ? undefined : coherenceOf(connectivity?.[c], measure)?.n_epochs;
         return (
         <div key={c} className="mb-6 last:mb-0">
           <h3 className="text-base font-semibold text-gray-900 mb-2">
@@ -201,7 +210,7 @@ export default function ConnectivityHead({
                     matrix={measureMatrix(connectivity?.[c], band, measure)}
                     threshold={threshold}
                     scale={scale}
-                    label={`${band} band ${MEASURE_LABELS[measure]}, ${CONDITION_LABELS[c]}`}
+                    label={`${band} band ${measureLabel(measure)}, ${CONDITION_LABELS[c]}`}
                     measure={measure}
                   />
                 </figure>

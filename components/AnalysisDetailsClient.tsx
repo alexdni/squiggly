@@ -24,6 +24,7 @@ import LegacyOrLive, { hasAnyLegacyVisual } from './visuals/LegacyOrLive';
 import TopomapGrid from './visuals/TopomapGrid';
 import LzcTopomaps from './visuals/LzcTopomaps';
 import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
+import CoherenceSection from './visuals/CoherenceSection';
 import ConnectivityHead from './visuals/ConnectivityHead';
 import SpectrogramGrid from './visuals/Spectrogram';
 import RejectionTimeline from './visuals/RejectionTimeline';
@@ -1293,9 +1294,9 @@ export default function AnalysisDetailsClient({
                   Coherence (Magnitude-Squared)
                 </h2>
                 <p className="text-sm text-gray-800 mb-4">
-                  Magnitude-squared coherence, the classical clinical measure: |Σ X·Y*|² / (Σ|X|²·Σ|Y|²) per frequency over the kept epochs, averaged across each band. Unlike wPLI it includes zero-lag coupling, so it also reflects volume conduction and depends on the reference (average reference here). Nearby electrodes tend to read higher, and interpolated channels read artificially high.
+                  Magnitude-squared coherence, the classical clinical measure: |Σ X·Y*|² / (Σ|X|²·Σ|Y|²) per frequency over the kept epochs, averaged across each band. Unlike wPLI it includes zero-lag coupling, so it also reflects volume conduction and depends on the reference. Nearby electrodes tend to read higher, and interpolated channels read artificially high.
                 </p>
-                <ConnectivityHead connectivity={results.connectivity} measure="coherence" />
+                <CoherenceSection connectivity={results.connectivity} />
               </div>
             )}
 

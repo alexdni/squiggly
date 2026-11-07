@@ -70,6 +70,8 @@ export interface Connectivity {
   network_metrics: Record<ConnectivityBandName, NetworkMetrics>;
   /** absent on analyses from before it was added, and below two epochs */
   coherence?: Coherence;
+  /** coherence on other references; linked_ears only for recordings labelled as linked ears */
+  coherence_refs?: { linked_ears?: Coherence; laplacian?: Coherence };
   pair_data: Array<
     { ch1: string; ch2: string; type: string; region: string } & Partial<
       Record<ConnectivityBandName, number>

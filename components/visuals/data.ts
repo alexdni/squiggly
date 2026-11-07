@@ -136,7 +136,15 @@ export function connectivityEdges(
   return edges.sort((x, y) => x.value - y.value);
 }
 
-export type ConnectivityMeasure = 'wpli' | 'coherence';
+export type CoherenceMeasure = 'coherence' | 'coherence_linked_ears' | 'coherence_laplacian';
+export type ConnectivityMeasure = 'wpli' | CoherenceMeasure;
+
+/** Coherence on the measure's reference. */
+export function coherenceOf(conn: Connectivity | null | undefined, measure: CoherenceMeasure) {
+  if (measure === 'coherence_linked_ears') return conn?.coherence_refs?.linked_ears;
+  if (measure === 'coherence_laplacian') return conn?.coherence_refs?.laplacian;
+  return conn?.coherence;
+}
 
 /** One band's matrix of the chosen measure. */
 export function measureMatrix(
@@ -144,7 +152,7 @@ export function measureMatrix(
   band: ConnectivityBandName,
   measure: ConnectivityMeasure
 ) {
-  return measure === 'coherence' ? conn?.coherence?.matrices?.[band] : conn?.connectivity_matrices?.[band];
+  return measure === 'wpli' ? conn?.connectivity_matrices?.[band] : coherenceOf(conn, measure)?.matrices?.[band];
 }
 
 /**

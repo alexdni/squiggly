@@ -9,8 +9,9 @@ import TopomapGrid, { PowerModeToggle } from './visuals/TopomapGrid';
 import LzcTopomaps from './visuals/LzcTopomaps';
 import AlphaPeakTopomaps from './visuals/AlphaPeakTopomaps';
 import PsdSection from './visuals/PsdSection';
-import ConnectivityHead, { DEFAULT_COHERENCE_THRESHOLD, DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
-import { CONDITIONS, computeBandScales, computeLzcScale, connectivityScale, type PowerMode } from './visuals/data';
+import { CoherenceReference } from './visuals/CoherenceSection';
+import ConnectivityHead, { DEFAULT_COHERENCE_THRESHOLDS, DEFAULT_WPLI_THRESHOLD, ThresholdSlider } from './visuals/ConnectivityHead';
+import { CONDITIONS, computeBandScales, computeLzcScale, connectivityScale, type CoherenceMeasure, type PowerMode } from './visuals/data';
 import { baseName, exportPdfReport, type ReportMeta } from './export/analysisExport';
 
 // chart.js renders client-side only
@@ -112,7 +113,8 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const [comparisonSides, setComparisonSides] = useState<ComparisonSides | null>(null);
   const [powerMode, setPowerMode] = useState<PowerMode>('absolute');
   const [wpliThreshold, setWpliThreshold] = useState(DEFAULT_WPLI_THRESHOLD);
-  const [coherenceThreshold, setCoherenceThreshold] = useState(DEFAULT_COHERENCE_THRESHOLD);
+  const [coherenceMeasure, setCoherenceMeasure] = useState<CoherenceMeasure>('coherence');
+  const [coherenceThreshold, setCoherenceThreshold] = useState(DEFAULT_COHERENCE_THRESHOLDS.coherence);
 
   // PDF export of the comparison results as shown
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -145,9 +147,9 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       connectivityScale(
         [comparisonSides?.a, comparisonSides?.b].flatMap((r) => CONDITIONS.map((c) => r?.connectivity?.[c])),
         coherenceThreshold,
-        'coherence'
+        coherenceMeasure
       ),
-    [comparisonSides, coherenceThreshold]
+    [comparisonSides, coherenceThreshold, coherenceMeasure]
   );
 
   const sectionVisible = (section: LiveSection, legacyKeys: string[]) =>
@@ -758,10 +760,17 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                   </h3>
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <p className="text-sm text-gray-600">
-                      Magnitude-squared coherence, the classical clinical measure: |Σ X·Y*|² / (Σ|X|²·Σ|Y|²) per frequency over the kept epochs, averaged across each band. Unlike wPLI it includes zero-lag coupling, so it also reflects volume conduction and depends on the reference (average reference here). Nearby electrodes tend to read higher, and interpolated channels read artificially high.
+                      Magnitude-squared coherence, the classical clinical measure: |Σ X·Y*|² / (Σ|X|²·Σ|Y|²) per frequency over the kept epochs, averaged across each band. Unlike wPLI it includes zero-lag coupling, so it also reflects volume conduction and depends on the reference. Nearby electrodes tend to read higher, and interpolated channels read artificially high.
                     </p>
-                    <ThresholdSlider value={coherenceThreshold} onChange={setCoherenceThreshold} measure="coherence" />
+                    <ThresholdSlider value={coherenceThreshold} onChange={setCoherenceThreshold} measure={coherenceMeasure} />
                   </div>
+                  <CoherenceReference
+                    value={coherenceMeasure}
+                    onChange={(measure) => {
+                      setCoherenceMeasure(measure);
+                      setCoherenceThreshold(DEFAULT_COHERENCE_THRESHOLDS[measure]);
+                    }}
+                  />
                   <ComparisonColumns
                     sides={comparisonSides}
                     render={(_, r) => (
@@ -769,7 +778,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                         connectivity={r?.connectivity}
                         threshold={coherenceThreshold}
                         scale={sharedCoherenceScale}
-                        measure="coherence"
+                        measure={coherenceMeasure}
                         hideSlider
                         compact
                       />

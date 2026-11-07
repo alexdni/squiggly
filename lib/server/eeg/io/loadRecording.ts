@@ -24,6 +24,8 @@ export interface LoadedEeg {
   /** ECG candidates that were passed over (flat line, too slow), for the QC warnings */
   ecgSkipped?: string[];
   edfHeader?: EdfFileHeader;
+  /** every EEG channel is labelled as referenced to linked ears ('F3-LE') */
+  linkedEars?: boolean;
 }
 
 /** Below this rate a lead cannot resolve heartbeats well enough for HRV. */
@@ -116,6 +118,7 @@ function loadEdf(bytes: Uint8Array): ParsedEeg {
     sampleRate,
     ignored: ignored.filter((l) => l !== ecg?.label),
     edfHeader: header,
+    linkedEars: keep.every((s) => /-LE$/i.test(candidates[s.sourceIndex].label.trim())),
     ecg,
     ecgSkipped,
   };
