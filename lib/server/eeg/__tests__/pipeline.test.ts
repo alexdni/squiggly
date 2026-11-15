@@ -29,6 +29,45 @@ describe('runAnalysis', () => {
     expect(unlabelled.coherence).toBeDefined();
   });
 
+  it('applies the chosen reference to the metrics and leaves detectors and coherence on average', () => {
+    const run = (input: Uint8Array, preprocessing: Record<string, unknown>) =>
+      runAnalysis({ bytes: input, format: 'edf', segments, preprocessing: { profile: 'full', ...preprocessing }, engine: 'test' });
+    const power = (r: ReturnType<typeof run>) => JSON.stringify(r.results.band_power.ec);
+
+    const byDefault = run(bytes.slice(), {});
+    const average = run(bytes.slice(), { reference: 'average' });
+    expect(byDefault.results.reference).toEqual({
+      recorded: 'LE',
+      recorded_source: 'detected',
+      evidence: '19 of 19 channels labelled -LE',
+      applied: 'average',
+    });
+    expect(power(average)).toBe(power(byDefault));
+    expect(Array.from(average.cleaned.bytes)).toEqual(Array.from(byDefault.cleaned.bytes));
+
+    const le = run(bytes.slice(), { reference: 'linked_ears' });
+    expect(le.results.reference!.applied).toBe('linked_ears');
+    expect(power(le)).not.toBe(power(average));
+    expect(le.results.psd!.ec).not.toEqual(average.results.psd!.ec);
+    expect(Array.from(le.cleaned.bytes)).not.toEqual(Array.from(average.cleaned.bytes));
+    expect(le.results.events).toEqual(average.results.events);
+    expect(le.results.connectivity.ec!.coherence).toEqual(average.results.connectivity.ec!.coherence);
+    expect(le.results.connectivity.ec!.coherence_refs).toEqual(average.results.connectivity.ec!.coherence_refs);
+    expect(le.results.qc_report.final_epochs_ec).toBe(average.results.qc_report.final_epochs_ec);
+    // on a linked-ears recording, "as recorded" is linked ears
+    expect(power(run(bytes.slice(), { reference: 'as_recorded' }))).toBe(power(le));
+
+    const plain = writeEdf({ labels: [...LABELS], data: synthetic(seconds, { burstAt: 30 }), sampleRate: FS }, { bdf: false });
+    const fallback = run(plain.slice(), { reference: 'linked_ears' });
+    expect(fallback.results.reference).toMatchObject({ recorded: 'unknown', recorded_source: 'detected', applied: 'average' });
+    expect(fallback.results.qc_report.warnings!.join(' ')).toMatch(/Linked-ears reference is not available/);
+
+    const declared = run(plain.slice(), { reference: 'linked_ears', recorded_reference: 'LE' });
+    expect(declared.results.reference).toEqual({ recorded: 'LE', recorded_source: 'declared', applied: 'linked_ears' });
+    expect(declared.results.connectivity.ec!.coherence_refs!.linked_ears).toBeDefined();
+    expect(power(declared)).not.toBe(power(fallback));
+  }, 120_000);
+
   it('cleans, epochs and extracts features end to end', () => {
     const stages: string[] = [];
     const { results, cleaned, spectrogramFile } = runAnalysis(

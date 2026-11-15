@@ -59,23 +59,28 @@ export function computeOriginalOverlay(params: {
   cleanedNames: string[];
   /** indices into cleanedNames, in display order */
   selected: number[];
+  /** montage rows over cleanedNames, in display order; replaces `selected` */
+  rows?: [number, number][][];
+  /** the corrected file is average-referenced (default); false when the analysis kept another reference */
+  subtractAverage?: boolean;
   timeStart: number;
   windowSeconds: number;
   filters: PipelineFilterSettings;
   targetTimes: number[];
 }): (number[] | null)[] {
-  const { raw, cleanedNames, selected, timeStart, windowSeconds, filters, targetTimes } = params;
+  const { raw, cleanedNames, selected, timeStart, windowSeconds, filters, targetTimes, subtractAverage = true } = params;
+  const rows = params.rows ?? selected.map((i): [number, number][] => [[i, 1]]);
   const fs = raw.sampleRate;
   const match = matchChannels(cleanedNames, raw.channelNames);
   const used = Array.from(new Set(match.filter((m): m is number => m !== null)));
-  if (used.length === 0 || targetTimes.length === 0) return selected.map(() => null);
+  if (used.length === 0 || targetTimes.length === 0) return rows.map(() => null);
 
   const total = raw.signals[used[0]]?.length ?? 0;
   const pad = Math.floor(filterPaddingSeconds(filters.highpassHz) * fs);
   const start = Math.max(0, Math.floor(timeStart * fs) - pad);
   const end = Math.min(total, Math.ceil((timeStart + windowSeconds) * fs) + pad);
   const n = end - start;
-  if (n < 10) return selected.map(() => null);
+  if (n < 10) return rows.map(() => null);
 
   // common average over every channel the pipeline kept (= every corrected channel present)
   const avg = new Float64Array(n);
@@ -83,14 +88,17 @@ export function computeOriginalOverlay(params: {
     const sig = raw.signals[c];
     for (let i = 0; i < n; i++) avg[i] += sig[start + i];
   }
-  for (let i = 0; i < n; i++) avg[i] /= used.length;
+  for (let i = 0; i < n; i++) avg[i] = subtractAverage ? avg[i] / used.length : 0;
 
   const times = Float64Array.from({ length: n }, (_, i) => (start + i) / fs);
-  return selected.map((cleanedIdx) => {
-    const c = match[cleanedIdx];
-    if (c === null || c === undefined) return null;
-    const sig = raw.signals[c];
-    const ref = Float64Array.from({ length: n }, (_, i) => sig[start + i] - avg[i]);
+  return rows.map((terms) => {
+    const ref = new Float64Array(n);
+    for (const [cleanedIdx, w] of terms) {
+      const c = match[cleanedIdx];
+      if (c === null || c === undefined) return null;
+      const sig = raw.signals[c];
+      for (let i = 0; i < n; i++) ref[i] += w * (sig[start + i] - avg[i]);
+    }
     const filtered = filterEeg(ref, fs, filters);
     return resampleAt(times, filtered, targetTimes);
   });

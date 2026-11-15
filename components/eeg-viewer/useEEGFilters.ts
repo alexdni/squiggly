@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { applyEEGFilters, filterPaddingSeconds } from '@/lib/eeg-filters';
+import { combine, type MontageRow } from './montage';
 import type { UnifiedSignalData, FilterSettings } from './types';
 
 interface FilteredOutput {
@@ -9,12 +10,13 @@ interface FilteredOutput {
 
 export function useEEGFilters(
   signalData: UnifiedSignalData | null,
-  selectedChannels: number[],
+  /** rows to draw: each a weighted sum of the file's channels */
+  rows: MontageRow[],
   timeStart: number,
   filterSettings: FilterSettings
 ): FilteredOutput {
   return useMemo(() => {
-    if (!signalData || selectedChannels.length === 0) {
+    if (!signalData || rows.length === 0) {
       return { filteredSignals: [], timeLabels: [] };
     }
 
@@ -35,11 +37,7 @@ export function useEEGFilters(
     const trimStart = visibleStartSample - fetchStart;
     const trimEnd = trimStart + (visibleEndSample - visibleStartSample);
 
-    const paddedSignals = selectedChannels.map((chIdx) => {
-      const channelData = signals[chIdx];
-      if (!channelData) return [];
-      return channelData.slice(fetchStart, fetchEnd);
-    });
+    const paddedSignals = rows.map((row) => combine(signals, row.terms, fetchStart, fetchEnd));
 
     // 2. Apply filters to the padded (larger) segment, then trim to visible window
     const filtered = paddedSignals.map((sig) => {
@@ -72,5 +70,5 @@ export function useEEGFilters(
     }
 
     return { filteredSignals: downsampled, timeLabels };
-  }, [signalData, selectedChannels, timeStart, filterSettings]);
+  }, [signalData, rows, timeStart, filterSettings]);
 }

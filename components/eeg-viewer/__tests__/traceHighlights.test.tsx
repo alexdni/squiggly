@@ -23,8 +23,7 @@ describe('EEGUnifiedChart trace highlights', () => {
       <EEGUnifiedChart
         filteredSignals={[flat, times.map((t) => t)]}
         timeLabels={times}
-        channelNames={['C3', 'C4']}
-        selectedChannels={[0, 1]}
+        rowLabels={['C3', 'C4']}
         sensitivityMicrovolts={50}
         annotations={[]}
         dragState={{ isDragging: false, startX: 0, currentX: 0, startTime: 0, currentTime: 0 } as never}

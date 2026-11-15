@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useCallback, useMemo, useEffect } from 'react';
+import { useRef, useCallback, useMemo, useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -15,6 +15,7 @@ import {
   type Plugin,
 } from 'chart.js';
 import { annotationPlugin } from './annotationPlugin';
+import { DRAG_THRESHOLD_PX, keyPanSeconds, wheelPanPixels } from './pan';
 import type { EEGAnnotation, AnnotationDragState } from './types';
 
 // Register Chart.js components
@@ -64,24 +65,18 @@ const channelLabelPlugin: Plugin<'line'> = {
 
 ChartJS.register(channelLabelPlugin);
 
-function cleanChannelLabel(label: string): string {
-  return label
-    .replace(/^EEG\s+/i, '')
-    .replace(/-LE$/i, '')
-    .replace(/-REF$/i, '')
-    .replace(/-M1$/i, '')
-    .replace(/-M2$/i, '')
-    .trim();
-}
-
 interface EEGUnifiedChartProps {
   filteredSignals: number[][];
   /** Optional second trace per channel (e.g. the original signal behind the corrected one) */
   overlaySignals?: (number[] | null)[];
   timeLabels: number[];
-  channelNames: string[];
-  selectedChannels: number[];
+  /** one label per trace, in display order */
+  rowLabels: string[];
+  /** [start, end] of the window in seconds, so the time axis spans exactly the window */
+  timeRange?: [number, number];
   sensitivityMicrovolts: number;
+  /** move the window by this many seconds (±Infinity: start / end of the recording) */
+  onPan?: (deltaSeconds: number) => void;
   annotations: EEGAnnotation[];
   dragState: AnnotationDragState;
   isAnnotateMode: boolean;
@@ -94,7 +89,7 @@ interface EEGUnifiedChartProps {
    * above the bottom of the plot area (pixels)
    */
   onChartClick?: (time: number, pxAboveBottom: number) => void;
-  /** trace segments to draw in colour on top of their channel: `row` indexes selectedChannels */
+  /** trace segments to draw in colour on top of their channel: `row` indexes rowLabels */
   traceHighlights?: { row: number; startSec: number; endSec: number; color: string }[];
 }
 
@@ -106,9 +101,10 @@ export default function EEGUnifiedChart({
   filteredSignals,
   overlaySignals,
   timeLabels,
-  channelNames,
-  selectedChannels,
+  rowLabels,
+  timeRange,
   sensitivityMicrovolts,
+  onPan,
   annotations,
   dragState,
   isAnnotateMode,
@@ -121,16 +117,15 @@ export default function EEGUnifiedChart({
 }: EEGUnifiedChartProps) {
   const chartRef = useRef<ChartJS<'line'> | null>(null);
 
-  const cleanedLabels = useMemo(
-    () => selectedChannels.map((idx) => cleanChannelLabel(channelNames[idx] ?? '')),
-    [selectedChannels, channelNames]
-  );
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const cleanedLabels = rowLabels;
+  const nRows = rowLabels.length;
 
   // Calculate offsets for each channel
   const spacing = sensitivityMicrovolts * 2;
   const offsets = useMemo(
-    () => selectedChannels.map((_, i) => -(i * spacing)),
-    [selectedChannels.length, spacing]
+    () => Array.from({ length: nRows }, (_, i) => -(i * spacing)),
+    [nRows, spacing]
   );
 
   // Build chart data: each channel as a separate dataset, offset vertically
@@ -194,9 +189,11 @@ export default function EEGUnifiedChart({
   }, [filteredSignals, overlaySignals, timeLabels, cleanedLabels, offsets, traceHighlights]);
 
   // Y-axis range
-  const yMin = -(selectedChannels.length - 1) * spacing - sensitivityMicrovolts;
+  const yMin = -(nRows - 1) * spacing - sensitivityMicrovolts;
   const yMax = sensitivityMicrovolts;
 
+  const timeMin = timeRange?.[0];
+  const timeMax = timeRange?.[1];
   const options: ChartOptions<'line'> = useMemo(
     () => ({
       responsive: true,
@@ -239,6 +236,8 @@ export default function EEGUnifiedChart({
         x: {
           type: 'linear' as const,
           display: true,
+          min: timeMin,
+          max: timeMax,
           title: {
             display: true,
             text: 'Time (s)',
@@ -274,11 +273,13 @@ export default function EEGUnifiedChart({
       yMin,
       yMax,
       filteredSignals.length,
+      timeMin,
+      timeMax,
     ]
   );
 
   // Chart height: ~28px per channel + 40px for axis
-  const chartHeight = selectedChannels.length * 28 + 40;
+  const chartHeight = nRows * 28 + 40;
 
   // Mouse event handling for annotations
   const getTimeFromEvent = useCallback(
@@ -295,15 +296,83 @@ export default function EEGUnifiedChart({
     []
   );
 
+  // ── scrolling through time ──
+  const secondsPerPixel = useCallback(() => {
+    const chart = chartRef.current;
+    const x = chart?.scales.x;
+    const width = chart?.chartArea?.width ?? 0;
+    return x && width > 0 ? (x.max - x.min) / width : 0;
+  }, []);
+
+  // Wheel: sideways movement (or Shift+wheel) scrolls time; plain vertical wheel is left to the page.
+  // Registered by hand because React's wheel listeners are passive and cannot preventDefault.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !onPan) return;
+    const onWheel = (e: WheelEvent) => {
+      const px = wheelPanPixels(e);
+      if (px === 0) return;
+      e.preventDefault();
+      onPan(px * secondsPerPixel());
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [onPan, secondsPerPixel]);
+
+  // Drag: the trace follows the pointer. A press that barely moves stays a click.
+  const pan = useRef<{ x: number; lastX: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
+  useEffect(() => {
+    if (!isPanning) return;
+    const onMove = (e: MouseEvent) => {
+      const p = pan.current;
+      if (!p) return;
+      if (!p.moved && Math.abs(e.clientX - p.x) < DRAG_THRESHOLD_PX) return;
+      p.moved = true;
+      onPan?.((p.lastX - e.clientX) * secondsPerPixel());
+      p.lastX = e.clientX;
+    };
+    const onUp = () => {
+      suppressClick.current = Boolean(pan.current?.moved);
+      pan.current = null;
+      setIsPanning(false);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isPanning, onPan, secondsPerPixel]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const chart = chartRef.current;
+      const x = chart?.scales.x;
+      if (!onPan || !x || e.altKey || e.ctrlKey || e.metaKey) return;
+      const delta = keyPanSeconds(e.key, e.shiftKey, x.max - x.min);
+      if (delta === null) return;
+      e.preventDefault();
+      onPan(delta);
+    },
+    [onPan]
+  );
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!isAnnotateMode && onPan && e.button === 0) {
+        suppressClick.current = false;
+        pan.current = { x: e.clientX, lastX: e.clientX, moved: false };
+        setIsPanning(true);
+      }
       if (!isAnnotateMode) return;
       const result = getTimeFromEvent(e);
       if (result) {
         onDragStart(result.x, result.time);
       }
     },
-    [isAnnotateMode, getTimeFromEvent, onDragStart]
+    [isAnnotateMode, getTimeFromEvent, onDragStart, onPan]
   );
 
   const handleMouseMove = useCallback(
@@ -330,6 +399,10 @@ export default function EEGUnifiedChart({
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (suppressClick.current) {
+        suppressClick.current = false;
+        return;
+      }
       if (isAnnotateMode || !onChartClick) return;
       const result = getTimeFromEvent(e);
       const chart = chartRef.current;
@@ -352,9 +425,16 @@ export default function EEGUnifiedChart({
 
   return (
     <div
+      ref={containerRef}
+      tabIndex={onPan ? 0 : undefined}
+      role={onPan ? 'group' : undefined}
+      aria-label={onPan ? 'EEG traces. Arrow keys, Page Up/Down, Home and End scroll through time.' : undefined}
+      onKeyDown={handleKeyDown}
+      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-neuro-primary rounded"
       style={{
         height: `${chartHeight}px`,
-        cursor: isAnnotateMode ? 'crosshair' : 'default',
+        cursor: isAnnotateMode ? 'crosshair' : !onPan ? 'default' : isPanning ? 'grabbing' : 'grab',
+        userSelect: 'none',
       }}
       onMouseDown={handleMouseDown as any}
       onMouseMove={handleMouseMove as any}

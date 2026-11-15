@@ -1,5 +1,7 @@
 // Application Constants
 
+import type { ReferenceKind } from './eeg-labels';
+
 // File Upload
 export const MAX_UPLOAD_SIZE = 209715200; // 200 MB in bytes
 export const ALLOWED_FILE_EXTENSIONS = ['.edf', '.EDF', '.bdf', '.BDF', '.csv', '.CSV'];
@@ -164,6 +166,14 @@ export const ARTIFACT_PROFILES = [
   'legacy',
 ] as const;
 
+export const ANALYSIS_REFERENCES = ['average', 'linked_ears', 'as_recorded'] as const;
+export type AnalysisReference = (typeof ANALYSIS_REFERENCES)[number];
+export const ANALYSIS_REFERENCE_LABELS: Record<AnalysisReference, string> = {
+  average: 'Average',
+  linked_ears: 'Linked ears',
+  as_recorded: 'As recorded',
+};
+
 export const DEFAULT_PREPROCESSING_CONFIG = {
   artifact_mode: 'pipeline' as 'pipeline' | 'manual',
   profile: 'full' as (typeof ARTIFACT_PROFILES)[number],
@@ -178,6 +188,10 @@ export const DEFAULT_PREPROCESSING_CONFIG = {
   epoch_duration: 2,
   /** subtract detected periodic artifacts (harmonic combs) from the raw EEG before cleaning */
   remove_periodic_artifacts: false,
+  /** reference the metrics are computed on, applied after cleaning */
+  reference: 'average' as AnalysisReference,
+  /** the recording's own reference: 'auto' reads the channel labels, otherwise what the analyst stated */
+  recorded_reference: 'auto' as 'auto' | ReferenceKind,
 };
 
 // Feature Extraction Defaults

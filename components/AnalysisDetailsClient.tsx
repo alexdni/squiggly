@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ARTIFACT_PROFILES } from '@/lib/constants';
+import { ANALYSIS_REFERENCES, ANALYSIS_REFERENCE_LABELS, ARTIFACT_PROFILES, type AnalysisReference } from '@/lib/constants';
+import { isReferenceKind, REFERENCE_KINDS, REFERENCE_LABELS, type ReferenceKind } from '@/lib/eeg-labels';
 import type { AnalysisResults, DetectedEventResult } from '@/lib/analysis-results';
 import {
   LEGACY_ICA_METHOD_LABELS,
@@ -17,6 +18,7 @@ import {
   clampSetting,
   engineLabel,
   isProcessingStale,
+  linkedEarsUnavailable,
   settingsFromConfig,
   type ArtifactSettings,
 } from './analysis-settings';
@@ -413,6 +415,11 @@ export default function AnalysisDetailsClient({
   };
 
   const results = analysis.results as Partial<AnalysisResults> | null;
+  const linkedEarsBlocked = linkedEarsUnavailable(settings.recorded_reference, results?.reference);
+  const detectedReferenceLabel =
+    results?.reference?.recorded_source === 'detected' && isReferenceKind(results.reference.recorded)
+      ? REFERENCE_LABELS[results.reference.recorded].toLowerCase()
+      : null;
   const labelsStale = analysis.status === 'completed' && Boolean(results) && !resultsMatchLabels(results as never, analysis.recording);
   const labelText = (start: number | null, end: number | null) =>
     start !== null && end !== null ? `${formatDuration(Number(start))} - ${formatDuration(Number(end))}` : 'Not labeled';
@@ -720,6 +727,63 @@ export default function AnalysisDetailsClient({
                     </span>
                   </span>
                 </label>
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="analysis-reference" className="block text-xs text-gray-700 mb-1">
+                      Reference for the metrics
+                    </label>
+                    <select
+                      id="analysis-reference"
+                      value={settings.reference}
+                      onChange={(e) => updateSetting('reference', e.target.value as AnalysisReference)}
+                      aria-describedby="analysis-reference-help"
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900"
+                    >
+                      {ANALYSIS_REFERENCES.map((r) => (
+                        <option key={r} value={r} disabled={r === 'linked_ears' && Boolean(linkedEarsBlocked)}>
+                          {ANALYSIS_REFERENCE_LABELS[r]}
+                          {r === 'average' ? ' (default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p id="analysis-reference-help" className="text-[11px] text-gray-500 mt-0.5">
+                      {linkedEarsBlocked
+                        ? `Linked ears is not available: ${linkedEarsBlocked}`
+                        : settings.reference === 'as_recorded'
+                          ? 'Metrics stay on the recording\u2019s own reference. On a single-ear or Cz reference, maps are skewed toward the far side or flattened near Cz.'
+                          : 'Applied after cleaning to band power, PSD, ratios, asymmetry, IAF, complexity, wPLI and the cleaned file. Event detection and source maps always use the average.'}
+                    </p>
+                  </div>
+                  <div>
+                    <label htmlFor="recorded-reference" className="block text-xs text-gray-700 mb-1">
+                      Recorded as
+                    </label>
+                    <select
+                      id="recorded-reference"
+                      value={settings.recorded_reference}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const next: 'auto' | ReferenceKind = isReferenceKind(v) ? v : 'auto';
+                        updateSetting('recorded_reference', next);
+                        if (settings.reference === 'linked_ears' && linkedEarsUnavailable(next, results?.reference)) {
+                          updateSetting('reference', 'average');
+                        }
+                      }}
+                      aria-describedby="recorded-reference-help"
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900"
+                    >
+                      <option value="auto">From the channel labels{detectedReferenceLabel ? ` (${detectedReferenceLabel})` : ''}</option>
+                      {REFERENCE_KINDS.filter((k) => k !== 'unknown').map((k) => (
+                        <option key={k} value={k}>
+                          {REFERENCE_LABELS[k]}
+                        </option>
+                      ))}
+                    </select>
+                    <p id="recorded-reference-help" className="text-[11px] text-gray-500 mt-0.5">
+                      What the recording was referenced to. Set it when the file does not say.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -948,11 +1012,16 @@ export default function AnalysisDetailsClient({
           eventReview={eventReview}
           amplitudeThresholdUv={amplitudeThresholdOf(results)}
           focusEvent={focusEvent}
+          recordedReference={
+            settings.recorded_reference !== 'auto' ? settings.recorded_reference : results?.reference?.recorded
+          }
+          appliedReference={results?.reference?.applied}
         />
         </div>
 
         {analysis.status === 'completed' && analysis.results && (
           <div ref={resultsRef}>
+            <ReferenceNote reference={results?.reference} />
             {/* QC Report */}
             {results?.qc_report && (() => {
               const r = results!;
@@ -1653,5 +1722,33 @@ export default function AnalysisDetailsClient({
         )}
       </div>
     </main>
+  );
+}
+
+/** Which reference the numbers on this page are on. Analyses from before it was recorded are average-referenced. */
+function ReferenceNote({ reference }: { reference: AnalysisResults['reference'] }) {
+  const applied = reference?.applied ?? 'average';
+  const recorded = reference && isReferenceKind(reference.recorded) ? REFERENCE_LABELS[reference.recorded] : null;
+  return (
+    <div
+      className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
+        applied === 'average' ? 'border-gray-200 bg-white text-gray-700' : 'border-amber-300 bg-amber-50 text-amber-900'
+      }`}
+    >
+      <span className="font-semibold">Reference: {ANALYSIS_REFERENCE_LABELS[applied]}</span>
+      {recorded && (
+        <span>
+          {' '}
+          · recorded as {recorded.toLowerCase()} (
+          {reference!.recorded_source === 'declared' ? 'set by the analyst' : reference!.evidence ?? 'from the channel labels'})
+        </span>
+      )}
+      {applied !== 'average' && (
+        <span className="block text-xs mt-0.5">
+          Band power, PSD, ratios, asymmetry, IAF, complexity and wPLI are on this reference and are not directly comparable
+          with average-referenced analyses. Detected events and source maps use the average reference.
+        </span>
+      )}
+    </div>
   );
 }

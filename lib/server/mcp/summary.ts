@@ -39,7 +39,10 @@ export interface RecordingMeta {
   sampling_rate: number | null;
   n_channels: number | null;
   montage: string | null;
+  /** what the recording itself is referenced to, as labelled or stated (LE, unknown, ...) */
   reference: string | null;
+  /** reference the metrics were computed on; null until the recording has results */
+  analysis_reference: 'average' | 'linked_ears' | 'as_recorded' | null;
   condition: RecCondition;
   /** null when the recording has no analysis yet */
   analysis: { id: string; status: string } | null;
@@ -262,7 +265,11 @@ export function buildSessionSummary(
 }
 
 export function recordingMeta(input: AnalysisInput): RecordingMeta {
-  return recordingMetaOf(input.recording, { id: input.analysisId, status: input.status });
+  const meta = recordingMetaOf(input.recording, { id: input.analysisId, status: input.status });
+  if (!input.results) return meta;
+  // analyses from before the reference was recorded are average-referenced
+  const ref = input.results.reference;
+  return { ...meta, reference: ref?.recorded ?? meta.reference, analysis_reference: ref?.applied ?? 'average' };
 }
 
 export function recordingMetaOf(r: RecordingRow, analysis: RecordingMeta['analysis']): RecordingMeta {
@@ -274,6 +281,7 @@ export function recordingMetaOf(r: RecordingRow, analysis: RecordingMeta['analys
     n_channels: isNum(r.n_channels) ? r.n_channels : null,
     montage: typeof r.montage === 'string' ? r.montage : null,
     reference: typeof r.reference === 'string' ? r.reference : null,
+    analysis_reference: null,
     condition: conditionOf(r),
     analysis,
   };

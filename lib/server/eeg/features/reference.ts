@@ -1,27 +1,7 @@
+import { LAPLACIAN_NEIGHBOURS } from '@/lib/eeg-labels';
 import { epochLength, type EpochSet } from './types';
 
-// Nearest 10-20 neighbours for the Hjorth Laplacian; the C and O sites match muBursts.ts
-const NEIGHBOURS: Record<string, string[]> = {
-  Fp1: ['Fp2', 'F7', 'F3'],
-  Fp2: ['Fp1', 'F4', 'F8'],
-  F7: ['Fp1', 'F3', 'T7'],
-  F3: ['Fp1', 'F7', 'Fz', 'C3'],
-  Fz: ['Fp1', 'Fp2', 'F3', 'F4', 'Cz'],
-  F4: ['Fp2', 'Fz', 'F8', 'C4'],
-  F8: ['Fp2', 'F4', 'T8'],
-  T7: ['F7', 'C3', 'P7'],
-  C3: ['F3', 'P3', 'T7', 'Cz'],
-  Cz: ['Fz', 'C3', 'C4', 'Pz'],
-  C4: ['F4', 'P4', 'T8', 'Cz'],
-  T8: ['F8', 'C4', 'P8'],
-  P7: ['T7', 'P3', 'O1'],
-  P3: ['C3', 'P7', 'Pz', 'O1'],
-  Pz: ['Cz', 'P3', 'P4', 'O1', 'O2'],
-  P4: ['C4', 'Pz', 'P8', 'O2'],
-  P8: ['T8', 'P4', 'O2'],
-  O1: ['P3', 'Pz', 'P7', 'O2'],
-  O2: ['P4', 'Pz', 'P8', 'O1'],
-};
+const NEIGHBOURS: Record<string, readonly string[]> = LAPLACIAN_NEIGHBOURS;
 const MIN_NEIGHBOURS = 2;
 
 /**

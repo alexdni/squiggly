@@ -1,7 +1,13 @@
 // Artifact-settings form state and processing-status helpers for AnalysisDetailsClient. Kept free
 // of React/DOM so they can be unit-tested.
 
-import { ARTIFACT_PROFILES, DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
+import {
+  ANALYSIS_REFERENCES,
+  ARTIFACT_PROFILES,
+  DEFAULT_PREPROCESSING_CONFIG,
+  type AnalysisReference,
+} from '@/lib/constants';
+import { isReferenceKind, REFERENCE_LABELS, type ReferenceKind } from '@/lib/eeg-labels';
 
 export type ArtifactProfileName = (typeof ARTIFACT_PROFILES)[number];
 
@@ -36,6 +42,28 @@ export interface ArtifactSettings {
   line_freq: 50 | 60;
   /** subtract detected periodic artifacts before cleaning */
   remove_periodic_artifacts: boolean;
+  /** reference the metrics are computed on */
+  reference: AnalysisReference;
+  /** 'auto' = read from the channel labels; otherwise the reference the analyst states */
+  recorded_reference: 'auto' | ReferenceKind;
+}
+
+/**
+ * Why linked ears cannot be chosen for the metrics, or null when it can. `detected` is what the
+ * last analysis read from the channel labels (results.reference), if any.
+ */
+export function linkedEarsUnavailable(
+  recorded: 'auto' | ReferenceKind,
+  detected: { recorded: string; recorded_source: string } | null | undefined
+): string | null {
+  if (recorded === 'LE') return null;
+  if (recorded !== 'auto') return `The recording is set as ${REFERENCE_LABELS[recorded].toLowerCase()}.`;
+  // Before the first analysis the labels have not been read: let the run decide (it falls back with a warning)
+  if (!detected || detected.recorded_source !== 'detected') return null;
+  if (detected.recorded === 'LE') return null;
+  return detected.recorded === 'unknown'
+    ? 'The channel labels do not say what the recording is referenced to. If it was recorded on linked ears, set "Recorded as" to linked ears.'
+    : `The channel labels say the recording is referenced to ${(isReferenceKind(detected.recorded) ? REFERENCE_LABELS[detected.recorded] : detected.recorded).toLowerCase()}.`;
 }
 
 /** Python-era keys dropped when a config is re-saved with the new settings. */
@@ -67,6 +95,10 @@ export function settingsFromConfig(pre: Record<string, unknown> | null | undefin
     asr_k: clampSetting('asr_k', typeof p.asr_k === 'number' ? p.asr_k : null),
     line_freq: p.line_freq === 50 || p.line_freq === 60 ? p.line_freq : DEFAULT_PREPROCESSING_CONFIG.line_freq,
     remove_periodic_artifacts: p.remove_periodic_artifacts === true,
+    reference: (ANALYSIS_REFERENCES as readonly unknown[]).includes(p.reference)
+      ? (p.reference as AnalysisReference)
+      : 'average',
+    recorded_reference: isReferenceKind(p.recorded_reference) ? p.recorded_reference : 'auto',
   };
 }
 
@@ -85,6 +117,8 @@ export function buildPreprocessingConfig(
     asr_k: clampSetting('asr_k', settings.asr_k),
     line_freq: settings.line_freq,
     remove_periodic_artifacts: settings.remove_periodic_artifacts,
+    reference: settings.reference,
+    recorded_reference: settings.recorded_reference,
   };
 }
 

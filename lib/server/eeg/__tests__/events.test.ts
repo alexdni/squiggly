@@ -122,6 +122,7 @@ describe('event inputs', () => {
   };
   const eeg = (ecg?: LoadedEeg['ecg']): LoadedEeg => ({
     format: 'edf',
+    reference: { kind: 'unknown', evidence: '' },
     labels: LABELS,
     data,
     sampleRate: FS,

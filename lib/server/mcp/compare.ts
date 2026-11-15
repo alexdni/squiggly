@@ -53,7 +53,7 @@ function bareVersion(engine: string): string {
 }
 
 /** Distinct non-null values of a recording field across the session, as one comparable key. */
-function recordingKey(s: SessionSummary, field: 'montage' | 'sampling_rate'): string {
+function recordingKey(s: SessionSummary, field: 'montage' | 'sampling_rate' | 'analysis_reference'): string {
   const vals = s.session.recordings.map((r) => r[field]).filter((v) => v !== null);
   return [...new Set(vals.map(String))].sort().join(',');
 }
@@ -194,6 +194,11 @@ export function compareSessions(
   }
   if (recordingKey(a, 'montage') !== recordingKey(b, 'montage')) {
     caveats.push('montage differs');
+    mismatch = true;
+  }
+  const [refA, refB] = [recordingKey(a, 'analysis_reference'), recordingKey(b, 'analysis_reference')];
+  if (refA && refB && refA !== refB) {
+    caveats.push(`analysis reference differs (A ${refA}, B ${refB}): power, ratios, asymmetry and connectivity are not directly comparable`);
     mismatch = true;
   }
   if (recordingKey(a, 'sampling_rate') !== recordingKey(b, 'sampling_rate')) {

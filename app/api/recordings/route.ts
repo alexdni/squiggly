@@ -4,6 +4,21 @@ import { getDatabaseClient } from '@/lib/db';
 import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission, canAccessRecording } from '@/lib/rbac';
 import { validateEDFMontage, validateBDFMontage } from '@/lib/edf-validator';
+import { detectReference } from '@/lib/eeg-labels';
+import { readEdfHeader } from '@/lib/server/eeg/io/edf';
+
+/** The recorded reference as the file's channel labels state it; 'unknown' when they say nothing. */
+function detectUploadedReference(file: Buffer, extension: string | undefined): string {
+  try {
+    const labels =
+      extension === 'csv'
+        ? file.subarray(0, 65536).toString('utf8').split(/\r?\n/)[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''))
+        : readEdfHeader(new Uint8Array(file.buffer, file.byteOffset, file.byteLength)).signals.map((s) => s.label);
+    return detectReference(labels).kind;
+  } catch {
+    return 'unknown';
+  }
+}
 import { DEFAULT_ANALYSIS_CONFIG } from '@/lib/constants';
 import { detectTheraqPhase } from '@/lib/theraq';
 import { conditionFromFilename } from '@/lib/eeg-condition';
@@ -222,7 +237,7 @@ export async function POST(request: Request) {
       sampling_rate: metadata.sampling_rate,
       n_channels: metadata.n_channels,
       montage: '10-20',
-      reference: 'LE',
+      reference: detectUploadedReference(fileBuffer, fileExtension),
       condition_type: conditionType,
       eo_label: finalEoLabel || null,
       ec_label: finalEcLabel || null,

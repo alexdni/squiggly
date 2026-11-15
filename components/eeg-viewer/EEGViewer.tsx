@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useEEGData } from './useEEGData';
 import { computeOriginalOverlay, type PipelineFilterSettings } from './originalOverlay';
 import { useEEGFilters } from './useEEGFilters';
@@ -12,6 +12,17 @@ import EEGAnnotationModal from './EEGAnnotationModal';
 import DetectedEventDetails from './DetectedEventDetails';
 import { bandsAt, visibleBandAnnotations } from './detectedBands';
 import { detectedLaneAt } from './annotationPlugin';
+import {
+  buildMontage,
+  cleanChannelLabel,
+  MONTAGE_GROUPS,
+  MONTAGE_LABELS,
+  montageAvailability,
+  montageAvailable,
+  referenceElectrodes,
+  type Montage,
+} from './montage';
+import { panStart } from './pan';
 import { DEFAULT_FILTER_SETTINGS, type FilterSettings, type RejectedEpoch, type EEGAnnotation } from './types';
 import type { DetectedEventResult } from '@/lib/analysis-results';
 import { categoryColor, mergeEventBands, traceHighlights } from '@/components/visuals/detected-events/format';
@@ -38,16 +49,10 @@ interface EEGViewerProps {
   amplitudeThresholdUv?: number;
   /** move the window to an event and open its band; a new nonce re-applies the same event */
   focusEvent?: { eventId: string; t: number; nonce: number } | null;
-}
-
-function cleanChannelLabel(label: string): string {
-  return label
-    .replace(/^EEG\s+/i, '')
-    .replace(/-LE$/i, '')
-    .replace(/-REF$/i, '')
-    .replace(/-M1$/i, '')
-    .replace(/-M2$/i, '')
-    .trim();
+  /** the recording's own reference (a ReferenceKind), stated by the analyst or read from the labels */
+  recordedReference?: string | null;
+  /** reference of the cleaned file (results.reference.applied); average when absent */
+  appliedReference?: 'average' | 'linked_ears' | 'as_recorded';
 }
 
 const READ_ONLY_REVIEW: EventReviewState = {
@@ -77,7 +82,10 @@ export default function EEGViewer({
   eventReview,
   amplitudeThresholdUv,
   focusEvent,
+  recordedReference,
+  appliedReference = 'average',
 }: EEGViewerProps) {
+  const [montageChoice, setMontage] = useState<Montage>('recorded');
   const [showOriginal, setShowOriginal] = useState(true);
   const [source, setSource] = useState<SignalSource>('raw');
   const [cleanedRequested, setCleanedRequested] = useState(false);
@@ -153,11 +161,53 @@ export default function EEGViewer({
     [source, filterSettings]
   );
 
-  const { filteredSignals, timeLabels } = useEEGFilters(
-    signalData,
-    selectedChannels,
-    timeStart,
-    effectiveFilters
+  // The cleaned file is on the reference the analysis applied, with plain labels
+  const sourceReference =
+    source !== 'cleaned'
+      ? recordedReference
+      : appliedReference === 'linked_ears'
+        ? 'LE'
+        : appliedReference === 'as_recorded'
+          ? recordedReference
+          : 'AVG';
+  const channelNames = signalData?.channelNames;
+  const montageBlocked = useMemo(
+    () => (channelNames ? montageAvailability(channelNames, sourceReference) : null),
+    [channelNames, sourceReference]
+  );
+  const electrodes = useMemo(() => (channelNames ? referenceElectrodes(channelNames) : []), [channelNames]);
+  const montage: Montage =
+    channelNames && montageAvailable(montageChoice, channelNames, sourceReference) ? montageChoice : 'recorded';
+  const rows = useMemo(
+    () => (channelNames ? buildMontage(montage, channelNames, selectedChannels, sourceReference) : []),
+    [montage, channelNames, selectedChannels, sourceReference]
+  );
+  const rowLabels = useMemo(() => rows.map((r) => r.label), [rows]);
+
+  const { filteredSignals, timeLabels } = useEEGFilters(signalData, rows, timeStart, effectiveFilters);
+
+  // Scrolling: wheel and drag arrive many times per frame, so they are summed and applied once per frame
+  const duration = signalData?.duration ?? 0;
+  const pendingPan = useRef(0);
+  const panFrame = useRef<number | null>(null);
+  const panWindow = useRef({ windowSeconds: filterSettings.windowDurationSeconds, duration });
+  panWindow.current = { windowSeconds: filterSettings.windowDurationSeconds, duration };
+  const handlePan = useCallback((deltaSeconds: number) => {
+    pendingPan.current += deltaSeconds;
+    if (panFrame.current !== null) return;
+    panFrame.current = requestAnimationFrame(() => {
+      panFrame.current = null;
+      const delta = pendingPan.current;
+      pendingPan.current = 0;
+      const { windowSeconds: w, duration: d } = panWindow.current;
+      setTimeStart((t) => panStart(t, delta, w, d));
+    });
+  }, []);
+  useEffect(
+    () => () => {
+      if (panFrame.current !== null) cancelAnimationFrame(panFrame.current);
+    },
+    []
   );
 
   const pipelineBand = useMemo(
@@ -177,6 +227,8 @@ export default function EEGViewer({
       raw: raw.signalData,
       cleanedNames: cleaned.signalData.channelNames,
       selected: selectedChannels,
+      rows: rows.map((r) => r.terms),
+      subtractAverage: appliedReference === 'average',
       timeStart,
       windowSeconds: filterSettings.windowDurationSeconds,
       filters: pipelineBand,
@@ -188,6 +240,8 @@ export default function EEGViewer({
     raw.signalData,
     cleaned.signalData,
     selectedChannels,
+    rows,
+    appliedReference,
     timeStart,
     filterSettings.windowDurationSeconds,
     pipelineBand,
@@ -269,18 +323,22 @@ export default function EEGViewer({
   // Mu (and other waveform) events also colour the stretch of their own channel's trace.
   const chartTraceHighlights = useMemo(() => {
     if (!showDetectedEvents || !detectedEvents?.length || !signalData) return undefined;
-    const rows = new Map(selectedChannels.map((idx, row) => [cleanChannelLabel(signalData.channelNames[idx] ?? ''), row]));
+    // the first row of an electrode: in a bipolar montage, the pair it leads
+    const rowOf = new Map<string, number>();
+    rows.forEach((r, row) => {
+      if (r.channel && !rowOf.has(r.channel)) rowOf.set(r.channel, row);
+    });
     const out = traceHighlights(
       detectedEvents,
       eventReview?.reviews ?? {},
       timeStart,
       timeStart + windowSeconds
     ).flatMap((h) => {
-      const row = rows.get(h.channel);
+      const row = rowOf.get(h.channel);
       return row === undefined ? [] : [{ row, startSec: h.startSec, endSec: h.endSec, color: categoryColor(h.category, 0.9) }];
     });
     return out.length ? out : undefined;
-  }, [showDetectedEvents, detectedEvents, eventReview?.reviews, signalData, selectedChannels, timeStart, windowSeconds]);
+  }, [showDetectedEvents, detectedEvents, eventReview?.reviews, signalData, rows, timeStart, windowSeconds]);
 
   // A click on the event track picks the band in that lane; elsewhere, the shortest band there.
   const handleChartClick = useCallback(
@@ -411,6 +469,47 @@ export default function EEGViewer({
         </div>
       </div>
 
+      {/* Montage */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <label htmlFor="eeg-montage" className="text-sm font-semibold text-gray-900">
+          Montage:
+        </label>
+        <select
+          id="eeg-montage"
+          value={montage}
+          onChange={(e) => setMontage(e.target.value as Montage)}
+          aria-describedby="eeg-montage-help"
+          className="border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900"
+        >
+          {MONTAGE_GROUPS.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.montages.map((m) => (
+                <option key={m} value={m} disabled={Boolean(montageBlocked?.[m])} title={montageBlocked?.[m] ?? undefined}>
+                  {m === 'recorded' && source === 'cleaned' ? 'As analysed' : MONTAGE_LABELS[m]}
+                  {montageBlocked?.[m] ? ' (not available)' : ''}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+          {electrodes.length >= 2 && (
+            <optgroup label="One electrode">
+              {electrodes.map((label) => (
+                <option key={label} value={`ch:${label}`}>
+                  {label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <span id="eeg-montage-help" className="text-xs text-gray-600">
+          {montage === 'recorded'
+            ? montageBlocked?.linked_ears
+              ? `Display only. Linked ears: ${montageBlocked.linked_ears}`
+              : 'Display only: the analysis is not changed.'
+            : 'Display only: the analysis is not changed.'}
+        </span>
+      </div>
+
       {/* Toolbar */}
       <div className="mb-3">
         <EEGToolbar
@@ -466,15 +565,16 @@ export default function EEGViewer({
       )}
 
       {/* Chart */}
-      {selectedChannels.length > 0 ? (
+      {rows.length > 0 ? (
         <>
           <EEGUnifiedChart
             filteredSignals={filteredSignals}
             overlaySignals={overlaySignals}
             timeLabels={timeLabels}
-            channelNames={signalData.channelNames}
-            selectedChannels={selectedChannels}
+            rowLabels={rowLabels}
+            timeRange={[timeStart, timeStart + filterSettings.windowDurationSeconds]}
             sensitivityMicrovolts={filterSettings.sensitivityMicrovolts}
+            onPan={handlePan}
             annotations={chartAnnotations}
             dragState={dragState}
             isAnnotateMode={isAnnotateMode}
@@ -493,10 +593,18 @@ export default function EEGViewer({
             totalDuration={signalData.duration}
             onTimeChange={setTimeStart}
           />
+          <p className="mt-1 text-xs text-gray-500">
+            Scroll sideways, hold Shift and scroll, or drag the traces to move through time. With the traces focused:
+            arrow keys, Page Up/Down, Home, End.
+          </p>
         </>
       ) : (
         <div className="bg-gray-100 rounded-lg p-8 text-center">
-          <p className="text-gray-800">Select at least one channel to display</p>
+          <p className="text-gray-800">
+            {selectedChannels.length > 0
+              ? 'Select neighbouring channels to display this montage'
+              : 'Select at least one channel to display'}
+          </p>
         </div>
       )}
 

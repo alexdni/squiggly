@@ -3,7 +3,13 @@
 // Data keeps the file's reference; the pipeline re-references to the average of the channels that
 // survive QC, so one dead or noisy electrode cannot leak into every other channel.
 
-import { ecgCandidates, selectEegChannels } from './channels';
+import {
+  detectReference,
+  ecgCandidates,
+  referenceSuffix,
+  selectEegChannels,
+  type DetectedReference,
+} from './channels';
 import { parseCsvRecording } from './csv';
 import { decimate, decimationFactor } from './decimate';
 import { decodeEdfSignals, EdfFileHeader, isAnnotationSignal, isAnnotationText, readEdfHeader } from './edf';
@@ -24,6 +30,8 @@ export interface LoadedEeg {
   /** ECG candidates that were passed over (flat line, too slow), for the QC warnings */
   ecgSkipped?: string[];
   edfHeader?: EdfFileHeader;
+  /** what the channel labels say the recording is referenced to */
+  reference: DetectedReference;
   /** every EEG channel is labelled as referenced to linked ears ('F3-LE') */
   linkedEars?: boolean;
 }
@@ -112,13 +120,18 @@ function loadEdf(bytes: Uint8Array): ParsedEeg {
       },
     }))
   );
+  const rawLabels = candidates.map((c) => c.label);
+  const reference = detectReference(rawLabels);
+  const suffixes = keep.map((s) => referenceSuffix(rawLabels[s.sourceIndex]));
+  const linkedEars = suffixes.every((s) => s === 'LE');
   return {
     labels: keep.map((s) => s.label),
     data,
     sampleRate,
     ignored: ignored.filter((l) => l !== ecg?.label),
     edfHeader: header,
-    linkedEars: keep.every((s) => /-LE$/i.test(candidates[s.sourceIndex].label.trim())),
+    reference,
+    linkedEars,
     ecg,
     ecgSkipped,
   };
@@ -134,6 +147,7 @@ export function loadRecording(bytes: Uint8Array, format: SourceFormat): LoadedEe
             data: csv.data,
             sampleRate: csv.sampleRate,
             ignored: csv.ignored,
+            reference: detectReference([...csv.labels, ...csv.ignored]),
             ...pickEcg(
               csv.ecgColumns.map((c) => ({
                 label: c.label,

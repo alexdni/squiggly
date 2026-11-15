@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
+import { ANALYSIS_REFERENCE_LABELS } from '@/lib/constants';
 import { hasLegacyVisual, type AnalysisResults } from '@/lib/analysis-results';
 import { engineFamily, engineLabel } from './analysis-settings';
 import LegacyOrLive from './visuals/LegacyOrLive';
@@ -170,6 +171,11 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
   const engineMismatch =
     Boolean(comparisonSides?.hasResults) && engineFamily(engineA) !== engineFamily(engineB);
 
+  // Analyses from before the reference was recorded are average-referenced
+  const referenceA = comparisonSides?.a?.reference?.applied ?? 'average';
+  const referenceB = comparisonSides?.b?.reference?.applied ?? 'average';
+  const referenceMismatch = Boolean(comparisonSides?.hasResults) && referenceA !== referenceB;
+
   const conditionMismatch =
     Boolean(comparisonResult?.conditions?.a && comparisonResult?.conditions?.b) &&
     comparisonResult!.conditions!.a !== comparisonResult!.conditions!.b;
@@ -299,6 +305,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
         ['Recording A uploaded', new Date(recA.created_at).toLocaleDateString()],
         ['Recording B uploaded', new Date(recB.created_at).toLocaleDateString()],
         ['Changes', 'B - A'],
+        ['Reference', referenceMismatch ? `${ANALYSIS_REFERENCE_LABELS[referenceA]} / ${ANALYSIS_REFERENCE_LABELS[referenceB]}` : ANALYSIS_REFERENCE_LABELS[referenceA]],
         ['Engines', engineMismatch ? `${engineLabel(engineA)} / ${engineLabel(engineB)}` : engineLabel(engineA)],
       ],
     };
@@ -628,6 +635,17 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
                       {conditionName(comparisonResult?.conditions?.b)}, so the change values compare eyes open with
                       eyes closed. Check the EO/EC labels on the Recordings tab, or pick two recordings of the same
                       condition.
+                    </p>
+                  </div>
+                )}
+
+                {referenceMismatch && (
+                  <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4" role="alert">
+                    <p className="text-sm text-amber-900">
+                      <strong>Different references:</strong> Recording A was analysed on the{' '}
+                      {ANALYSIS_REFERENCE_LABELS[referenceA].toLowerCase()} reference and Recording B on{' '}
+                      {ANALYSIS_REFERENCE_LABELS[referenceB].toLowerCase()}. Power, ratios, asymmetry and connectivity
+                      are not directly comparable; re-analyze one of them on the other&rsquo;s reference.
                     </p>
                   </div>
                 )}

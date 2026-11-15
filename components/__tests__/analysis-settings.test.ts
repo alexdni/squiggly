@@ -4,6 +4,7 @@ import {
   buildPreprocessingConfig,
   clampSetting,
   isProcessingStale,
+  linkedEarsUnavailable,
   settingsFromConfig,
 } from '../analysis-settings';
 
@@ -16,7 +17,29 @@ describe('settingsFromConfig', () => {
       asr_k: null,
       line_freq: 60,
       remove_periodic_artifacts: false,
+      reference: 'average',
+      recorded_reference: 'auto',
     });
+  });
+
+  it('reads the reference settings and ignores unknown values', () => {
+    expect(settingsFromConfig({ reference: 'linked_ears', recorded_reference: 'LE' })).toMatchObject({
+      reference: 'linked_ears',
+      recorded_reference: 'LE',
+    });
+    expect(settingsFromConfig({ reference: 'rest', recorded_reference: 'nose' })).toMatchObject({
+      reference: 'average',
+      recorded_reference: 'auto',
+    });
+  });
+
+  it('says why linked ears cannot be chosen', () => {
+    expect(linkedEarsUnavailable('LE', null)).toBeNull();
+    expect(linkedEarsUnavailable('auto', null)).toBeNull();
+    expect(linkedEarsUnavailable('auto', { recorded: 'LE', recorded_source: 'detected' })).toBeNull();
+    expect(linkedEarsUnavailable('auto', { recorded: 'unknown', recorded_source: 'detected' })).toMatch(/do not say/);
+    expect(linkedEarsUnavailable('auto', { recorded: 'REF', recorded_source: 'detected' })).toMatch(/device reference/);
+    expect(linkedEarsUnavailable('CZ', { recorded: 'LE', recorded_source: 'detected' })).toMatch(/set as cz/);
   });
 
   it('reads periodic artifact removal only when it is explicitly on', () => {
@@ -56,6 +79,8 @@ describe('buildPreprocessingConfig', () => {
         asr_k: null,
         line_freq: 50,
         remove_periodic_artifacts: true,
+        reference: 'linked_ears',
+        recorded_reference: 'LE',
       }
     );
     expect(out).not.toHaveProperty('ica_method');

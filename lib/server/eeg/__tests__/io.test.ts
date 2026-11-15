@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalLabel, selectEegChannels } from '../io/channels';
+import { canonicalLabel, detectReference, findEarChannels, findEarDifference, selectEegChannels } from '../io/channels';
 import { linearDetrend, parseCsvRecording } from '../io/csv';
 import { decimate, decimationFactor } from '../io/decimate';
 import { decodeEdfSignals, readEdfHeader, toMicrovoltFactor } from '../io/edf';
@@ -34,6 +34,37 @@ describe('channel labels', () => {
       { sourceIndex: 2, label: 'Cz' },
     ]);
     expect(ignored).toEqual(['T7', 'ECG']);
+  });
+});
+
+describe('recorded reference', () => {
+  const scalp = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2'];
+  const withSuffix = (s: string, prefix = '') => scalp.map((c) => `${prefix}${c}-${s}`);
+  it.each([
+    ['linked ears', [...withSuffix('LE', 'EEG '), 'EEG A2-A1', 'EDF Annotations'], 'LE'],
+    ['plain labels', [...scalp, 'EDF Annotations'], 'unknown'],
+    ['plain labels with ear channels', [...scalp, 'A1', 'A2'], 'unknown'],
+    ['device reference', [...withSuffix('Ref'), 'LABEL'], 'REF'],
+    ['one ear', withSuffix('A1'), 'A1'],
+    ['ipsilateral ears', scalp.map((c, i) => `${c}-A${(i % 2) + 1}`), 'ipsilateral'],
+    ['average', withSuffix('AVG'), 'AVG'],
+    ['Cz', scalp.map((c) => `${c}-Cz`), 'CZ'],
+    ['CSD', withSuffix('CSD'), 'CSD'],
+    ['bipolar chain', ['Fp1-F7', 'F7-T3', 'T3-T5', 'T5-O1', 'Fz-Cz'], 'bipolar'],
+    ['linked ears with two single-ear channels', [...withSuffix('LE', 'EEG ').slice(2), 'EEG Fp1-A1', 'EEG Fp2-A1'], 'LE'],
+    ['no scalp channels', ['A1', 'B12', 'EXG1', 'Status'], 'unknown'],
+  ])('%s', (_name, labels, kind) => expect(detectReference(labels).kind).toBe(kind));
+
+  it('says what it saw', () => {
+    expect(detectReference(withSuffix('LE')).evidence).toBe('10 of 10 channels labelled -LE');
+  });
+
+  it('finds ear channels and the ear difference', () => {
+    expect(findEarDifference(['EEG Fp1-LE', 'EEG A2-A1'])).toEqual({ index: 1, sign: 1 });
+    expect(findEarDifference(['A1-A2'])).toEqual({ index: 0, sign: -1 });
+    expect(findEarDifference(['A1', 'A2'])).toBeNull();
+    expect(findEarChannels(['Cz', 'M2', 'M1'])).toEqual({ a1: 2, a2: 1 });
+    expect(findEarChannels(['Cz', 'EEG A2-LE'])).toBeNull();
   });
 });
 

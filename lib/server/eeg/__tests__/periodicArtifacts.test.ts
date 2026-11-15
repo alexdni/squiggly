@@ -38,6 +38,7 @@ function channel(seed: number, uv: number): Float64Array {
 
 const eeg = (data: Float64Array[]): LoadedEeg => ({
   format: 'csv',
+  reference: { kind: 'unknown', evidence: '' },
   labels: ['F3', 'F4', 'P3', 'P4'].slice(0, data.length),
   data,
   sampleRate: FS,

@@ -30,7 +30,7 @@ import type {
   SpectrogramData,
   TimeSpan,
 } from '@/lib/analysis-results';
-import { ANALYSIS_MAX_HZ, DEFAULT_PREPROCESSING_CONFIG } from '@/lib/constants';
+import { ANALYSIS_MAX_HZ, ANALYSIS_REFERENCES, DEFAULT_PREPROCESSING_CONFIG, type AnalysisReference } from '@/lib/constants';
 import { eegFilterSections, sosFiltFilt } from '@/lib/dsp/zeroPhase';
 import { writeCsv, writeEdf } from './export/writers';
 import { computeHrv } from './hrv';
@@ -53,7 +53,7 @@ import {
   SLORETA_HOP_SEC,
   SloretaUnavailableError,
 } from './sloreta/compute';
-import { CHANNELS_10_20 } from '@/lib/eeg-labels';
+import { CHANNELS_10_20, isReferenceKind, REFERENCE_LABELS } from '@/lib/eeg-labels';
 import {
   averageReference,
   loadRecording,
@@ -126,6 +126,10 @@ export function resolvePreprocessing(stored: AnalysisJobInput['preprocessing']):
     low_pass_hz: num(s.low_pass_hz, highPass + 1, ANALYSIS_MAX_HZ, d.low_pass_hz),
     epoch_duration: num(s.epoch_duration, 1, 10, d.epoch_duration),
     remove_periodic_artifacts: s.remove_periodic_artifacts === true,
+    reference: (ANALYSIS_REFERENCES as readonly unknown[]).includes(s.reference)
+      ? (s.reference as AnalysisReference)
+      : 'average',
+    recorded_reference: isReferenceKind(s.recorded_reference) ? s.recorded_reference : 'auto',
   };
 }
 
@@ -451,8 +455,8 @@ export interface CleanedEeg {
   /** channels that survived QC (good or interpolated), average-referenced */
   labels: string[];
   data: Float64Array[];
-  /** what the average reference subtracted, kept for linked-ears recordings to restore their reference */
-  commonMode?: Float64Array;
+  /** what the average reference subtracted; adding it back restores the recording's own reference */
+  commonMode: Float64Array;
 }
 
 /**
@@ -504,9 +508,10 @@ export function cleanEeg(eeg: LoadedEeg, config: PartialPipelineConfig, eventInp
     .map((c, i) => ({ ...c, i }))
     .filter((c) => !c.bad || c.interpolated)
     .map((c) => c.i);
-  const commonMode = eeg.linkedEars
-    ? Float64Array.from(cleaned.data[0], (_, t) => usable.reduce((sum, c) => sum + cleaned.data[c][t], 0) / usable.length)
-    : undefined;
+  const commonMode = Float64Array.from(
+    cleaned.data[0],
+    (_, t) => usable.reduce((sum, c) => sum + cleaned.data[c][t], 0) / usable.length
+  );
   averageReference(cleaned.data, usable);
   return {
     result,
@@ -549,6 +554,24 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   const cleaned = result.recording;
   const keep = keptSampleMask(result, cleaned.nSamples);
 
+  // `data` is average-referenced: the detectors and sLORETA always run on it. The metrics and the
+  // cleaned file use `refData`, on the reference the analyst chose.
+  const declared = cfg.recorded_reference === 'auto' ? null : cfg.recorded_reference;
+  const recorded = declared ?? eeg.reference.kind;
+  const sourceData = data.map((d) => d.map((v, t) => v + commonMode[t]));
+  const linkedEarsData = (declared ? declared === 'LE' : eeg.linkedEars) ? sourceData : null;
+  const referenceWarnings: string[] = [];
+  let applied = cfg.reference;
+  if (applied === 'linked_ears' && !linkedEarsData) {
+    applied = 'average';
+    referenceWarnings.push(
+      `Linked-ears reference is not available (recorded reference: ${REFERENCE_LABELS[recorded].toLowerCase()}); the average reference was used.`
+    );
+  }
+  const refData = applied === 'average' ? data : sourceData;
+  const epochsOf = (c: Condition, signals: Float64Array[]) =>
+    buildEpochs(c, input.segments[c]!, signals, labels, cleaned.sampleRate, cfg.epoch_duration, keep, result.annotations, manual);
+
   const conditions = (['eo', 'ec'] as Condition[]).filter((c) => input.segments[c]);
   const segs = Object.fromEntries(
     conditions.map((c) => [
@@ -556,7 +579,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
       buildEpochs(
         c,
         input.segments[c]!,
-        data,
+        refData,
         labels,
         cleaned.sampleRate,
         cfg.epoch_duration,
@@ -580,19 +603,21 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   const features = extractFeatures(eo, ec);
   const psd = { eo: eo ? computePsd(eo) : null, ec: ec ? computePsd(ec) : null };
   const interpolated = report.channels.filter((c) => c.interpolated).map((c) => c.label);
-  const linkedEarsData = commonMode && data.map((d) => d.map((v, t) => v + commonMode[t]));
+  // Coherence has its own reference switch, so `coherence` stays on the average reference
   for (const c of conditions) {
     const set = segs[c]?.set;
     const connectivity = features.connectivity[c];
     if (!set || !connectivity) continue;
-    const lap = laplacianEpochs(set, interpolated);
-    const laplacian = lap && computeCoherence(lap);
     // Same arguments as the epochs above, so the same epochs are kept
-    const linkedEars =
-      linkedEarsData &&
-      computeCoherence(
-        buildEpochs(c, input.segments[c]!, linkedEarsData, labels, cleaned.sampleRate, cfg.epoch_duration, keep, result.annotations, manual).set!
-      );
+    const averageSet = applied === 'average' ? set : epochsOf(c, data).set!;
+    const lap = laplacianEpochs(averageSet, interpolated);
+    const laplacian = lap && computeCoherence(lap);
+    const linkedEars = linkedEarsData && computeCoherence(epochsOf(c, linkedEarsData).set!);
+    if (applied !== 'average') {
+      const average = computeCoherence(averageSet);
+      if (average) connectivity.coherence = average;
+      else delete connectivity.coherence;
+    }
     connectivity.coherence_refs = {
       ...(linkedEars ? { linked_ears: linkedEars } : {}),
       ...(laplacian ? { laplacian } : {}),
@@ -629,7 +654,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     const e = Math.min(cleaned.nSamples, Math.round(seg.end * cleaned.sampleRate));
     if (e - s >= cleaned.sampleRate * 2) {
       allSpectrograms[c] = computeSpectrograms(
-        data.map((d) => d.subarray(s, e)),
+        refData.map((d) => d.subarray(s, e)),
         labels,
         cleaned.sampleRate
       );
@@ -710,7 +735,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
   }
 
   progress('exporting');
-  const cleanedSignals = { labels, data, sampleRate: cleaned.sampleRate };
+  const cleanedSignals = { labels, data: refData, sampleRate: cleaned.sampleRate };
   const cleanedBytes =
     input.format === 'csv'
       ? writeCsv(cleanedSignals)
@@ -757,6 +782,7 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
     timeline: rejectionTimeline(result),
     warnings: [
       ...report.warnings,
+      ...referenceWarnings,
       ...hrvWarnings,
       ...sloretaWarnings,
       ...conditions
@@ -773,6 +799,12 @@ export function runAnalysis(input: AnalysisJobInput, progress: ProgressFn = () =
 
   const results: AnalysisJobOutput['results'] = {
     qc_report: qc,
+    reference: {
+      recorded,
+      recorded_source: declared ? 'declared' : 'detected',
+      ...(declared ? {} : { evidence: eeg.reference.evidence }),
+      applied,
+    },
     segments: Object.fromEntries(conditions.map((c) => [c, { ...input.segments[c]! }])),
     ...features,
     rejected_epochs: conditions.flatMap((c) => segs[c]?.rejected ?? []),

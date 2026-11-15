@@ -429,8 +429,22 @@ export interface PeriodicArtifacts {
   artifacts: PeriodicArtifact[];
 }
 
+/** The recording's own reference and the one the metrics were computed on. */
+export interface ReferenceInfo {
+  /** what the recording is referenced to (a ReferenceKind: 'LE', 'unknown', ...) */
+  recorded: string;
+  /** read from the channel labels, or stated by the recording's owner */
+  recorded_source: 'detected' | 'declared';
+  /** what the labels showed, e.g. "19 of 19 channels labelled -LE" */
+  evidence?: string;
+  /** reference of band power, PSD, ratios, asymmetry, IAF, complexity, wPLI and the cleaned file */
+  applied: 'average' | 'linked_ears' | 'as_recorded';
+}
+
 export interface AnalysisResults {
   qc_report: QcReportSummary;
+  /** absent on analyses run before the reference was recorded: those are average-referenced */
+  reference?: ReferenceInfo;
   band_power: Record<Condition, BandPower | null>;
   connectivity: Record<Condition, Connectivity | null>;
   lzc: Record<Condition, Lzc | null>;
