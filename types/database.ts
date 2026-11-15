@@ -52,6 +52,8 @@ export interface Recording {
   n_channels: number;
   montage: string;
   reference: string;
+  /** when the recording was made, as the file states it; see lib/recording-time.ts */
+  recorded_at?: string | null;
   condition_type: ConditionType;
   eo_label: string;
   ec_label: string;

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS recordings (
   n_channels INTEGER NOT NULL,
   montage TEXT NOT NULL DEFAULT '10-20',
   reference TEXT NOT NULL DEFAULT 'LE',
+  recorded_at TEXT,
   condition_type TEXT DEFAULT 'BOTH',
   eo_label TEXT,
   ec_label TEXT,

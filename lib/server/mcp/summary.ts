@@ -35,6 +35,12 @@ type BySource<T> = Partial<Record<Source, T>>;
 export interface RecordingMeta {
   id: string;
   uploaded_at: string;
+  /**
+   * when the recording was made, from the file: '2025-11-10T21:53:17' is clock time at the recording
+   * site (zone not stated), a trailing Z is an absolute time, a bare date has no time of day; null
+   * when the file does not say
+   */
+  recorded_at: string | null;
   duration_s: number | null;
   sampling_rate: number | null;
   n_channels: number | null;
@@ -276,6 +282,7 @@ export function recordingMetaOf(r: RecordingRow, analysis: RecordingMeta['analys
   return {
     id: r.id,
     uploaded_at: r.created_at,
+    recorded_at: typeof r.recorded_at === 'string' ? r.recorded_at : null,
     duration_s: isNum(r.duration_seconds) ? Math.round(r.duration_seconds * 10) / 10 : null,
     sampling_rate: isNum(r.sampling_rate) ? r.sampling_rate : null,
     n_channels: isNum(r.n_channels) ? r.n_channels : null,

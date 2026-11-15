@@ -5,6 +5,7 @@ import { getStorageClient } from '@/lib/storage';
 import { checkProjectPermission, canAccessRecording } from '@/lib/rbac';
 import { validateEDFMontage, validateBDFMontage } from '@/lib/edf-validator';
 import { detectReference } from '@/lib/eeg-labels';
+import { recordedAtFromFile } from '@/lib/recording-time';
 import { readEdfHeader } from '@/lib/server/eeg/io/edf';
 
 /** The recorded reference as the file's channel labels state it; 'unknown' when they say nothing. */
@@ -238,6 +239,7 @@ export async function POST(request: Request) {
       n_channels: metadata.n_channels,
       montage: '10-20',
       reference: detectUploadedReference(fileBuffer, fileExtension),
+      recorded_at: recordedAtFromFile(fileBuffer, fileExtension, new Date()),
       condition_type: conditionType,
       eo_label: finalEoLabel || null,
       ec_label: finalEcLabel || null,

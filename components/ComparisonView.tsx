@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { ANALYSIS_REFERENCE_LABELS } from '@/lib/constants';
+import { formatRecordedAt } from '@/lib/recording-time';
 import { hasLegacyVisual, type AnalysisResults } from '@/lib/analysis-results';
 import { engineFamily, engineLabel } from './analysis-settings';
 import LegacyOrLive from './visuals/LegacyOrLive';
@@ -22,6 +23,7 @@ interface Recording {
   id: string;
   filename: string;
   created_at: string;
+  recorded_at?: string | null;
   eo_start: number | null;
   eo_end: number | null;
   ec_start: number | null;
@@ -187,6 +189,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     const hasEO = rec.eo_start !== null && rec.eo_end !== null;
     const hasEC = rec.ec_start !== null && rec.ec_end !== null;
     let label = rec.filename;
+    const recorded = formatRecordedAt(rec.recorded_at, { dateOnly: true });
     if (hasEO && hasEC) {
       label += ' (EO+EC)';
     } else if (hasEO) {
@@ -194,7 +197,7 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
     } else if (hasEC) {
       label += ' (EC)';
     }
-    return label;
+    return recorded ? `${label} · ${recorded}` : label;
   };
 
   useEffect(() => {
@@ -302,8 +305,13 @@ export default function ComparisonView({ projectId }: ComparisonViewProps) {
       completedAt: null,
       downloadName: `${baseName(recA.filename)}-vs-${baseName(recB.filename)}-comparison`,
       details: [
-        ['Recording A uploaded', new Date(recA.created_at).toLocaleDateString()],
-        ['Recording B uploaded', new Date(recB.created_at).toLocaleDateString()],
+        ...(['A', 'B'] as const).map((side): [string, string] => {
+          const rec = side === 'A' ? recA : recB;
+          const recorded = formatRecordedAt(rec.recorded_at);
+          return recorded
+            ? [`Recording ${side} recorded`, recorded]
+            : [`Recording ${side} uploaded`, new Date(rec.created_at).toLocaleDateString()];
+        }),
         ['Changes', 'B - A'],
         ['Reference', referenceMismatch ? `${ANALYSIS_REFERENCE_LABELS[referenceA]} / ${ANALYSIS_REFERENCE_LABELS[referenceB]}` : ANALYSIS_REFERENCE_LABELS[referenceA]],
         ['Engines', engineMismatch ? `${engineLabel(engineA)} / ${engineLabel(engineB)}` : engineLabel(engineA)],

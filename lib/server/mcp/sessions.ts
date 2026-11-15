@@ -17,6 +17,8 @@ export interface RecordingRow {
   n_channels: number | null;
   montage: string | null;
   reference: string | null;
+  /** when the recording was made, as the file states it; null when it does not */
+  recorded_at?: string | null;
   eo_start: number | null;
   eo_end: number | null;
   ec_start: number | null;

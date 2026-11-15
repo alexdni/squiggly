@@ -23,7 +23,7 @@ const ROW_CAP = 1000;
 const ID_CHUNK = 50;
 
 const RECORDING_COLS =
-  'id, project_id, filename, condition_type, created_at, duration_seconds, sampling_rate, n_channels, montage, reference, eo_start, eo_end, ec_start, ec_end';
+  'id, project_id, filename, condition_type, created_at, duration_seconds, sampling_rate, n_channels, montage, reference, recorded_at, eo_start, eo_end, ec_start, ec_end';
 
 export interface ProjectListItem {
   id: string;

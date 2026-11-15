@@ -34,6 +34,7 @@ import PsdSection from './visuals/PsdSection';
 import PeriodicArtifactsCard from './visuals/PeriodicArtifacts';
 import ConditionLabelEditor from './ConditionLabelEditor';
 import { labelSummary, labelsOf, resultsMatchLabels } from '@/lib/eeg-condition';
+import { formatRecordedAt } from '@/lib/recording-time';
 import DetectedEvents, { amplitudeThresholdOf } from './visuals/DetectedEvents';
 import { useEventReviews } from './visuals/detected-events/useEventReviews';
 import { exportPdfReport, exportVisualizationsZip, type ReportMeta } from './export/analysisExport';
@@ -74,6 +75,8 @@ interface Recording {
   ec_end: number | null;
   project_id: string;
   created_at: string;
+  /** when the recording was made, as the file states it */
+  recorded_at?: string | null;
 }
 
 interface Analysis {
@@ -290,11 +293,12 @@ export default function AnalysisDetailsClient({
       filename: rec.filename,
       completedAt: analysis.completed_at,
       details: [
+        ...(formatRecordedAt(rec.recorded_at) ? [['Recorded', formatRecordedAt(rec.recorded_at)!] as [string, string]] : []),
         ['Duration', formatDuration(rec.duration_seconds)],
         ['Channels', String(rec.n_channels)],
         ['Sampling Rate', `${rec.sampling_rate} Hz`],
         ['Montage', rec.montage],
-        ['Reference', rec.reference],
+        ['Recorded reference', isReferenceKind(rec.reference) ? REFERENCE_LABELS[rec.reference] : rec.reference],
         ['EO Segment', segment(rec.eo_start, rec.eo_end)],
         ['EC Segment', segment(rec.ec_start, rec.ec_end)],
         ['File Size', formatFileSize(rec.file_size)],
@@ -944,6 +948,14 @@ export default function AnalysisDetailsClient({
             </div>
           )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {formatRecordedAt(analysis.recording.recorded_at) && (
+              <div>
+                <div className="text-sm text-gray-700">Recorded</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {formatRecordedAt(analysis.recording.recorded_at)}
+                </div>
+              </div>
+            )}
             <div>
               <div className="text-sm text-gray-700">Duration</div>
               <div className="text-lg font-semibold text-gray-900">
@@ -975,9 +987,11 @@ export default function AnalysisDetailsClient({
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-700">Reference</div>
+              <div className="text-sm text-gray-700">Recorded reference</div>
               <div className="text-lg font-semibold text-gray-900">
-                {analysis.recording.reference}
+                {isReferenceKind(analysis.recording.reference)
+                  ? REFERENCE_LABELS[analysis.recording.reference]
+                  : analysis.recording.reference}
               </div>
             </div>
             <div>

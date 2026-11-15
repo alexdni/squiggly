@@ -8,6 +8,7 @@ import type { TheraqPhase } from '@/lib/theraq';
 import SquigglyLogo from '@/components/SquigglyLogo';
 import ConditionLabelEditor, { reanalyzeAfterRelabel } from '@/components/ConditionLabelEditor';
 import { labelSummary, labelsOf } from '@/lib/eeg-condition';
+import { formatRecordedAt } from '@/lib/recording-time';
 
 interface Project {
   id: string;
@@ -29,6 +30,8 @@ interface Recording {
   ec_end: number | null;
   phase?: TheraqPhase | null;
   latest_analysis?: { id: string; status: string; started_at: string | null; completed_at: string | null } | null;
+  /** when the recording was made, as the file states it */
+  recorded_at?: string | null;
 }
 
 interface ProjectDetailsClientProps {
@@ -487,6 +490,9 @@ export default function ProjectDetailsClient({
                         <div className="text-sm text-gray-800">
                           {new Date(recording.created_at).toLocaleDateString()}
                         </div>
+                        {formatRecordedAt(recording.recorded_at) && (
+                          <div className="text-xs text-gray-500">Recorded {formatRecordedAt(recording.recorded_at)}</div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <div className="flex items-center gap-3">
